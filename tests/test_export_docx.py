@@ -109,6 +109,41 @@ class ExportDocxTests(unittest.TestCase):
         )
         self.assertEqual(len(alternate_content), 0)
 
+    def test_preserves_an_inserted_empty_page_between_content_pages(self):
+        payload = {
+            "title": "Blank middle page",
+            "pages": [
+                {"id": "page-1", "index": 0, "widthPx": 800, "heightPx": 1100},
+                {"id": "page-2", "index": 1, "widthPx": 800, "heightPx": 1100},
+                {"id": "page-3", "index": 2, "widthPx": 800, "heightPx": 1100},
+            ],
+            "segments": [
+                {
+                    "id": "first", "pageIndex": 0, "text": "Before blank page", "x": 32, "y": 48,
+                    "width": 300, "height": 60, "fontFamily": "Arial", "fontSizePx": 16,
+                    "fontWeight": 400, "lineHeight": 1.2, "color": "#111827",
+                    "alignment": "left", "zIndex": 1,
+                },
+                {
+                    "id": "third", "pageIndex": 2, "text": "After blank page", "x": 64, "y": 96,
+                    "width": 320, "height": 70, "fontFamily": "Arial", "fontSizePx": 18,
+                    "fontWeight": 700, "lineHeight": 1.2, "color": "#223344",
+                    "alignment": "center", "zIndex": 2,
+                },
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "blank-middle.docx"
+            export_layout(payload, output)
+            document = Document(output)
+
+        self.assertEqual(len(document.sections), 3)
+        shapes = document.element.body.xpath(
+            ".//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+        )
+        self.assertEqual(len(shapes), 2)
+
     def test_many_segments_use_independent_flow_anchors(self):
         pages = [
             {"id": "page-1", "index": 0, "widthPx": 800, "heightPx": 1100},

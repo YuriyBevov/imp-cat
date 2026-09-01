@@ -8,6 +8,8 @@
   --brand: #172554;
   --accent: #0f766e;
   --segment: #2563eb;
+  --grid-size: 4px;
+  --major-grid-size: 16px;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -437,7 +439,17 @@ button {
 #docx-host section.docx {
   position: relative !important;
   overflow: hidden !important;
-  background: #fff !important;
+  background-color: #fff !important;
+  background-image:
+    linear-gradient(rgba(37, 99, 235, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(37, 99, 235, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.025) 1px, transparent 1px) !important;
+  background-size:
+    var(--major-grid-size) var(--major-grid-size),
+    var(--major-grid-size) var(--major-grid-size),
+    var(--grid-size) var(--grid-size),
+    var(--grid-size) var(--grid-size) !important;
   outline: 1px solid rgba(100, 116, 139, 0.36);
   box-shadow: 0 10px 34px rgba(31, 41, 55, 0.18) !important;
 }
@@ -476,6 +488,78 @@ button {
   inset: 0;
   z-index: 50;
   pointer-events: none;
+}
+
+.icat-parking {
+  position: relative;
+  box-sizing: content-box;
+  margin: 0 auto 34px;
+  overflow: hidden;
+  border: 2px dashed #94a3b8;
+  border-radius: 14px;
+  color: #475569;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.icat-parking__heading {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.icat-parking__heading strong {
+  color: #334155;
+  font-size: 13px;
+}
+
+.icat-parking__heading span {
+  font-size: 11px;
+}
+
+.icat-parking__overlay {
+  position: absolute;
+  top: 44px;
+  left: 0;
+}
+
+.icat-parking.is-drop-target {
+  border-color: var(--segment);
+  background: rgba(239, 246, 255, 0.96);
+}
+
+.icat-page-insert {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icat-page-insert button {
+  padding: 7px 14px;
+  border: 1px dashed #94a3b8;
+  border-radius: 999px;
+  color: #475569;
+  background: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.icat-page-insert button:hover {
+  border-color: var(--segment);
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+#docx-host section.docx.is-drop-target {
+  outline: 3px solid rgba(37, 99, 235, 0.82);
+  outline-offset: 3px;
 }
 
 .icat-selection-box {
@@ -523,6 +607,11 @@ button {
 .icat-segment.is-selected.is-in-page-margin {
   outline-color: #d97706;
   box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.14), 0 7px 20px rgba(146, 64, 14, 0.12);
+}
+
+.icat-segment.is-parked {
+  outline-color: rgba(100, 116, 139, 0.78);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .icat-segment.is-dragging,

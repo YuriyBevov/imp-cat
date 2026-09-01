@@ -3,7 +3,10 @@ const assert = require('node:assert/strict')
 const {
   clampGroupDelta,
   findSegmentOverlaps,
+  getPageSliceCount,
+  getPageSlicePlacement,
   getSegmentHorizontalGeometry,
+  isDocumentSegment,
   rectangleOverlapRatio,
   rectanglesIntersect,
   resolveVerticalOverlaps,
@@ -59,4 +62,25 @@ test('uses the full content width for body paragraphs but preserves contained ge
     getSegmentHorizontalGeometry(rectangle, 100, 794, contentBounds, false),
     { x: 280, width: 120 },
   )
+})
+
+test('turns overflowing source content into separate visual pages', () => {
+  assert.equal(getPageSliceCount(2244, 1122), 2)
+  assert.equal(getPageSliceCount(1122, 1122, 3300), 3)
+  assert.deepEqual(getPageSlicePlacement(1280, 80, 1122, 2, 64), {
+    sliceIndex: 1,
+    y: 158,
+  })
+  assert.deepEqual(getPageSlicePlacement(1100, 80, 1122, 2, 64), {
+    sliceIndex: 1,
+    y: 64,
+  })
+})
+
+test('keeps parked and detached segments outside the document model', () => {
+  assert.equal(isDocumentSegment({ deleted: false, parked: false, pageIndex: 0, pageId: 'page-1' }), true)
+  assert.equal(isDocumentSegment({ deleted: false, parked: true, pageIndex: null }), false)
+  assert.equal(isDocumentSegment({ deleted: false, parked: false, pageIndex: null, pageId: null }), false)
+  assert.equal(isDocumentSegment({ deleted: false, parked: false, pageIndex: 0, pageId: null }), false)
+  assert.equal(isDocumentSegment({ deleted: true, parked: false, pageIndex: 0, pageId: 'page-1' }), false)
 })

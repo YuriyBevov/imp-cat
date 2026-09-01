@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(projectRoot, 'public/index.html'), 'utf8'
 const app = fs.readFileSync(path.join(projectRoot, 'public/app.js'), 'utf8')
 const styles = fs.readFileSync(path.join(projectRoot, 'public/styles.css'), 'utf8')
 
-test('wires snap, continuous zoom and original-page controls without a background grid', () => {
+test('wires page-only grid, visual page insertion, parking and continuous zoom', () => {
   for (const controlId of ['grid-size', 'view-scale']) {
     assert.match(html, new RegExp(`id="${controlId}"`))
   }
@@ -16,6 +16,9 @@ test('wires snap, continuous zoom and original-page controls without a backgroun
   assert.doesNotMatch(html, /id="grid-toggle"/)
   assert.doesNotMatch(app, /workspaceHeightScale|renderPageBreaks|paginatePages/)
   assert.doesNotMatch(styles, /grid-enabled|icat-export-page-break/)
+  assert.match(styles, /--grid-size: 4px/)
+  assert.match(styles, /#docx-host section\.docx/)
+  assert.match(styles, /var\(--grid-size\)/)
   assert.match(html, /id="fit-width"/)
   assert.match(html, /id="resolve-overlaps"/)
   assert.match(html, /src="\/history-model\.js"/)
@@ -25,6 +28,15 @@ test('wires snap, continuous zoom and original-page controls without a backgroun
   assert.match(app, /fitDocumentWidth/)
   assert.match(app, /resolveSegmentOverlaps/)
   assert.match(app, /getSegmentHorizontalGeometry/)
+  assert.match(app, /getPageSliceCount/)
+  assert.match(app, /getPageSlicePlacement/)
+  assert.match(app, /renderPageInsertControls/)
+  assert.match(app, /insertBlankPage/)
+  assert.match(app, /createParkingArea/)
+  assert.match(app, /findDropSurface/)
+  assert.match(app, /ICATLayout\.isDocumentSegment/)
+  assert.match(app, /segment\.pageIndex = null/)
+  assert.match(app, /state\.parkingOverlay\.style\.height/)
   assert.match(app, /!sourceElement\.closest\("td, th"\)/)
   assert.match(app, /const pages = state\.pages\.map/)
   assert.match(app, /pageIndex: segment\.pageIndex/)
@@ -45,5 +57,7 @@ test('wires snap, continuous zoom and original-page controls without a backgroun
   assert.match(app, /commitHistory\(before, "разнесение наложений"/)
   assert.match(html, /Cmd\/Ctrl \+ Z/)
   assert.match(html, /id="selection-count"/)
+  assert.match(html, /id="parked-count"/)
+  assert.match(html, /Вне документа:/)
   assert.match(html, /Cmd\/Ctrl \+ колесо/)
 })

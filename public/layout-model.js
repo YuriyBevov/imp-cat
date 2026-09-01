@@ -38,6 +38,48 @@
     return { x: contentX, width: contentWidth };
   }
 
+  function getPageSliceCount(renderedHeight, pageHeight, contentBottom = 0) {
+    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
+    const extent = Math.max(
+      safePageHeight,
+      Number(renderedHeight) || 0,
+      Number(contentBottom) || 0,
+    );
+    return Math.max(1, Math.ceil(extent / safePageHeight - 0.02));
+  }
+
+  function getPageSlicePlacement(y, height, pageHeight, sliceCount, contentTop = 0) {
+    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
+    const safeSliceCount = Math.max(1, Math.round(Number(sliceCount) || 1));
+    const safeHeight = Math.max(0, Number(height) || 0);
+    let sliceIndex = clamp(Math.floor((Number(y) || 0) / safePageHeight), 0, safeSliceCount - 1);
+    let localY = Math.max(0, (Number(y) || 0) - sliceIndex * safePageHeight);
+
+    if (
+      localY + safeHeight > safePageHeight
+      && sliceIndex < safeSliceCount - 1
+      && safeHeight <= safePageHeight - contentTop
+    ) {
+      sliceIndex += 1;
+      localY = Math.max(0, Number(contentTop) || 0);
+    }
+
+    return {
+      sliceIndex,
+      y: clamp(localY, 0, Math.max(0, safePageHeight - Math.min(safeHeight, safePageHeight))),
+    };
+  }
+
+  function isDocumentSegment(segment) {
+    return Boolean(segment)
+      && !segment.deleted
+      && !segment.parked
+      && Number.isInteger(segment.pageIndex)
+      && segment.pageIndex >= 0
+      && typeof segment.pageId === "string"
+      && segment.pageId.length > 0;
+  }
+
   function normalizeRectangle(rectangle) {
     const left = Number(rectangle.left ?? rectangle.x) || 0;
     const top = Number(rectangle.top ?? rectangle.y) || 0;
@@ -130,7 +172,10 @@
   return {
     clampGroupDelta,
     findSegmentOverlaps,
+    getPageSliceCount,
+    getPageSlicePlacement,
     getSegmentHorizontalGeometry,
+    isDocumentSegment,
     rectangleOverlapRatio,
     rectanglesIntersect,
     resolveVerticalOverlaps,
