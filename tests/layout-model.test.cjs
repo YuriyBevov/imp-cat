@@ -18,12 +18,24 @@ const {
   resolveVerticalOverlaps,
   remapPageIndexAfterRemoval,
   screenDeltaToDocument,
+  surfacePointFromCoordinates,
 } = require('../public/layout-model.js')
 
 test('separates visual zoom from document geometry', () => {
   assert.equal(screenDeltaToDocument(100, 2), 50)
   assert.equal(screenDeltaToDocument(100, 0.5), 200)
   assert.equal(screenDeltaToDocument(100, 0.25), 400)
+})
+
+test('updates the dragged document point when its scroll surface moves under a fixed cursor', () => {
+  const beforeScroll = surfacePointFromCoordinates(
+    { left: 100, top: 200 }, 300, 500, 2, 800, 1100,
+  )
+  const afterScroll = surfacePointFromCoordinates(
+    { left: 100, top: 120 }, 300, 500, 2, 800, 1100,
+  )
+  assert.deepEqual(beforeScroll, { x: 100, y: 150 })
+  assert.deepEqual(afterScroll, { x: 100, y: 190 })
 })
 
 test('keeps the document point under the cursor while zooming', () => {

@@ -27,6 +27,7 @@ const state = {
   loading: false,
   history: window.ICATHistory.create(HISTORY_LIMIT),
   activeTextEdit: null,
+  savedEditorRange: null,
   restoringHistory: false,
 };
 
@@ -65,6 +66,9 @@ const elements = {
   selectionSize: document.querySelector("#selection-size"),
   selectionCount: document.querySelector("#selection-count"),
   selectionArea: document.querySelector("#selection-area"),
+  editorToolbar: document.querySelector("#editor-toolbar"),
+  editorFontSize: document.querySelector("#editor-font-size"),
+  editorActionButtons: Array.from(document.querySelectorAll("#editor-toolbar [data-editor-action]")),
   toast: document.querySelector("#toast"),
 };
 
@@ -86,6 +90,17 @@ elements.zoomIn.addEventListener("click", () => setViewScale(state.viewScale * 1
 elements.fitWidth.addEventListener("click", fitDocumentWidth);
 elements.resolveOverlaps.addEventListener("click", resolveSegmentOverlaps);
 elements.workspace.addEventListener("wheel", handleWorkspaceZoom, { passive: false });
+for (const button of elements.editorActionButtons) {
+  button.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+  });
+  button.addEventListener("click", () => runSelectedEditorAction(button.dataset.editorAction));
+}
+elements.editorFontSize.addEventListener("pointerdown", rememberActiveEditorSelection);
+elements.editorFontSize.addEventListener("change", () => {
+  runSelectedEditorAction("font-size", Number(elements.editorFontSize.value));
+});
+document.addEventListener("selectionchange", rememberActiveEditorSelection);
 window.addEventListener("resize", () => {
   if (state.viewMode === "fit" && state.pages.length) requestAnimationFrame(fitDocumentWidth);
 });
@@ -131,6 +146,7 @@ document.addEventListener("pointerdown", handleDocumentPointerDown);
 
 document.addEventListener("keydown", handleUndoShortcut);
 document.addEventListener("keydown", handleFocusShortcut);
+updateEditorToolbarState(null);
 
 async function loadSample() {
   try {
@@ -217,10 +233,12 @@ function clearDocument() {
   state.parkingWidth = 0;
   state.parkingResizeObserver = null;
   state.dropTargetElement = null;
+  state.savedEditorRange = null;
   clearHistory();
   elements.documentStage.hidden = true;
   elements.dropZone.hidden = false;
   elements.uploadButton.hidden = false;
+  updateEditorToolbarState(null);
   updateSummary();
 }
 
@@ -708,7 +726,7 @@ function collectTextCandidates(pageElement) {
 }
 
 function isCandidateInNormalFlow(candidate, pageElement) {
-  if (candidate.kind === "shape") return false;
+  if (candidate.kind.startsWith("shape")) return false;
   for (
     let element = candidate.element;
     element && element !== pageElement;
@@ -785,8 +803,11 @@ function getSourceRunStyle(element) {
 function getDirectRunStyle(element) {
   const computedStyle = getComputedStyle(element);
   return {
+    fontFamily: normalizeFontFamily(computedStyle.fontFamily),
+    fontSizePx: numberOr(computedStyle.fontSize, 16),
     fontWeight: normalizeFontWeight(computedStyle.fontWeight),
     fontStyle: normalizeFontStyle(computedStyle.fontStyle),
+    color: colorToHex(computedStyle.color),
     backgroundColor: normalizeBackgroundColor(computedStyle.backgroundColor),
   };
 }
@@ -809,8 +830,11 @@ function normalizeRichTextRuns(rawRuns) {
   const append = (text, style) => {
     if (!text) return;
     const normalizedStyle = {
+      fontFamily: normalizeFontFamily(style.fontFamily),
+      fontSizePx: clamp(numberOr(style.fontSizePx, 16), 6, 96),
       fontWeight: normalizeFontWeight(style.fontWeight),
       fontStyle: normalizeFontStyle(style.fontStyle),
+      color: style.color ? colorToHex(style.color) : "#111827",
       backgroundColor: style.backgroundColor || null,
       ...(style.tabWidthPx > 0 ? { tabWidthPx: style.tabWidthPx } : {}),
     };
@@ -854,8 +878,11 @@ function normalizeRichTextRuns(rawRuns) {
 }
 
 function richRunStylesEqual(first, second) {
-  return first.fontWeight === second.fontWeight
+  return first.fontFamily === second.fontFamily
+    && first.fontSizePx === second.fontSizePx
+    && first.fontWeight === second.fontWeight
     && first.fontStyle === second.fontStyle
+    && first.color === second.color
     && first.backgroundColor === second.backgroundColor
     && Number(first.tabWidthPx || 0) === Number(second.tabWidthPx || 0);
 }
@@ -944,28 +971,7 @@ function createSegmentElement(segment) {
   menuButton.setAttribute("aria-label", "Открыть меню сегмента");
   menuButton.textContent = "⋮";
 
-  const formattingActions = [
-    ["bold", "B", "Полужирный текст"],
-    ["italic", "I", "Курсив"],
-    ["align-left", "⇤", "Выровнять по левому краю"],
-    ["align-center", "≡", "Выровнять по центру"],
-    ["align-right", "⇥", "Выровнять по правому краю"],
-  ];
-  const formattingButtons = formattingActions.map(([action, label, title]) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `icat-segment__button icat-segment__format icat-segment__format--${action}`;
-    button.dataset.editorAction = action;
-    button.title = title;
-    button.setAttribute("aria-label", title);
-    button.setAttribute("aria-pressed", "false");
-    button.textContent = label;
-    if (action === "bold") button.style.fontWeight = "900";
-    if (action === "italic") button.style.fontStyle = "italic";
-    return button;
-  });
-
-  tools.append(dragButton, ...formattingButtons, menuButton);
+  tools.append(dragButton, menuButton);
 
   const content = document.createElement("div");
   content.className = "icat-segment__content";
@@ -989,7 +995,6 @@ function createSegmentElement(segment) {
   page.overlay.append(segmentElement);
   segment.element = segmentElement;
   renderSegmentPosition(segment);
-  updateEditorToolbarState(segment);
 
   segmentElement.addEventListener("pointerdown", () => {
     if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
@@ -997,6 +1002,7 @@ function createSegmentElement(segment) {
   content.addEventListener("focus", () => {
     beginTextEdit(segment);
     selectSegment(segment.id);
+    rememberActiveEditorSelection();
   });
   content.addEventListener("input", () => {
     syncSegmentTextFromEditor(segment, content);
@@ -1005,6 +1011,11 @@ function createSegmentElement(segment) {
     updateSummary();
   });
   content.addEventListener("blur", () => commitActiveTextEdit());
+  content.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    runEditorAction(segment, content, "insert-tab");
+  });
 
   menuButton.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1019,18 +1030,6 @@ function createSegmentElement(segment) {
     event.stopPropagation();
   });
 
-  for (const button of formattingButtons) {
-    button.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      runEditorAction(segment, content, button.dataset.editorAction);
-    });
-  }
-
   attachDragBehavior(segment, dragButton);
   attachResizeBehavior(segment, resizeHandle);
 }
@@ -1043,12 +1042,68 @@ function syncSegmentTextFromEditor(segment, content) {
     || normalizeEditableText(content.innerText);
 }
 
-function runEditorAction(segment, content, action) {
+function getSelectedEditorTarget() {
+  const segment = state.segments.find((candidate) => (
+    candidate.id === state.selectedId && !candidate.deleted
+  ));
+  const content = segment?.element?.querySelector(".icat-segment__content");
+  return segment && content ? { segment, content } : null;
+}
+
+function runSelectedEditorAction(action, value = null) {
+  const target = getSelectedEditorTarget();
+  if (!target) return;
+  restoreActiveEditorSelection(target.content, target.segment.id);
+  runEditorAction(target.segment, target.content, action, value);
+}
+
+function rememberActiveEditorSelection() {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  const node = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer.parentElement;
+  const content = node?.closest?.(".icat-segment__content");
+  const segmentElement = content?.closest(".icat-segment");
+  if (!content || !segmentElement) return;
+  state.savedEditorRange = {
+    segmentId: segmentElement.dataset.segmentId,
+    range: range.cloneRange(),
+  };
+}
+
+function restoreActiveEditorSelection(content, segmentId) {
+  const saved = state.savedEditorRange;
+  if (!saved || saved.segmentId !== segmentId) return false;
+  const commonNode = saved.range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+    ? saved.range.commonAncestorContainer
+    : saved.range.commonAncestorContainer.parentElement;
+  if (!commonNode?.isConnected || !content.contains(commonNode)) return false;
+  const selection = window.getSelection();
+  content.focus({ preventScroll: true });
+  selection.removeAllRanges();
+  selection.addRange(saved.range);
+  return true;
+}
+
+function runEditorAction(segment, content, action, value = null) {
   commitActiveTextEdit();
   const before = createHistorySnapshot();
   if (action === "bold" || action === "italic") {
     selectEditorTextIfNeeded(content);
     document.execCommand(action, false);
+    syncSegmentTextFromEditor(segment, content);
+    growSegmentToFit(segment, content);
+  } else if (action === "font-size") {
+    const fontSizePx = clamp(Number(value) * (96 / 72), 6, 96);
+    selectEditorTextIfNeeded(content);
+    applyEditorFontSize(content, fontSizePx);
+    syncSegmentTextFromEditor(segment, content);
+    growSegmentToFit(segment, content);
+  } else if (action === "insert-tab") {
+    ensureEditorCaret(content);
+    insertEditorTab(content, segment);
     syncSegmentTextFromEditor(segment, content);
     growSegmentToFit(segment, content);
   } else {
@@ -1064,12 +1119,16 @@ function runEditorAction(segment, content, action) {
   updateEditorToolbarState(segment);
   updateSummary();
   commitHistory(before, describeEditorAction(action));
-  if (document.activeElement === content) beginTextEdit(segment);
+  if (document.activeElement === content) {
+    rememberActiveEditorSelection();
+    beginTextEdit(segment);
+  }
 }
 
 function selectEditorTextIfNeeded(content) {
   const selection = window.getSelection();
   if (!selection) return;
+  restoreActiveEditorSelection(content, content.closest(".icat-segment")?.dataset.segmentId);
   const activeRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
   const insideEditor = activeRange && content.contains(
     activeRange.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
@@ -1084,20 +1143,73 @@ function selectEditorTextIfNeeded(content) {
   selection.addRange(range);
 }
 
+function ensureEditorCaret(content) {
+  const segmentId = content.closest(".icat-segment")?.dataset.segmentId;
+  if (restoreActiveEditorSelection(content, segmentId)) return;
+  const selection = window.getSelection();
+  content.focus({ preventScroll: true });
+  const range = document.createRange();
+  range.selectNodeContents(content);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function applyEditorFontSize(content, fontSizePx) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  const selectedContent = range.extractContents();
+  const wrapper = document.createElement("span");
+  wrapper.style.fontSize = `${fontSizePx}px`;
+  wrapper.append(selectedContent);
+  range.insertNode(wrapper);
+  range.selectNodeContents(wrapper);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function insertEditorTab(content, segment) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const tab = document.createElement("span");
+  tab.className = "icat-segment__run icat-segment__tab";
+  tab.style.width = `${Math.max(24, segment.style.fontSizePx * 4)}px`;
+  tab.textContent = "\t";
+  range.insertNode(tab);
+  range.setStartAfter(tab);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 function updateEditorToolbarState(segment) {
-  if (!segment.element) return;
-  const runs = segment.runs || [];
+  const activeSegment = segment && !segment.deleted ? segment : null;
+  const runs = activeSegment?.runs || [];
   const allBold = runs.length > 0 && runs.every((run) => Number(run.fontWeight) >= 600);
   const allItalic = runs.length > 0 && runs.every((run) => run.fontStyle === "italic");
   const states = {
     bold: allBold,
     italic: allItalic,
-    "align-left": segment.style.textAlign === "left",
-    "align-center": segment.style.textAlign === "center",
-    "align-right": segment.style.textAlign === "right",
+    "align-left": activeSegment?.style.textAlign === "left",
+    "align-center": activeSegment?.style.textAlign === "center",
+    "align-right": activeSegment?.style.textAlign === "right",
   };
-  for (const button of segment.element.querySelectorAll("[data-editor-action]")) {
+  elements.editorToolbar.setAttribute("aria-disabled", String(!activeSegment));
+  for (const button of elements.editorActionButtons) {
+    button.disabled = !activeSegment;
     button.setAttribute("aria-pressed", String(Boolean(states[button.dataset.editorAction])));
+  }
+  elements.editorFontSize.disabled = !activeSegment;
+  if (activeSegment) {
+    const representativeSize = numberOr(runs[0]?.fontSizePx, activeSegment.style.fontSizePx);
+    const points = Math.round(representativeSize * 0.75);
+    const closest = Array.from(elements.editorFontSize.options).reduce((best, option) => (
+      Math.abs(Number(option.value) - points) < Math.abs(Number(best.value) - points) ? option : best
+    ));
+    elements.editorFontSize.value = closest.value;
   }
 }
 
@@ -1108,6 +1220,8 @@ function describeEditorAction(action) {
     "align-left": "выравнивание текста по левому краю",
     "align-center": "выравнивание текста по центру",
     "align-right": "выравнивание текста по правому краю",
+    "font-size": "изменение размера шрифта",
+    "insert-tab": "вставка табуляции",
   }[action] || "форматирование текста";
 }
 
@@ -1243,11 +1357,14 @@ function pointInsideRectangle(x, y, rectangle) {
 }
 
 function surfacePointFromCoordinates(surface, clientX, clientY) {
-  const rectangle = surface.rectangle;
-  return {
-    x: clamp((clientX - rectangle.left) / state.viewScale, 0, surface.width),
-    y: clamp((clientY - rectangle.top) / state.viewScale, 0, surface.height),
-  };
+  return window.ICATLayout.surfacePointFromCoordinates(
+    surface.rectangle,
+    clientX,
+    clientY,
+    state.viewScale,
+    surface.width,
+    surface.height,
+  );
 }
 
 function showDropTarget(surface) {
@@ -1296,6 +1413,8 @@ function attachDragBehavior(segment, handle) {
     const pointerOffset = { x: startPoint.x - segment.x, y: startPoint.y - segment.y };
     let activeSurface = sourceSurface;
     let pendingPoint = null;
+    let lastPointer = { clientX: event.clientX, clientY: event.clientY };
+    let surfacesDirty = false;
     let animationFrame = null;
     for (const item of origins) item.segment.element.classList.add("is-dragging");
 
@@ -1350,6 +1469,10 @@ function attachDragBehavior(segment, handle) {
     const flushMove = () => {
       animationFrame = null;
       if (!pendingPoint) return;
+      if (surfacesDirty) {
+        dropSurfaces = measureDropSurfaces();
+        surfacesDirty = false;
+      }
       const pointEvent = pendingPoint;
       pendingPoint = null;
       applyMove(pointEvent);
@@ -1357,7 +1480,14 @@ function attachDragBehavior(segment, handle) {
 
     const move = (moveEvent) => {
       if (moveEvent.pointerId !== event.pointerId) return;
-      pendingPoint = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
+      lastPointer = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
+      pendingPoint = lastPointer;
+      if (animationFrame === null) animationFrame = requestAnimationFrame(flushMove);
+    };
+
+    const refreshDragAfterScroll = () => {
+      surfacesDirty = true;
+      pendingPoint = lastPointer;
       if (animationFrame === null) animationFrame = requestAnimationFrame(flushMove);
     };
 
@@ -1374,6 +1504,8 @@ function attachDragBehavior(segment, handle) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
+      window.removeEventListener("scroll", refreshDragAfterScroll, true);
+      elements.workspace.removeEventListener("scroll", refreshDragAfterScroll);
       updateSummary();
       syncParkingSurfaceHeight();
       const label = activeSurface.kind === "parking"
@@ -1390,6 +1522,8 @@ function attachDragBehavior(segment, handle) {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
+    window.addEventListener("scroll", refreshDragAfterScroll, true);
+    elements.workspace.addEventListener("scroll", refreshDragAfterScroll, { passive: true });
   });
 }
 
@@ -1503,6 +1637,9 @@ function selectSegments(segmentIds, primaryId = null) {
   for (const segment of state.segments) {
     segment.element?.classList.toggle("is-selected", activeIds.has(segment.id));
   }
+  updateEditorToolbarState(
+    state.segments.find((segment) => segment.id === state.selectedId && !segment.deleted) || null,
+  );
   updateSelectedDetails();
 }
 
@@ -1974,7 +2111,6 @@ function restoreHistorySnapshot(snapshot) {
       const surface = getSegmentSurface(segment);
       surface?.overlay.append(segment.element);
       renderSegmentPosition(segment);
-      updateEditorToolbarState(segment);
     }
 
     selectSegments(snapshot.selectedIds, snapshot.selectedId);
@@ -2058,15 +2194,21 @@ function renderSegmentText(content, segment) {
     ? segment.runs
     : [{
       text: segment.text,
+      fontFamily: segment.style.fontFamily,
+      fontSizePx: segment.style.fontSizePx,
       fontWeight: segment.style.fontWeight,
       fontStyle: segment.style.fontStyle,
+      color: segment.style.color,
       backgroundColor: null,
     }];
   for (const run of runs) {
     const runElement = document.createElement("span");
     runElement.className = "icat-segment__run";
+    runElement.style.fontFamily = normalizeFontFamily(run.fontFamily || segment.style.fontFamily);
+    runElement.style.fontSize = `${clamp(numberOr(run.fontSizePx, segment.style.fontSizePx), 6, 96)}px`;
     runElement.style.fontWeight = String(normalizeFontWeight(run.fontWeight));
     runElement.style.fontStyle = normalizeFontStyle(run.fontStyle);
+    runElement.style.color = run.color || segment.style.color;
     if (run.backgroundColor) runElement.style.backgroundColor = run.backgroundColor;
     if (run.text === "\t" && Number(run.tabWidthPx) > 0) {
       runElement.classList.add("icat-segment__tab");

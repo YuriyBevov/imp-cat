@@ -32,8 +32,29 @@ test('keeps text outside floating SVG figures in the same Word paragraph', () =>
   assert.equal(mixed.styleElement.id, 'title')
   assert.deepEqual(mixed.rect, rectangle(120, 80, 220, 36))
   assert.deepEqual(mixed.sourceElements.map(element => element.id), ['title'])
-  assert.equal(candidates.filter(candidate => candidate.kind === 'shape').length, 1)
+  assert.equal(candidates.filter(candidate => candidate.kind === 'shape-text').length, 1)
   assert.equal(candidates.filter(candidate => candidate.kind === 'paragraph').length, 1)
+})
+
+test('keeps every floating Word text fragment as an independent positioned candidate', () => {
+  const dom = new JSDOM(`
+    <section id="page"><article><p>
+      <svg id="stamp"><foreignObject>
+        <p id="stamp-number"><strong>/Штамп: № 18871/</strong></p>
+        <p id="stamp-date"><em>/Штамп: 25 августа 2023 года/</em></p>
+      </foreignObject></svg>
+    </p></article></section>
+  `)
+  const document = dom.window.document
+  const candidates = segmentation.collectTextCandidates(document.querySelector('#page'), normalizeText)
+    .filter(candidate => candidate.kind === 'shape-text')
+
+  assert.equal(candidates.length, 2)
+  assert.deepEqual(candidates.map(candidate => candidate.element.id), ['stamp-number', 'stamp-date'])
+  assert.ok(candidates.every(candidate => candidate.shape.id === 'stamp'))
+  assert.deepEqual(candidates.map(candidate => candidate.sourceElements[0].id), [
+    'stamp-number', 'stamp-date',
+  ])
 })
 
 test('combines multiple outside runs but excludes text rendered inside SVG', () => {

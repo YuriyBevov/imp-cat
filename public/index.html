@@ -88,6 +88,40 @@
           </dl>
         </section>
 
+        <section class="inspector__section">
+          <p class="eyebrow">Редактор текста</p>
+          <div id="editor-toolbar" class="editor-toolbar" aria-disabled="true">
+            <div class="editor-toolbar__row" role="toolbar" aria-label="Форматирование текста">
+              <button type="button" data-editor-action="bold" aria-label="Полужирный текст" title="Полужирный текст"><strong>B</strong></button>
+              <button type="button" data-editor-action="italic" aria-label="Курсив" title="Курсив"><em>I</em></button>
+              <button type="button" data-editor-action="align-left" aria-label="Выровнять по левому краю" title="По левому краю">⇤</button>
+              <button type="button" data-editor-action="align-center" aria-label="Выровнять по центру" title="По центру">≡</button>
+              <button type="button" data-editor-action="align-right" aria-label="Выровнять по правому краю" title="По правому краю">⇥</button>
+              <button type="button" data-editor-action="insert-tab" aria-label="Вставить табуляцию" title="Вставить табуляцию">Tab ↹</button>
+            </div>
+            <label class="editor-toolbar__size" for="editor-font-size">
+              <span>Размер шрифта</span>
+              <select id="editor-font-size">
+                <option value="8">8 pt</option>
+                <option value="9">9 pt</option>
+                <option value="10">10 pt</option>
+                <option value="11">11 pt</option>
+                <option value="12" selected>12 pt</option>
+                <option value="14">14 pt</option>
+                <option value="16">16 pt</option>
+                <option value="18">18 pt</option>
+                <option value="20">20 pt</option>
+                <option value="24">24 pt</option>
+                <option value="28">28 pt</option>
+                <option value="32">32 pt</option>
+                <option value="36">36 pt</option>
+                <option value="48">48 pt</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint">Выберите сегмент, затем выделите текст внутри него. Если выделения нет, форматирование применяется ко всему сегменту.</p>
+        </section>
+
         <section class="inspector__section inspector__section--note">
           <p class="eyebrow">Границы прототипа</p>
           <p>Зелёная рамка показывает текстовую область между полями Word, а внешний край листа — фактическую границу экспорта. Плавающие штампы могут находиться в полях и не обрезаются.</p>

@@ -221,6 +221,68 @@ button {
   line-height: 1.55;
 }
 
+.editor-toolbar {
+  margin-top: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dbe3f0;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.editor-toolbar[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+.editor-toolbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.editor-toolbar__row button {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #d5dcea;
+  border-radius: 7px;
+  color: #334155;
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.editor-toolbar__row button[aria-pressed="true"] {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.editor-toolbar__row button:disabled,
+.editor-toolbar__size select:disabled {
+  cursor: not-allowed;
+}
+
+.editor-toolbar__size {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.editor-toolbar__size select {
+  min-width: 92px;
+  padding: 7px 28px 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: white;
+}
+
 .grid-scale {
   margin-top: 14px;
   display: flex;
@@ -729,12 +791,6 @@ button {
 
 .icat-segment__tools.is-inside {
   top: 2px;
-}
-
-.icat-segment__format[aria-pressed="true"] {
-  border-color: #2563eb;
-  color: #1d4ed8;
-  background: #dbeafe;
 }
 
 .icat-segment:hover .icat-segment__tools,

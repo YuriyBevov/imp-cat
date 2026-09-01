@@ -101,7 +101,9 @@ def configure_section(section, page: dict) -> None:
 def create_run_properties(segment: dict, run_style: dict | None = None) -> etree._Element:
     run_style = run_style or {}
     properties = element("w", "rPr")
-    font_name = INVALID_XML_CHARS.sub("", str(segment.get("fontFamily") or "Arial"))[:200]
+    font_name = INVALID_XML_CHARS.sub(
+        "", str(run_style.get("fontFamily") or segment.get("fontFamily") or "Arial")
+    )[:200]
     fonts = element("w", "rFonts")
     for attribute in ("ascii", "hAnsi", "eastAsia", "cs"):
         word_attr(fonts, attribute, font_name)
@@ -115,7 +117,10 @@ def create_run_properties(segment: dict, run_style: dict | None = None) -> etree
         properties.append(element("w", "i"))
         properties.append(element("w", "iCs"))
 
-    half_points = max(2, round(float(segment["fontSizePx"]) * 1.5))
+    half_points = max(
+        2,
+        round(float(run_style.get("fontSizePx", segment["fontSizePx"])) * 1.5),
+    )
     size = element("w", "sz")
     word_attr(size, "val", half_points)
     complex_size = element("w", "szCs")
@@ -123,7 +128,11 @@ def create_run_properties(segment: dict, run_style: dict | None = None) -> etree
     properties.extend((size, complex_size))
 
     color = element("w", "color")
-    word_attr(color, "val", str(segment.get("color", "#111827")).lstrip("#").upper())
+    word_attr(
+        color,
+        "val",
+        str(run_style.get("color") or segment.get("color", "#111827")).lstrip("#").upper(),
+    )
     properties.append(color)
     background_color = run_style.get("backgroundColor")
     if isinstance(background_color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", background_color):

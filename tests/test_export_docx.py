@@ -20,7 +20,8 @@ class ExportDocxTests(unittest.TestCase):
                 "alignment": "left", "zIndex": 1,
                 "runs": [
                     {"text": "/Подпись/\t", "fontWeight": 400, "fontStyle": "italic"},
-                    {"text": "/Печать/", "fontWeight": 700, "fontStyle": "italic",
+                    {"text": "/Печать/", "fontFamily": "Arial", "fontSizePx": 20,
+                     "fontWeight": 700, "fontStyle": "italic", "color": "#224466",
                      "backgroundColor": "#FFFF00"},
                 ],
             }],
@@ -45,6 +46,21 @@ class ExportDocxTests(unittest.TestCase):
         self.assertEqual(
             text_box.xpath(".//*[local-name()='rPr']/*[local-name()='shd']/@*[local-name()='fill']"),
             ["FFFF00"],
+        )
+        styled_run = text_box.xpath(
+            ".//*[local-name()='r'][./*[local-name()='t' and text()='/Печать/']]"
+        )[0]
+        self.assertEqual(
+            styled_run.xpath("./*[local-name()='rPr']/*[local-name()='rFonts']/@*[local-name()='ascii']"),
+            ["Arial"],
+        )
+        self.assertEqual(
+            styled_run.xpath("./*[local-name()='rPr']/*[local-name()='sz']/@*[local-name()='val']"),
+            ["30"],
+        )
+        self.assertEqual(
+            styled_run.xpath("./*[local-name()='rPr']/*[local-name()='color']/@*[local-name()='val']"),
+            ["224466"],
         )
 
     def test_css_justify_is_exported_as_word_both_alignment(self):

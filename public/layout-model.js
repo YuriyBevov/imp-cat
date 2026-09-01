@@ -12,6 +12,14 @@
     return Number(screenDelta) / scale;
   }
 
+  function surfacePointFromCoordinates(rectangle, clientX, clientY, viewScale, width, height) {
+    const scale = clamp(Number(viewScale) || 1, 0.25, 2.5);
+    return {
+      x: clamp(((Number(clientX) || 0) - (Number(rectangle?.left) || 0)) / scale, 0, width),
+      y: clamp(((Number(clientY) || 0) - (Number(rectangle?.top) || 0)) / scale, 0, height),
+    };
+  }
+
   function captureZoomAnchor(rectangle, clientX, clientY) {
     const width = Math.max(1, Number(rectangle?.width) || 1);
     const height = Math.max(1, Number(rectangle?.height) || 1);
@@ -339,5 +347,6 @@
     remapPageIndexAfterRemoval,
     resolveVerticalOverlaps,
     screenDeltaToDocument,
+    surfacePointFromCoordinates,
   };
 });

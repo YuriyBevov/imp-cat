@@ -57,7 +57,10 @@ test('preserves validated rich text runs and falls back when their text diverges
       style: { fontWeight: 400, fontStyle: 'normal' },
       runs: [
         { text: 'Обычный\t', fontWeight: 400 },
-        { text: 'жирный', fontWeight: 700, fontStyle: 'italic', backgroundColor: '#ffff00' },
+        {
+          text: 'жирный', fontFamily: 'Times New Roman', fontSizePx: 20,
+          fontWeight: 700, fontStyle: 'italic', color: '#334455', backgroundColor: '#ffff00',
+        },
       ],
     }, {
       id: 'fallback', pageIndex: 0, text: 'Актуальный текст',
@@ -68,8 +71,12 @@ test('preserves validated rich text runs and falls back when their text diverges
   assert.equal(payload.segments[0].runs.length, 2)
   assert.equal(payload.segments[0].runs[1].fontWeight, 700)
   assert.equal(payload.segments[0].runs[1].fontStyle, 'italic')
+  assert.equal(payload.segments[0].runs[1].fontFamily, 'Times New Roman')
+  assert.equal(payload.segments[0].runs[1].fontSizePx, 20)
+  assert.equal(payload.segments[0].runs[1].color, '#334455')
   assert.equal(payload.segments[0].runs[1].backgroundColor, '#ffff00')
   assert.deepEqual(payload.segments[1].runs, [{
-    text: 'Актуальный текст', fontWeight: 400, fontStyle: 'normal', backgroundColor: null,
+    text: 'Актуальный текст', fontFamily: 'Arial', fontSizePx: 16,
+    fontWeight: 400, fontStyle: 'normal', color: '#111827', backgroundColor: null,
   }])
 })

@@ -20,6 +20,24 @@
     };
   }
 
+  function floatingShapeTextCandidates(shape) {
+    const paragraphs = Array.from(shape.querySelectorAll("p"))
+      .filter((paragraph) => {
+        const ancestorParagraph = paragraph.parentElement?.closest("p");
+        return !ancestorParagraph || !shape.contains(ancestorParagraph);
+      });
+    const roots = paragraphs.length
+      ? paragraphs
+      : Array.from(shape.querySelectorAll("text"))
+        .filter((textElement) => !textElement.parentElement?.closest("text"));
+
+    return roots.map((root) => ({
+      ...elementCandidate(root, "shape-text"),
+      shape,
+      styleElement: root.querySelector?.("span") || root,
+    }));
+  }
+
   function collectTextNodesOutside(container, excludedSelector = "svg") {
     const walker = container.ownerDocument.createTreeWalker(container, TEXT_NODE);
     const nodes = [];
@@ -94,7 +112,7 @@
       for (const shape of scope.querySelectorAll("svg")) {
         if (!shape.parentElement?.closest("svg") && shape.querySelector("p, text") && !seen.has(shape)) {
           seen.add(shape);
-          candidates.push(elementCandidate(shape, "shape"));
+          candidates.push(...floatingShapeTextCandidates(shape));
         }
       }
     }
@@ -170,6 +188,7 @@
     collectTextCandidates,
     collectTextNodesOutside,
     collectStyledTextRuns,
+    floatingShapeTextCandidates,
     isTabStopElement,
     mixedParagraphCandidate,
     rectangleFromTextNodes,
