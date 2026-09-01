@@ -49,6 +49,19 @@ class ExportDocxTests(unittest.TestCase):
             ".//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
         )
         self.assertEqual(len(shapes), 2)
+        shape_types = document.element.body.xpath(
+            ".//*[local-name()='shapetype' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+        )
+        self.assertEqual(len(shape_types), 1)
+        shape_ids = [shape.get("{urn:schemas-microsoft-com:office:office}spid") for shape in shapes]
+        self.assertEqual(len(shape_ids), len(set(shape_ids)))
+        shape_defaults = document.settings.element.xpath(
+            ".//*[local-name()='shapedefaults' and namespace-uri()='urn:schemas-microsoft-com:office:office']"
+        )
+        self.assertGreater(
+            max(int(node.get("spidmax", 0)) for node in shape_defaults),
+            max(int(shape_id.rsplit("s", 1)[-1]) for shape_id in shape_ids),
+        )
         self.assertIn("margin-left:24pt", shapes[0].get("style"))
         self.assertIn("margin-top:36pt", shapes[0].get("style"))
         self.assertIn("width:225pt", shapes[0].get("style"))
@@ -96,6 +109,12 @@ class ExportDocxTests(unittest.TestCase):
         )
         self.assertEqual(len(document.element.body.xpath(".//wp:anchor")), 0)
         self.assertEqual(len(vml_shapes), 240)
+        self.assertEqual(len(document.element.body.xpath(
+            ".//*[local-name()='shapetype' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+        )), 1)
+        self.assertEqual(len({
+            shape.get("{urn:schemas-microsoft-com:office:office}spid") for shape in vml_shapes
+        }), 240)
         self.assertEqual(len(document.element.body.xpath(".//w:framePr")), 0)
         self.assertEqual(len(document.element.body.xpath("./w:p")), 3)
 

@@ -40,6 +40,30 @@
     return smallerArea > 0 ? intersectionArea / smallerArea : 0;
   }
 
+  function rectanglesIntersect(firstRectangle, secondRectangle) {
+    const first = normalizeRectangle(firstRectangle);
+    const second = normalizeRectangle(secondRectangle);
+    return first.left < second.right
+      && first.right > second.left
+      && first.top < second.bottom
+      && first.bottom > second.top;
+  }
+
+  function clampGroupDelta(rectangles, deltaX, deltaY, pageWidth, pageHeight) {
+    if (!rectangles.length) return { x: 0, y: 0 };
+    const normalized = rectangles.map(normalizeRectangle);
+    const bounds = {
+      left: Math.min(...normalized.map((rectangle) => rectangle.left)),
+      top: Math.min(...normalized.map((rectangle) => rectangle.top)),
+      right: Math.max(...normalized.map((rectangle) => rectangle.right)),
+      bottom: Math.max(...normalized.map((rectangle) => rectangle.bottom)),
+    };
+    return {
+      x: clamp(Number(deltaX) || 0, -bounds.left, Math.max(0, Number(pageWidth) || 0) - bounds.right),
+      y: clamp(Number(deltaY) || 0, -bounds.top, Math.max(0, Number(pageHeight) || 0) - bounds.bottom),
+    };
+  }
+
   function findSegmentOverlaps(segments, minimumRatio = 0.12) {
     const overlaps = [];
     for (let firstIndex = 0; firstIndex < segments.length; firstIndex += 1) {
@@ -139,11 +163,13 @@
 
   return {
     MAX_WORD_PAGE_SIZE,
+    clampGroupDelta,
     findSegmentOverlaps,
     getWorkspacePageHeight,
     paginatePages,
     placeSegment,
     rectangleOverlapRatio,
+    rectanglesIntersect,
     resolveVerticalOverlaps,
     screenDeltaToDocument,
   };

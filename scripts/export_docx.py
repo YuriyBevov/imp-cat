@@ -7,9 +7,11 @@ import json
 import re
 import sys
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile
 
 from docx import Document
 from docx.enum.section import WD_SECTION
+from docx.oxml.ns import qn
 from docx.shared import Twips
 from lxml import etree
 
@@ -136,23 +138,28 @@ def create_text_box_paragraph(segment: dict) -> etree._Element:
     return paragraph
 
 
-def create_vml_text_box(segment: dict, shape_id: int) -> etree._Element:
+def create_vml_text_box(
+    segment: dict,
+    shape_id: int,
+    include_shape_type: bool = False,
+) -> etree._Element:
     pict = element("w", "pict")
-    shape_type = element(
-        "v",
-        "shapetype",
-        {
-            "id": "_x0000_t202",
-            "coordsize": "21600,21600",
-            "path": "m,l,21600r21600,l21600,xe",
-        },
-    )
-    namespaced_attr(shape_type, "o", "spt", 202)
-    shape_type.append(element("v", "stroke", {"joinstyle": "miter"}))
-    shape_path = element("v", "path", {"gradientshapeok": "t"})
-    namespaced_attr(shape_path, "o", "connecttype", "rect")
-    shape_type.append(shape_path)
-    pict.append(shape_type)
+    if include_shape_type:
+        shape_type = element(
+            "v",
+            "shapetype",
+            {
+                "id": "_x0000_t202",
+                "coordsize": "21600,21600",
+                "path": "m,l,21600r21600,l21600,xe",
+            },
+        )
+        namespaced_attr(shape_type, "o", "spt", 202)
+        shape_type.append(element("v", "stroke", {"joinstyle": "miter"}))
+        shape_path = element("v", "path", {"gradientshapeok": "t"})
+        namespaced_attr(shape_path, "o", "connecttype", "rect")
+        shape_type.append(shape_path)
+        pict.append(shape_type)
 
     points = lambda value: f"{float(value) * 0.75:.3f}".rstrip("0").rstrip(".")
     style = ";".join(
@@ -167,11 +174,19 @@ def create_vml_text_box(segment: dict, shape_id: int) -> etree._Element:
             f"height:{points(segment['height'])}pt",
             f"z-index:{BASE_RELATIVE_HEIGHT + int(segment.get('zIndex', shape_id))}",
             "visibility:visible",
-            "mso-wrap-style:none",
+            "mso-wrap-style:square",
+            "mso-width-percent:0",
+            "mso-height-percent:0",
+            "mso-wrap-distance-left:0",
+            "mso-wrap-distance-top:0",
+            "mso-wrap-distance-right:0",
+            "mso-wrap-distance-bottom:0",
             "mso-position-horizontal:absolute",
             "mso-position-horizontal-relative:page",
             "mso-position-vertical:absolute",
             "mso-position-vertical-relative:page",
+            "mso-width-relative:page",
+            "mso-height-relative:page",
             "v-text-anchor:top",
         )
     )
@@ -188,6 +203,7 @@ def create_vml_text_box(segment: dict, shape_id: int) -> etree._Element:
     )
     namespaced_attr(shape, "o", "spid", f"_x0000_s{1024 + shape_id}")
     namespaced_attr(shape, "o", "allowoverlap", "t")
+    namespaced_attr(shape, "o", "allowincell", "f")
     text_box = element("v", "textbox", {"inset": "0,0,0,0"})
     text_box_content = element("w", "txbxContent")
     text_box_content.append(create_text_box_paragraph(segment))
@@ -316,14 +332,18 @@ def create_drawingml_text_box(segment: dict, shape_id: int) -> etree._Element:
     return alternate_content
 
 
-def create_text_box_drawing(segment: dict, shape_id: int) -> etree._Element:
+def create_text_box_drawing(
+    segment: dict,
+    shape_id: int,
+    include_shape_type: bool = False,
+) -> etree._Element:
     """Use Transitional VML directly for maximum desktop Word compatibility.
 
     The DrawingML implementation is retained above for a later opt-in mode, but
     the prototype exporter intentionally avoids Office-version-specific WPS
     markup after Word rejected dense documents containing many WPS shapes.
     """
-    return create_vml_text_box(segment, shape_id)
+    return create_vml_text_box(segment, shape_id, include_shape_type)
 
 
 def add_page_anchor(document: Document, segments: list[dict], first_shape_id: int) -> int:
@@ -339,10 +359,82 @@ def add_page_anchor(document: Document, segments: list[dict], first_shape_id: in
     shape_id = first_shape_id
     for segment in segments:
         run = element("w", "r")
-        run.append(create_text_box_drawing(segment, shape_id))
+        run_properties = element("w", "rPr")
+        run_properties.append(element("w", "noProof"))
+        run_size = element("w", "sz")
+        word_attr(run_size, "val", 2)
+        run_properties.append(run_size)
+        run.append(run_properties)
+        run.append(create_text_box_drawing(segment, shape_id, include_shape_type=shape_id == 1))
         paragraph._p.append(run)
         shape_id += 1
     return shape_id
+
+
+def configure_vml_settings(document: Document, segment_count: int) -> None:
+    """Keep Word's declared VML ID range above every generated text box."""
+    settings = document.settings.element
+    shape_defaults = settings.find(qn("w:shapeDefaults"))
+    if shape_defaults is None:
+        shape_defaults = element("w", "shapeDefaults")
+        settings.append(shape_defaults)
+
+    vml_defaults = shape_defaults.find(f"{{{NS['o']}}}shapedefaults")
+    if vml_defaults is None:
+        vml_defaults = element("o", "shapedefaults")
+        namespaced_attr(vml_defaults, "v", "ext", "edit")
+        shape_defaults.insert(0, vml_defaults)
+    vml_defaults.set("spidmax", str(max(1027, 1025 + segment_count)))
+
+    for compatibility_setting in settings.xpath("./w:compat/w:compatSetting"):
+        if compatibility_setting.get(qn("w:name")) == "compatibilityMode":
+            compatibility_setting.set(qn("w:val"), "15")
+
+
+def validate_export(output_path: Path, expected_pages: int, expected_segments: int) -> None:
+    """Fail the HTTP export before download if the package violates Word/VML invariants."""
+    try:
+        with ZipFile(output_path) as archive:
+            if archive.testzip() is not None:
+                raise ValueError("DOCX contains a damaged ZIP entry")
+            required_parts = {"[Content_Types].xml", "word/document.xml", "word/settings.xml"}
+            missing_parts = required_parts.difference(archive.namelist())
+            if missing_parts:
+                raise ValueError(f"DOCX is missing required parts: {sorted(missing_parts)}")
+            for member in archive.namelist():
+                if member.endswith((".xml", ".rels")):
+                    etree.fromstring(archive.read(member))
+    except BadZipFile as error:
+        raise ValueError("DOCX is not a valid ZIP package") from error
+
+    reopened = Document(output_path)
+    if len(reopened.sections) != expected_pages:
+        raise ValueError("DOCX page-section count does not match the layout")
+
+    shapes = reopened.element.body.xpath(
+        ".//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+    )
+    if len(shapes) != expected_segments:
+        raise ValueError("DOCX VML shape count does not match the segment count")
+    shape_types = reopened.element.body.xpath(
+        ".//*[local-name()='shapetype' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+    )
+    if expected_segments and len(shape_types) != 1:
+        raise ValueError("DOCX must define the VML text-box shape type exactly once")
+
+    shape_ids = [shape.get(f"{{{NS['o']}}}spid") for shape in shapes]
+    if any(not shape_id for shape_id in shape_ids) or len(set(shape_ids)) != len(shape_ids):
+        raise ValueError("DOCX contains missing or duplicate VML shape IDs")
+    maximum_shape_id = max(
+        (int(shape_id.rsplit("s", 1)[-1]) for shape_id in shape_ids),
+        default=0,
+    )
+    shape_defaults = reopened.settings.element.xpath(
+        ".//*[local-name()='shapedefaults' and namespace-uri()='urn:schemas-microsoft-com:office:office']"
+    )
+    declared_maximum = max((int(node.get("spidmax", 0)) for node in shape_defaults), default=0)
+    if maximum_shape_id >= declared_maximum:
+        raise ValueError("DOCX VML spidmax is lower than an emitted shape ID")
 
 
 def export_layout(payload: dict, output_path: Path) -> None:
@@ -364,7 +456,9 @@ def export_layout(payload: dict, output_path: Path) -> None:
         configure_section(section, page)
         next_shape_id = add_page_anchor(document, grouped_segments[page["index"]], next_shape_id)
 
+    configure_vml_settings(document, len(payload["segments"]))
     document.save(output_path)
+    validate_export(output_path, len(pages), len(payload["segments"]))
 
 
 def main() -> None:

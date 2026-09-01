@@ -69,7 +69,7 @@
             <button id="zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
           </div>
           <button id="fit-width" class="button button--panel" type="button">По ширине поля</button>
-          <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Зум не меняет координаты экспорта.</p>
+          <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Cmd/Ctrl + колесо меняет зум под курсором и не влияет на экспорт.</p>
 
           <label class="grid-scale" for="workspace-height-scale">
             <span>Высота рабочего поля</span>
@@ -85,22 +85,26 @@
           <p id="workspace-height-hint" class="hint">Добавляет реальное свободное место снизу страницы. При экспорте увеличенное поле делится на обычные страницы Word.</p>
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
           <p class="hint">Команда сдвигает пересекающиеся сегменты только вниз и при необходимости расширяет поле. Исходное положение можно вернуть через меню сегмента.</p>
+          <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите ⠿ у любого выбранного сегмента.</p>
         </section>
 
         <section class="inspector__section">
-          <p class="eyebrow">Выбранный сегмент</p>
-          <div id="selection-empty" class="empty-selection">Нажмите на рамку сегмента.</div>
+          <p class="eyebrow">Выделение</p>
+          <div id="selection-empty" class="empty-selection">Нажмите сегмент или протяните рамку по свободной области.</div>
           <dl id="selection-details" class="selection-details" hidden>
+            <div><dt>Выбрано</dt><dd id="selection-count">—</dd></div>
             <div><dt>ID</dt><dd id="selection-id">—</dd></div>
             <div><dt>Страница</dt><dd id="selection-page">—</dd></div>
             <div><dt>Ячейка</dt><dd id="selection-cell">—</dd></div>
             <div><dt>Координаты</dt><dd id="selection-position">—</dd></div>
             <div><dt>Размер</dt><dd id="selection-size">—</dd></div>
+            <div><dt>Область</dt><dd id="selection-area">—</dd></div>
           </dl>
         </section>
 
         <section class="inspector__section inspector__section--note">
           <p class="eyebrow">Границы прототипа</p>
+          <p>Зелёная рамка показывает текстовую область между полями Word, а внешний край листа — фактическую границу экспорта. Плавающие штампы могут находиться в полях и не обрезаются.</p>
           <p>Экспортирует редактируемые текстовые блоки с координатами. Изображения, формулы и сложные Word-объекты пока остаются только в превью.</p>
         </section>
       </aside>

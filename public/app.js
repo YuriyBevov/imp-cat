@@ -8,6 +8,7 @@ const state = {
   pages: [],
   segments: [],
   selectedId: null,
+  selectedIds: new Set(),
   gridSize: DEFAULT_GRID_SIZE,
   gridVisible: true,
   viewScale: 1,
@@ -50,6 +51,8 @@ const elements = {
   selectionCell: document.querySelector("#selection-cell"),
   selectionPosition: document.querySelector("#selection-position"),
   selectionSize: document.querySelector("#selection-size"),
+  selectionCount: document.querySelector("#selection-count"),
+  selectionArea: document.querySelector("#selection-area"),
   toast: document.querySelector("#toast"),
 };
 
@@ -74,6 +77,7 @@ elements.resolveOverlaps.addEventListener("click", resolveSegmentOverlaps);
 elements.workspaceHeightScale.addEventListener("change", () => {
   setWorkspaceHeightScale(Number(elements.workspaceHeightScale.value));
 });
+elements.workspace.addEventListener("wheel", handleWorkspaceZoom, { passive: false });
 window.addEventListener("resize", () => {
   if (state.viewMode === "fit" && state.pages.length) requestAnimationFrame(fitDocumentWidth);
 });
@@ -179,6 +183,7 @@ function clearDocument() {
   state.pages = [];
   state.segments = [];
   state.selectedId = null;
+  state.selectedIds = new Set();
   state.viewMode = "fit";
   elements.documentStage.hidden = true;
   elements.dropZone.hidden = false;
@@ -208,13 +213,16 @@ function extractDocumentModel() {
     const contentBoundary = document.createElement("div");
     contentBoundary.className = "icat-content-boundary";
     contentBoundary.setAttribute("aria-hidden", "true");
+    const pageBreakLayer = document.createElement("div");
+    pageBreakLayer.className = "icat-page-break-layer";
+    pageBreakLayer.setAttribute("aria-hidden", "true");
     const overlay = document.createElement("div");
     overlay.className = "icat-overlay-layer";
     overlay.setAttribute("aria-label", `Редактируемый слой страницы ${pageIndex + 1}`);
     pageElement.dataset.pageIndex = String(pageIndex);
-    pageElement.append(contentBoundary, overlay);
+    pageElement.append(contentBoundary, pageBreakLayer, overlay);
 
-    return {
+    const page = {
       id: `page-${pageIndex + 1}`,
       pageIndex,
       width,
@@ -223,9 +231,12 @@ function extractDocumentModel() {
       nominalHeight,
       contentBounds,
       contentBoundary,
+      pageBreakLayer,
       element: pageElement,
       overlay,
     };
+    pageElement.addEventListener("pointerdown", (event) => beginMarqueeSelection(page, event));
+    return page;
   });
 
   for (const page of state.pages) {
@@ -497,7 +508,8 @@ function runSegmentAction(segment, action) {
   } else if (action === "delete") {
     segment.deleted = true;
     segment.element.remove();
-    if (state.selectedId === segment.id) state.selectedId = null;
+    const remainingSelection = [...state.selectedIds].filter((segmentId) => segmentId !== segment.id);
+    selectSegments(remainingSelection);
     updateSummary();
     showToast("Сегмент удалён из результата");
   }
@@ -525,13 +537,25 @@ function attachDragBehavior(segment, handle) {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    selectSegment(segment.id);
+    if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
     closeAllMenus();
 
     const page = state.pages[segment.pageIndex];
+    const selectedSegments = state.segments.filter(
+      (candidate) => !candidate.deleted
+        && candidate.pageIndex === segment.pageIndex
+        && state.selectedIds.has(candidate.id),
+    );
+    const origins = selectedSegments.map((candidate) => ({
+      segment: candidate,
+      x: candidate.x,
+      y: candidate.y,
+      width: candidate.width,
+      height: candidate.height,
+    }));
     const origin = { clientX: event.clientX, clientY: event.clientY, x: segment.x, y: segment.y };
     handle.setPointerCapture(event.pointerId);
-    segment.element.classList.add("is-dragging");
+    for (const item of origins) item.segment.element.classList.add("is-dragging");
 
     const move = (moveEvent) => {
       const deltaX = window.ICATLayout.screenDeltaToDocument(
@@ -542,26 +566,30 @@ function attachDragBehavior(segment, handle) {
         moveEvent.clientY - origin.clientY,
         state.viewScale,
       );
-      segment.x = clamp(
-        snap(origin.x + deltaX),
-        0,
-        Math.max(0, page.width - segment.width),
+      const requestedDeltaX = snap(origin.x + deltaX) - origin.x;
+      const requestedDeltaY = snap(origin.y + deltaY) - origin.y;
+      const clampedDelta = window.ICATLayout.clampGroupDelta(
+        origins,
+        requestedDeltaX,
+        requestedDeltaY,
+        page.width,
+        page.height,
       );
-      segment.y = clamp(
-        snap(origin.y + deltaY),
-        0,
-        Math.max(0, page.height - segment.height),
-      );
-      renderSegmentPosition(segment);
+      for (const item of origins) {
+        item.segment.x = item.x + clampedDelta.x;
+        item.segment.y = item.y + clampedDelta.y;
+        renderSegmentPosition(item.segment);
+      }
       updateSelectedDetails();
     };
 
     const finish = () => {
-      segment.element.classList.remove("is-dragging");
+      for (const item of origins) item.segment.element.classList.remove("is-dragging");
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", finish);
       handle.removeEventListener("pointercancel", finish);
       updateSummary();
+      if (origins.length > 1) showToast(`Перемещено сегментов: ${origins.length}`);
     };
 
     handle.addEventListener("pointermove", move);
@@ -642,16 +670,101 @@ function renderSegmentPosition(segment) {
     height: `${segment.height}px`,
     zIndex: String(segment.zIndex),
   });
+  segment.element.classList.toggle("is-in-page-margin", !isInsideWordTextArea(segment));
   const cell = getCellReference(segment);
   segment.element.querySelector(".icat-segment__cell").textContent = cell.id;
 }
 
 function selectSegment(segmentId) {
-  state.selectedId = segmentId;
+  selectSegments([segmentId], segmentId);
+}
+
+function selectSegments(segmentIds, primaryId = null) {
+  const activeIds = new Set(
+    segmentIds.filter((segmentId) => state.segments.some(
+      (segment) => segment.id === segmentId && !segment.deleted,
+    )),
+  );
+  state.selectedIds = activeIds;
+  state.selectedId = activeIds.has(primaryId) ? primaryId : activeIds.values().next().value || null;
   for (const segment of state.segments) {
-    segment.element?.classList.toggle("is-selected", segment.id === segmentId);
+    segment.element?.classList.toggle("is-selected", activeIds.has(segment.id));
   }
   updateSelectedDetails();
+}
+
+function beginMarqueeSelection(page, event) {
+  if (event.button !== 0 || state.loading || !state.pages.length) return;
+  if (event.target.closest(".icat-segment, button, input, select, a, [contenteditable='true']")) return;
+  event.preventDefault();
+  closeAllMenus();
+
+  const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+  const originalIds = additive ? new Set(state.selectedIds) : new Set();
+  const start = pagePointFromEvent(page, event);
+  const selectionBox = document.createElement("div");
+  selectionBox.className = "icat-selection-box";
+  page.overlay.append(selectionBox);
+  page.element.classList.add("is-lasso-selecting");
+  page.element.setPointerCapture(event.pointerId);
+  let dragged = false;
+
+  const move = (moveEvent) => {
+    const current = pagePointFromEvent(page, moveEvent);
+    const rectangle = {
+      x: Math.min(start.x, current.x),
+      y: Math.min(start.y, current.y),
+      width: Math.abs(current.x - start.x),
+      height: Math.abs(current.y - start.y),
+    };
+    dragged ||= rectangle.width * state.viewScale >= 4 || rectangle.height * state.viewScale >= 4;
+    Object.assign(selectionBox.style, {
+      left: `${rectangle.x}px`,
+      top: `${rectangle.y}px`,
+      width: `${rectangle.width}px`,
+      height: `${rectangle.height}px`,
+    });
+    if (!dragged) return;
+
+    const nextIds = new Set(originalIds);
+    for (const segment of state.segments) {
+      if (segment.deleted || segment.pageIndex !== page.pageIndex) continue;
+      if (window.ICATLayout.rectanglesIntersect(rectangle, segment)) nextIds.add(segment.id);
+    }
+    selectSegments([...nextIds]);
+  };
+
+  const finish = () => {
+    selectionBox.remove();
+    page.element.classList.remove("is-lasso-selecting");
+    page.element.removeEventListener("pointermove", move);
+    page.element.removeEventListener("pointerup", finish);
+    page.element.removeEventListener("pointercancel", finish);
+    if (!dragged && !additive) selectSegments([]);
+    if (dragged && state.selectedIds.size) showToast(`Выбрано сегментов: ${state.selectedIds.size}`);
+  };
+
+  page.element.addEventListener("pointermove", move);
+  page.element.addEventListener("pointerup", finish);
+  page.element.addEventListener("pointercancel", finish);
+}
+
+function pagePointFromEvent(page, event) {
+  const rectangle = page.element.getBoundingClientRect();
+  return {
+    x: clamp((event.clientX - rectangle.left) / state.viewScale, 0, page.width),
+    y: clamp((event.clientY - rectangle.top) / state.viewScale, 0, page.height),
+  };
+}
+
+function isInsideWordTextArea(segment) {
+  const bounds = state.pages[segment.pageIndex]?.contentBounds;
+  if (!bounds) return false;
+  const placement = getExportPlacement(segment);
+  return placement.x >= bounds.x
+    && placement.y >= bounds.y
+    && placement.x + segment.width <= bounds.x + bounds.width
+    && placement.y + segment.height <= bounds.y + bounds.height;
 }
 
 function updateSelectedDetails() {
@@ -669,10 +782,14 @@ function updateSelectedDetails() {
   elements.selectionEmpty.hidden = true;
   elements.selectionDetails.hidden = false;
   elements.selectionId.textContent = segment.id;
+  elements.selectionCount.textContent = String(state.selectedIds.size);
   elements.selectionPage.textContent = String(cell.pageIndex + 1);
   elements.selectionCell.textContent = cell.id;
   elements.selectionPosition.textContent = `${formatGeometry(segment.x)} × ${formatGeometry(segment.y)} px`;
   elements.selectionSize.textContent = `${formatGeometry(segment.width)} × ${formatGeometry(segment.height)} px`;
+  elements.selectionArea.textContent = isInsideWordTextArea(segment)
+    ? "Текстовая область"
+    : "Поле страницы";
 }
 
 function updateSummary() {
@@ -734,10 +851,32 @@ function setGridSize(value) {
   updateSelectedDetails();
 }
 
-function setViewScale(percent) {
+function handleWorkspaceZoom(event) {
+  if (!(event.ctrlKey || event.metaKey) || !state.pages.length) return;
+  event.preventDefault();
+  const direction = event.deltaY < 0 ? 1 : -1;
+  const nextPercent = state.viewScale * 100 + direction * 10;
+  setViewScale(nextPercent, { clientX: event.clientX, clientY: event.clientY });
+}
+
+function setViewScale(percent, anchor = null) {
+  const previousScale = state.viewScale;
+  const workspaceRectangle = elements.workspace.getBoundingClientRect();
+  const pointer = anchor ? {
+    x: anchor.clientX - workspaceRectangle.left,
+    y: anchor.clientY - workspaceRectangle.top,
+  } : null;
+  const contentAnchor = pointer ? {
+    x: (elements.workspace.scrollLeft + pointer.x) / previousScale,
+    y: (elements.workspace.scrollTop + pointer.y) / previousScale,
+  } : null;
   state.viewMode = "manual";
   state.viewScale = clamp((Number(percent) || 100) / 100, 0.25, 2.5);
   applyViewScale();
+  if (contentAnchor && pointer) {
+    elements.workspace.scrollLeft = contentAnchor.x * state.viewScale - pointer.x;
+    elements.workspace.scrollTop = contentAnchor.y * state.viewScale - pointer.y;
+  }
 }
 
 function fitDocumentWidth() {
@@ -761,7 +900,7 @@ function applyViewScale() {
   if (wrapper) wrapper.style.zoom = String(state.viewScale);
   elements.zoomValue.textContent = `${percent}%`;
   elements.fitWidth.classList.toggle("is-active", state.viewMode === "fit");
-  elements.viewScaleHint.textContent = `${state.viewMode === "fit" ? "По ширине поля" : "Ручной зум"} — ${percent}%. Координаты, размеры и экспорт остаются в масштабе 100%.`;
+  elements.viewScaleHint.textContent = `${state.viewMode === "fit" ? "По ширине поля" : "Ручной зум"} — ${percent}%. Cmd/Ctrl + колесо меняет зум под курсором; экспорт остаётся в масштабе 100%.`;
 }
 
 function setWorkspaceHeightScale(percent) {
@@ -786,6 +925,10 @@ function applyWorkspaceHeightScale() {
     page.element.style.minHeight = `${page.height}px`;
     page.overlay.style.height = `${page.height}px`;
     renderContentBoundary(page);
+    renderPageBreaks(page);
+  }
+  for (const segment of state.segments) {
+    if (!segment.deleted) renderSegmentPosition(segment);
   }
 
   const totalPages = state.pages.length ? getDocumentPagination().totalPages : 0;
@@ -798,8 +941,19 @@ function renderContentBoundary(page) {
     left: `${bounds.x}px`,
     top: `${bounds.y}px`,
     width: `${bounds.width}px`,
-    height: `${Math.max(20, page.height - bounds.y - bounds.bottomInset)}px`,
+    height: `${bounds.height}px`,
   });
+}
+
+function renderPageBreaks(page) {
+  page.pageBreakLayer.replaceChildren();
+  for (let boundaryY = page.nominalHeight; boundaryY < page.height - 1; boundaryY += page.nominalHeight) {
+    const line = document.createElement("div");
+    line.className = "icat-export-page-break";
+    line.style.top = `${boundaryY}px`;
+    line.dataset.label = `Граница страницы Word ${Math.round(boundaryY / page.nominalHeight) + 1}`;
+    page.pageBreakLayer.append(line);
+  }
 }
 
 async function exportDocument() {

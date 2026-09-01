@@ -530,7 +530,7 @@ button {
 }
 
 .icat-content-boundary::before {
-  content: "Контентная область DOCX";
+  content: "Текстовая область Word (поля)";
   position: absolute;
   top: -20px;
   left: -2px;
@@ -543,11 +543,54 @@ button {
   white-space: nowrap;
 }
 
+.icat-page-break-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.icat-export-page-break {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  border-top: 2px dashed rgba(220, 38, 38, 0.64);
+}
+
+.icat-export-page-break::before {
+  content: attr(data-label);
+  position: absolute;
+  top: 3px;
+  right: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #991b1b;
+  background: rgba(254, 242, 242, 0.94);
+  font: 700 9px/16px Inter, sans-serif;
+  white-space: nowrap;
+}
+
 .icat-overlay-layer {
   position: absolute;
   inset: 0;
   z-index: 50;
   pointer-events: none;
+}
+
+.icat-selection-box {
+  position: absolute;
+  z-index: 120000;
+  border: 1.5px solid #2563eb;
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.72) inset;
+  pointer-events: none;
+}
+
+#docx-host section.docx.is-lasso-selecting,
+#docx-host section.docx.is-lasso-selecting * {
+  cursor: crosshair !important;
+  user-select: none !important;
 }
 
 .icat-segment {
@@ -574,6 +617,11 @@ button {
   outline: 2px solid var(--segment);
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.13), 0 7px 20px rgba(30, 64, 175, 0.12);
+}
+
+.icat-segment.is-selected.is-in-page-margin {
+  outline-color: #d97706;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.14), 0 7px 20px rgba(146, 64, 14, 0.12);
 }
 
 .icat-segment.is-dragging,

@@ -1,11 +1,13 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  clampGroupDelta,
   getWorkspacePageHeight,
   findSegmentOverlaps,
   paginatePages,
   placeSegment,
   rectangleOverlapRatio,
+  rectanglesIntersect,
   resolveVerticalOverlaps,
   screenDeltaToDocument,
   MAX_WORD_PAGE_SIZE,
@@ -29,6 +31,23 @@ test('detects and vertically resolves meaningful segment overlaps', () => {
   assert.equal(placements.get('first'), 10)
   assert.equal(placements.get('second'), 64)
   assert.equal(placements.get('other-column'), 20)
+})
+
+test('selects intersecting rectangles and clamps a group to the physical page', () => {
+  assert.equal(rectanglesIntersect(
+    { x: 0, y: 0, width: 40, height: 40 },
+    { x: 30, y: 30, width: 40, height: 40 },
+  ), true)
+  assert.equal(rectanglesIntersect(
+    { x: 0, y: 0, width: 20, height: 20 },
+    { x: 20, y: 20, width: 20, height: 20 },
+  ), false)
+
+  const delta = clampGroupDelta([
+    { x: 20, y: 30, width: 40, height: 50 },
+    { x: 80, y: 90, width: 30, height: 20 },
+  ], 200, -100, 160, 140)
+  assert.deepEqual(delta, { x: 50, y: -30 })
 })
 
 test('expands the workspace without cutting off moved segments', () => {
