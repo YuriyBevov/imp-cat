@@ -3,9 +3,6 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   root.ICATLayout = api;
 })(typeof globalThis === "object" ? globalThis : window, () => {
-  const MIN_PAGE_SIZE = 200;
-  const MAX_WORD_PAGE_SIZE = 2_112;
-
   function clamp(value, minimum, maximum) {
     return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
   }
@@ -13,6 +10,32 @@
   function screenDeltaToDocument(screenDelta, viewScale) {
     const scale = clamp(Number(viewScale) || 1, 0.25, 2.5);
     return Number(screenDelta) / scale;
+  }
+
+  function getSegmentHorizontalGeometry(
+    rectangle,
+    pageLeft,
+    pageWidth,
+    contentBounds,
+    stretchToContentWidth,
+    minimumWidth = 20,
+  ) {
+    const safePageWidth = Math.max(minimumWidth, Number(pageWidth) || minimumWidth);
+    const sourceX = clamp((Number(rectangle?.left) || 0) - (Number(pageLeft) || 0), 0, safePageWidth - minimumWidth);
+    const sourceWidth = clamp(
+      Math.max(Number(rectangle?.width) || 0, minimumWidth),
+      minimumWidth,
+      safePageWidth - sourceX,
+    );
+    if (!stretchToContentWidth) return { x: sourceX, width: sourceWidth };
+
+    const contentX = clamp(Number(contentBounds?.x) || 0, 0, safePageWidth - minimumWidth);
+    const contentWidth = clamp(
+      Number(contentBounds?.width) || safePageWidth - contentX,
+      minimumWidth,
+      safePageWidth - contentX,
+    );
+    return { x: contentX, width: contentWidth };
   }
 
   function normalizeRectangle(rectangle) {
@@ -104,70 +127,10 @@
     return positions;
   }
 
-  function getWorkspacePageHeight(baseHeight, heightScale, contentBottom = 0, padding = 0) {
-    const normalizedBaseHeight = Math.max(MIN_PAGE_SIZE, Number(baseHeight) || MIN_PAGE_SIZE);
-    const normalizedScale = clamp(Number(heightScale) || 1, 1, 4);
-    const protectedContentBottom = Math.max(0, Number(contentBottom) || 0) + Math.max(0, Number(padding) || 0);
-    return Math.ceil(Math.max(normalizedBaseHeight * normalizedScale, protectedContentBottom));
-  }
-
-  function paginatePages(pages) {
-    let nextOutputPageIndex = 0;
-    const sourcePages = pages.map((page) => {
-      const nominalHeight = clamp(
-        Number(page.nominalHeight || page.height),
-        MIN_PAGE_SIZE,
-        MAX_WORD_PAGE_SIZE,
-      );
-      const heightRatio = Number(page.height) / nominalHeight;
-      const sliceCount = Math.max(1, Math.ceil(heightRatio - 0.02));
-      const mapping = {
-        page,
-        firstOutputPageIndex: nextOutputPageIndex,
-        nominalHeight,
-        sliceCount,
-      };
-      nextOutputPageIndex += sliceCount;
-      return mapping;
-    });
-    return { sourcePages, totalPages: nextOutputPageIndex };
-  }
-
-  function placeSegment(segment, pagination, minimumSegmentHeight = 16) {
-    const mapping = pagination.sourcePages[segment.pageIndex];
-    if (!mapping) {
-      return { pageIndex: 0, x: segment.x, y: segment.y, pageHeight: 1_122 };
-    }
-
-    let sliceIndex = clamp(
-      Math.floor(segment.y / mapping.nominalHeight),
-      0,
-      mapping.sliceCount - 1,
-    );
-    let localY = segment.y - sliceIndex * mapping.nominalHeight;
-    if (
-      mapping.nominalHeight - localY < minimumSegmentHeight
-      && sliceIndex < mapping.sliceCount - 1
-    ) {
-      sliceIndex += 1;
-      localY = 0;
-    }
-
-    return {
-      pageIndex: mapping.firstOutputPageIndex + sliceIndex,
-      x: segment.x,
-      y: clamp(localY, 0, mapping.nominalHeight - minimumSegmentHeight),
-      pageHeight: mapping.nominalHeight,
-    };
-  }
-
   return {
-    MAX_WORD_PAGE_SIZE,
     clampGroupDelta,
     findSegmentOverlaps,
-    getWorkspacePageHeight,
-    paginatePages,
-    placeSegment,
+    getSegmentHorizontalGeometry,
     rectangleOverlapRatio,
     rectanglesIntersect,
     resolveVerticalOverlaps,

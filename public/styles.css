@@ -8,8 +8,6 @@
   --brand: #172554;
   --accent: #0f766e;
   --segment: #2563eb;
-  --grid-size: 4px;
-  --major-grid-size: 16px;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -83,8 +81,7 @@ button {
   font-size: 12px;
 }
 
-.topbar__actions,
-.section-heading {
+.topbar__actions {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -218,10 +215,6 @@ button {
   line-height: 1.55;
 }
 
-.section-heading {
-  justify-content: space-between;
-}
-
 .grid-scale {
   margin-top: 14px;
   display: flex;
@@ -299,45 +292,6 @@ button {
   border-color: #93c5fd;
   color: #1d4ed8;
   background: #eff6ff;
-}
-
-.switch {
-  padding: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 0;
-  color: var(--muted);
-  background: none;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.switch span {
-  width: 32px;
-  height: 18px;
-  padding: 2px;
-  border-radius: 999px;
-  background: #cbd5e1;
-}
-
-.switch span::after {
-  content: "";
-  width: 14px;
-  height: 14px;
-  display: block;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 160ms ease;
-}
-
-.switch.is-on span {
-  background: var(--accent);
-}
-
-.switch.is-on span::after {
-  transform: translateX(14px);
 }
 
 .empty-selection {
@@ -470,19 +424,6 @@ button {
   background-color: rgba(248, 250, 252, 0.72);
 }
 
-.grid-enabled .document-stage {
-  background-image:
-    linear-gradient(rgba(37, 99, 235, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.07) 1px, transparent 1px),
-    linear-gradient(rgba(37, 99, 235, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.02) 1px, transparent 1px);
-  background-size:
-    var(--major-grid-size) var(--major-grid-size),
-    var(--major-grid-size) var(--major-grid-size),
-    var(--grid-size) var(--grid-size),
-    var(--grid-size) var(--grid-size);
-}
-
 .document-stage.is-measuring {
   visibility: hidden;
   pointer-events: none;
@@ -496,22 +437,9 @@ button {
 #docx-host section.docx {
   position: relative !important;
   overflow: hidden !important;
+  background: #fff !important;
   outline: 1px solid rgba(100, 116, 139, 0.36);
   box-shadow: 0 10px 34px rgba(31, 41, 55, 0.18) !important;
-}
-
-.grid-enabled #docx-host section.docx {
-  background-color: #fff !important;
-  background-image:
-    linear-gradient(rgba(37, 99, 235, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.09) 1px, transparent 1px),
-    linear-gradient(rgba(37, 99, 235, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(37, 99, 235, 0.025) 1px, transparent 1px) !important;
-  background-size:
-    var(--major-grid-size) var(--major-grid-size),
-    var(--major-grid-size) var(--major-grid-size),
-    var(--grid-size) var(--grid-size),
-    var(--grid-size) var(--grid-size) !important;
 }
 
 .icat-source-hidden,
@@ -540,33 +468,6 @@ button {
   background: rgba(236, 253, 245, 0.94);
   font: 700 9px/16px Inter, sans-serif;
   letter-spacing: 0.03em;
-  white-space: nowrap;
-}
-
-.icat-page-break-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 45;
-  pointer-events: none;
-}
-
-.icat-export-page-break {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  border-top: 2px dashed rgba(220, 38, 38, 0.64);
-}
-
-.icat-export-page-break::before {
-  content: attr(data-label);
-  position: absolute;
-  top: 3px;
-  right: 8px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #991b1b;
-  background: rgba(254, 242, 242, 0.94);
-  font: 700 9px/16px Inter, sans-serif;
   white-space: nowrap;
 }
 

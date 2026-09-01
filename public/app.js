@@ -11,10 +11,8 @@ const state = {
   selectedId: null,
   selectedIds: new Set(),
   gridSize: DEFAULT_GRID_SIZE,
-  gridVisible: true,
   viewScale: 1,
   viewMode: "fit",
-  workspaceHeightScale: 1,
   loading: false,
   history: window.ICATHistory.create(HISTORY_LIMIT),
   activeTextEdit: null,
@@ -26,7 +24,6 @@ const elements = {
   sampleButton: document.querySelector("#sample-button"),
   sampleEmptyButton: document.querySelector("#empty-sample-button"),
   exportButton: document.querySelector("#export-button"),
-  gridButton: document.querySelector("#grid-toggle"),
   gridSize: document.querySelector("#grid-size"),
   gridHint: document.querySelector("#grid-hint"),
   viewScale: document.querySelector("#view-scale"),
@@ -35,8 +32,6 @@ const elements = {
   zoomIn: document.querySelector("#zoom-in"),
   fitWidth: document.querySelector("#fit-width"),
   viewScaleHint: document.querySelector("#view-scale-hint"),
-  workspaceHeightScale: document.querySelector("#workspace-height-scale"),
-  workspaceHeightHint: document.querySelector("#workspace-height-hint"),
   workspace: document.querySelector("#workspace"),
   dropZone: document.querySelector("#drop-zone"),
   loading: document.querySelector("#loading"),
@@ -71,18 +66,12 @@ elements.fileInput.addEventListener("change", async (event) => {
 elements.sampleButton.addEventListener("click", loadSample);
 elements.sampleEmptyButton.addEventListener("click", loadSample);
 elements.exportButton.addEventListener("click", exportDocument);
-elements.gridButton.addEventListener("click", toggleGrid);
 elements.gridSize.addEventListener("change", () => setGridSize(Number(elements.gridSize.value)));
 elements.viewScale.addEventListener("input", () => setViewScale(Number(elements.viewScale.value)));
 elements.zoomOut.addEventListener("click", () => setViewScale(state.viewScale * 100 - 10));
 elements.zoomIn.addEventListener("click", () => setViewScale(state.viewScale * 100 + 10));
 elements.fitWidth.addEventListener("click", fitDocumentWidth);
 elements.resolveOverlaps.addEventListener("click", resolveSegmentOverlaps);
-elements.workspaceHeightScale.addEventListener("change", () => {
-  const before = createHistorySnapshot();
-  setWorkspaceHeightScale(Number(elements.workspaceHeightScale.value));
-  commitHistory(before, "изменение высоты рабочего поля");
-});
 elements.workspace.addEventListener("wheel", handleWorkspaceZoom, { passive: false });
 window.addEventListener("resize", () => {
   if (state.viewMode === "fit" && state.pages.length) requestAnimationFrame(fitDocumentWidth);
@@ -167,7 +156,6 @@ async function loadDocument(blob, fileName, options = {}) {
     await nextPaint();
     await nextPaint();
     extractDocumentModel();
-    applyWorkspaceHeightScale();
     elements.documentStage.classList.remove("is-measuring");
     elements.documentStage.removeAttribute("aria-hidden");
     setLoading(false);
@@ -212,41 +200,40 @@ function extractDocumentModel() {
 
   state.pages = pageElements.map((pageElement, pageIndex) => {
     const width = pageElement.clientWidth;
-    const height = pageElement.clientHeight;
-    const nominalHeight = clamp(
-      numberOr(getComputedStyle(pageElement).minHeight, height),
+    const renderedHeight = pageElement.clientHeight;
+    const height = clamp(
+      numberOr(getComputedStyle(pageElement).minHeight, renderedHeight),
       200,
       2_112,
     );
-    const contentBounds = getPageContentBounds(pageElement, width, nominalHeight);
+    const contentBounds = getPageContentBounds(pageElement, width, height);
     const contentBoundary = document.createElement("div");
     contentBoundary.className = "icat-content-boundary";
     contentBoundary.setAttribute("aria-hidden", "true");
-    const pageBreakLayer = document.createElement("div");
-    pageBreakLayer.className = "icat-page-break-layer";
-    pageBreakLayer.setAttribute("aria-hidden", "true");
     const overlay = document.createElement("div");
     overlay.className = "icat-overlay-layer";
     overlay.setAttribute("aria-label", `Редактируемый слой страницы ${pageIndex + 1}`);
     pageElement.dataset.pageIndex = String(pageIndex);
-    pageElement.append(contentBoundary, pageBreakLayer, overlay);
+    pageElement.style.height = `${height}px`;
+    pageElement.style.minHeight = `${height}px`;
+    overlay.style.height = `${height}px`;
+    pageElement.append(contentBoundary, overlay);
 
     const page = {
       id: `page-${pageIndex + 1}`,
       pageIndex,
       width,
-      baseHeight: height,
       height,
-      nominalHeight,
       contentBounds,
       contentBoundary,
-      pageBreakLayer,
       element: pageElement,
       overlay,
     };
     pageElement.addEventListener("pointerdown", (event) => beginMarqueeSelection(page, event));
     return page;
   });
+
+  for (const page of state.pages) renderContentBoundary(page);
 
   for (const page of state.pages) {
     const pageRect = page.element.getBoundingClientRect();
@@ -265,11 +252,22 @@ function extractDocumentModel() {
         || sourceElement.querySelector("p span, span, p")
         || sourceElement;
       const computedStyle = getComputedStyle(styleElement);
+      const stretchToContentWidth = candidate.kind !== "shape"
+        && !sourceElement.closest("td, th")
+        && getComputedStyle(sourceElement).position !== "absolute";
       const fontSizePx = numberOr(computedStyle.fontSize, 14);
       const lineHeight = normalizeLineHeight(computedStyle.lineHeight, fontSizePx);
-      const x = clamp(rect.left - pageRect.left, 0, page.width - MIN_SEGMENT_WIDTH);
+      const horizontalGeometry = window.ICATLayout.getSegmentHorizontalGeometry(
+        rect,
+        pageRect.left,
+        page.width,
+        page.contentBounds,
+        stretchToContentWidth,
+        MIN_SEGMENT_WIDTH,
+      );
+      const x = horizontalGeometry.x;
       const y = clamp(rect.top - pageRect.top, 0, page.height - MIN_SEGMENT_HEIGHT);
-      const width = clamp(Math.max(rect.width, MIN_SEGMENT_WIDTH), MIN_SEGMENT_WIDTH, page.width - x);
+      const width = horizontalGeometry.width;
       const height = clamp(
         Math.max(rect.height, fontSizePx * lineHeight, MIN_SEGMENT_HEIGHT),
         MIN_SEGMENT_HEIGHT,
@@ -361,7 +359,7 @@ function isDuplicateCandidate(text, rect, accepted) {
   ));
 }
 
-function getPageContentBounds(pageElement, pageWidth, nominalHeight) {
+function getPageContentBounds(pageElement, pageWidth, pageHeight) {
   const style = getComputedStyle(pageElement);
   let left = numberOr(style.paddingLeft, 0);
   let right = numberOr(style.paddingRight, 0);
@@ -383,7 +381,7 @@ function getPageContentBounds(pageElement, pageWidth, nominalHeight) {
     x: left,
     y: top,
     width: Math.max(20, pageWidth - left - right),
-    height: Math.max(20, nominalHeight - top - bottom),
+    height: Math.max(20, pageHeight - top - bottom),
     bottomInset: bottom,
   };
 }
@@ -776,11 +774,10 @@ function pagePointFromEvent(page, event) {
 function isInsideWordTextArea(segment) {
   const bounds = state.pages[segment.pageIndex]?.contentBounds;
   if (!bounds) return false;
-  const placement = getExportPlacement(segment);
-  return placement.x >= bounds.x
-    && placement.y >= bounds.y
-    && placement.x + segment.width <= bounds.x + bounds.width
-    && placement.y + segment.height <= bounds.y + bounds.height;
+  return segment.x >= bounds.x
+    && segment.y >= bounds.y
+    && segment.x + segment.width <= bounds.x + bounds.width
+    && segment.y + segment.height <= bounds.y + bounds.height;
 }
 
 function updateSelectedDetails() {
@@ -812,7 +809,7 @@ function updateSummary() {
   const activeSegments = state.segments.filter((segment) => !segment.deleted);
   const overlaps = getSegmentOverlaps();
   elements.documentName.textContent = state.fileName || "Документ не открыт";
-  elements.pageCount.textContent = String(getDocumentPagination().totalPages);
+  elements.pageCount.textContent = String(state.pages.length);
   elements.segmentCount.textContent = String(activeSegments.length);
   elements.overlapCount.textContent = String(overlaps.length);
   elements.overlapCount.closest("div")?.classList.toggle("has-warning", overlaps.length > 0);
@@ -840,32 +837,25 @@ function resolveSegmentOverlaps() {
   let moved = 0;
   for (const segment of activeSegments) {
     const nextY = placements.get(segment.id);
-    if (Number.isFinite(nextY) && Math.abs(nextY - segment.y) >= 0.5) {
-      segment.y = nextY;
+    const page = state.pages[segment.pageIndex];
+    const boundedY = Number.isFinite(nextY)
+      ? clamp(nextY, 0, Math.max(0, page.height - segment.height))
+      : segment.y;
+    if (Math.abs(boundedY - segment.y) >= 0.5) {
+      segment.y = boundedY;
       renderSegmentPosition(segment);
       moved += 1;
     }
   }
-  applyWorkspaceHeightScale();
   updateSummary();
   commitHistory(before, "разнесение наложений");
   showToast(moved ? `Разнесено сегментов: ${moved}` : "Значимых наложений не найдено");
 }
 
-function toggleGrid() {
-  state.gridVisible = !state.gridVisible;
-  elements.workspace.classList.toggle("grid-enabled", state.gridVisible);
-  elements.gridButton.classList.toggle("is-on", state.gridVisible);
-  elements.gridButton.setAttribute("aria-pressed", String(state.gridVisible));
-}
-
 function setGridSize(value) {
   state.gridSize = clamp(Math.round(value || DEFAULT_GRID_SIZE), 1, 96);
-  const majorGridSize = Math.max(16, state.gridSize * 4);
   elements.gridSize.value = String(state.gridSize);
-  elements.workspace.style.setProperty("--grid-size", `${state.gridSize}px`);
-  elements.workspace.style.setProperty("--major-grid-size", `${majorGridSize}px`);
-  elements.gridHint.textContent = `Крупная линия — ${majorGridSize} px. Исходная геометрия сохраняется без округления; настройка применяется только при ручном перемещении.`;
+  elements.gridHint.textContent = `Фоновая сетка скрыта. Шаг ${state.gridSize} px применяется только при ручном перемещении и изменении размера.`;
   for (const segment of state.segments) renderSegmentPosition(segment);
   updateSelectedDetails();
 }
@@ -922,38 +912,6 @@ function applyViewScale() {
   elements.viewScaleHint.textContent = `${state.viewMode === "fit" ? "По ширине поля" : "Ручной зум"} — ${percent}%. Cmd/Ctrl + колесо меняет зум под курсором; экспорт остаётся в масштабе 100%.`;
 }
 
-function setWorkspaceHeightScale(percent) {
-  state.workspaceHeightScale = clamp((Number(percent) || 100) / 100, 1, 4);
-  elements.workspaceHeightScale.value = String(Math.round(state.workspaceHeightScale * 100));
-  applyWorkspaceHeightScale();
-  updateSummary();
-}
-
-function applyWorkspaceHeightScale() {
-  for (const page of state.pages) {
-    const occupiedBottom = state.segments
-      .filter((segment) => !segment.deleted && segment.pageIndex === page.pageIndex)
-      .reduce((bottom, segment) => Math.max(bottom, segment.y + segment.height), 0);
-    page.height = window.ICATLayout.getWorkspacePageHeight(
-      page.baseHeight,
-      state.workspaceHeightScale,
-      occupiedBottom,
-      state.gridSize,
-    );
-    page.element.style.height = `${page.height}px`;
-    page.element.style.minHeight = `${page.height}px`;
-    page.overlay.style.height = `${page.height}px`;
-    renderContentBoundary(page);
-    renderPageBreaks(page);
-  }
-  for (const segment of state.segments) {
-    if (!segment.deleted) renderSegmentPosition(segment);
-  }
-
-  const totalPages = state.pages.length ? getDocumentPagination().totalPages : 0;
-  elements.workspaceHeightHint.textContent = `Поле — ${Math.round(state.workspaceHeightScale * 100)}%. Сегменты не растягиваются; свободное место добавляется снизу${totalPages ? `, экспорт: ${totalPages} стр.` : ""}.`;
-}
-
 function renderContentBoundary(page) {
   const bounds = page.contentBounds;
   Object.assign(page.contentBoundary.style, {
@@ -962,17 +920,6 @@ function renderContentBoundary(page) {
     width: `${bounds.width}px`,
     height: `${bounds.height}px`,
   });
-}
-
-function renderPageBreaks(page) {
-  page.pageBreakLayer.replaceChildren();
-  for (let boundaryY = page.nominalHeight; boundaryY < page.height - 1; boundaryY += page.nominalHeight) {
-    const line = document.createElement("div");
-    line.className = "icat-export-page-break";
-    line.style.top = `${boundaryY}px`;
-    line.dataset.label = `Граница страницы Word ${Math.round(boundaryY / page.nominalHeight) + 1}`;
-    page.pageBreakLayer.append(line);
-  }
 }
 
 async function exportDocument() {
@@ -1063,17 +1010,13 @@ function snapshotSegment(segment) {
 function createHistorySnapshot() {
   return {
     segments: state.segments.map((segment) => ({ id: segment.id, ...snapshotSegment(segment) })),
-    workspaceHeightScale: state.workspaceHeightScale,
     selectedIds: [...state.selectedIds],
     selectedId: state.selectedId,
   };
 }
 
 function historyDocumentSignature(snapshot) {
-  return JSON.stringify({
-    segments: snapshot.segments,
-    workspaceHeightScale: snapshot.workspaceHeightScale,
-  });
+  return JSON.stringify(snapshot.segments);
 }
 
 function commitHistory(before, label) {
@@ -1153,9 +1096,6 @@ function restoreHistorySnapshot(snapshot) {
       renderSegmentPosition(segment);
     }
 
-    state.workspaceHeightScale = snapshot.workspaceHeightScale;
-    elements.workspaceHeightScale.value = String(Math.round(state.workspaceHeightScale * 100));
-    applyWorkspaceHeightScale();
     selectSegments(snapshot.selectedIds, snapshot.selectedId);
     updateSummary();
   } finally {
@@ -1173,57 +1113,35 @@ function describeSegmentAction(action) {
 }
 
 function getCellReference(segment) {
-  const placement = getExportPlacement(segment);
-  const row = Math.floor(placement.y / state.gridSize) + 1;
-  const column = Math.floor(placement.x / state.gridSize) + 1;
+  const row = Math.floor(segment.y / state.gridSize) + 1;
+  const column = Math.floor(segment.x / state.gridSize) + 1;
   return {
     row,
     column,
-    pageIndex: placement.pageIndex,
-    id: `P${placement.pageIndex + 1}:R${row}:C${column}`,
-  };
-}
-
-function getDocumentPagination() {
-  return window.ICATLayout.paginatePages(state.pages);
-}
-
-function getExportPlacement(segment, pagination = getDocumentPagination()) {
-  const placement = window.ICATLayout.placeSegment(segment, pagination, MIN_SEGMENT_HEIGHT);
-  return {
-    ...placement,
-    pageId: `export-page-${placement.pageIndex + 1}`,
-    height: placement.pageHeight,
+    pageIndex: segment.pageIndex,
+    id: `P${segment.pageIndex + 1}:R${row}:C${column}`,
   };
 }
 
 function createExportPayload(activeSegments) {
-  const pagination = getDocumentPagination();
-  const pages = [];
-
-  for (const mapping of pagination.sourcePages) {
-    for (let sliceIndex = 0; sliceIndex < mapping.sliceCount; sliceIndex += 1) {
-      const pageIndex = mapping.firstOutputPageIndex + sliceIndex;
-      pages.push({
-        id: `export-page-${pageIndex + 1}`,
-        index: pageIndex,
-        widthPx: mapping.page.width,
-        heightPx: mapping.nominalHeight,
-      });
-    }
-  }
+  const pages = state.pages.map((page) => ({
+    id: page.id,
+    index: page.pageIndex,
+    widthPx: page.width,
+    heightPx: page.height,
+  }));
 
   const segments = activeSegments.map((segment) => {
-    const placement = getExportPlacement(segment, pagination);
+    const page = state.pages[segment.pageIndex];
     return {
       id: segment.id,
-      pageId: placement.pageId,
-      pageIndex: placement.pageIndex,
+      pageId: segment.pageId,
+      pageIndex: segment.pageIndex,
       text: segment.text,
-      x: placement.x,
-      y: placement.y,
+      x: segment.x,
+      y: segment.y,
       width: segment.width,
-      height: Math.min(segment.height, placement.height - placement.y),
+      height: Math.min(segment.height, page.height - segment.y),
       zIndex: segment.zIndex,
       cellId: getCellReference(segment).id,
       style: { ...segment.style },
@@ -1318,7 +1236,5 @@ function nextPaint() {
 }
 
 updateSummary();
-elements.workspace.classList.toggle("grid-enabled", state.gridVisible);
 setGridSize(DEFAULT_GRID_SIZE);
 setViewScale(100);
-setWorkspaceHeightScale(100);

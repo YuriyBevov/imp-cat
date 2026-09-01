@@ -37,14 +37,9 @@
         </section>
 
         <section class="inspector__section">
-          <div class="section-heading">
-            <p class="eyebrow">Рабочее поле</p>
-            <button id="grid-toggle" class="switch is-on" type="button" aria-pressed="true">
-              <span></span> Сетка
-            </button>
-          </div>
+          <p class="eyebrow">Рабочее поле</p>
           <label class="grid-scale" for="grid-size">
-            <span>Шаг привязки</span>
+            <span>Шаг перемещения</span>
             <select id="grid-size">
               <option value="1">1 px</option>
               <option value="2">2 px</option>
@@ -57,7 +52,7 @@
               <option value="96">96 px</option>
             </select>
           </label>
-          <p id="grid-hint" class="hint">Крупная линия — 16 px. Исходная геометрия сохраняется без округления; настройка применяется только при ручном перемещении.</p>
+          <p id="grid-hint" class="hint">Фоновая сетка скрыта. Шаг применяется только при ручном перемещении и изменении размера.</p>
 
           <div class="zoom-heading">
             <span>Масштаб просмотра</span>
@@ -71,20 +66,8 @@
           <button id="fit-width" class="button button--panel" type="button">По ширине поля</button>
           <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Cmd/Ctrl + колесо меняет зум под курсором и не влияет на экспорт.</p>
 
-          <label class="grid-scale" for="workspace-height-scale">
-            <span>Высота рабочего поля</span>
-            <select id="workspace-height-scale">
-              <option value="100" selected>100%</option>
-              <option value="125">125%</option>
-              <option value="150">150%</option>
-              <option value="200">200%</option>
-              <option value="300">300%</option>
-              <option value="400">400%</option>
-            </select>
-          </label>
-          <p id="workspace-height-hint" class="hint">Добавляет реальное свободное место снизу страницы. При экспорте увеличенное поле делится на обычные страницы Word.</p>
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
-          <p class="hint">Команда сдвигает пересекающиеся сегменты только вниз и при необходимости расширяет поле. Исходное положение можно вернуть через меню сегмента.</p>
+          <p class="hint">Команда сдвигает пересекающиеся сегменты вниз в пределах исходной страницы. Исходное положение можно вернуть через меню сегмента.</p>
           <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите ⠿ у любого выбранного сегмента.</p>
           <p class="hint"><strong>Отмена:</strong> нажимайте Cmd/Ctrl + Z, чтобы пошагово отменять изменения документа.</p>
         </section>
@@ -110,7 +93,7 @@
         </section>
       </aside>
 
-      <section id="workspace" class="workspace grid-enabled">
+      <section id="workspace" class="workspace">
         <div id="drop-zone" class="drop-zone">
           <div class="drop-zone__icon">DOCX</div>
           <h2>Перетащите документ сюда</h2>

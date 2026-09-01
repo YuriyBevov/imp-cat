@@ -6,11 +6,16 @@ const path = require('node:path')
 const projectRoot = path.resolve(__dirname, '..')
 const html = fs.readFileSync(path.join(projectRoot, 'public/index.html'), 'utf8')
 const app = fs.readFileSync(path.join(projectRoot, 'public/app.js'), 'utf8')
+const styles = fs.readFileSync(path.join(projectRoot, 'public/styles.css'), 'utf8')
 
-test('wires grid, continuous zoom, fit-width and workspace controls', () => {
-  for (const controlId of ['grid-size', 'view-scale', 'workspace-height-scale']) {
+test('wires snap, continuous zoom and original-page controls without a background grid', () => {
+  for (const controlId of ['grid-size', 'view-scale']) {
     assert.match(html, new RegExp(`id="${controlId}"`))
   }
+  assert.doesNotMatch(html, /id="workspace-height-scale"/)
+  assert.doesNotMatch(html, /id="grid-toggle"/)
+  assert.doesNotMatch(app, /workspaceHeightScale|renderPageBreaks|paginatePages/)
+  assert.doesNotMatch(styles, /grid-enabled|icat-export-page-break/)
   assert.match(html, /id="fit-width"/)
   assert.match(html, /id="resolve-overlaps"/)
   assert.match(html, /src="\/history-model\.js"/)
@@ -19,7 +24,10 @@ test('wires grid, continuous zoom, fit-width and workspace controls', () => {
   assert.match(app, /setViewScale\(Number\(elements\.viewScale\.value\)\)/)
   assert.match(app, /fitDocumentWidth/)
   assert.match(app, /resolveSegmentOverlaps/)
-  assert.match(app, /setWorkspaceHeightScale\(Number\(elements\.workspaceHeightScale\.value\)\)/)
+  assert.match(app, /getSegmentHorizontalGeometry/)
+  assert.match(app, /!sourceElement\.closest\("td, th"\)/)
+  assert.match(app, /const pages = state\.pages\.map/)
+  assert.match(app, /pageIndex: segment\.pageIndex/)
   assert.match(app, /screenDeltaToDocument/)
   assert.match(app, /event\.ctrlKey \|\| event\.metaKey/)
   assert.match(app, /handleWorkspaceZoom/)
