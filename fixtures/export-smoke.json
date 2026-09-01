@@ -1,0 +1,29 @@
+{
+  "title": "ICAT smoke test",
+  "gridSize": 96,
+  "pages": [
+    { "id": "page-1", "index": 0, "widthPx": 794, "heightPx": 1123 }
+  ],
+  "segments": [
+    {
+      "id": "segment-smoke",
+      "pageId": "page-1",
+      "pageIndex": 0,
+      "cellId": "P1:R6:C5",
+      "text": "Отредактированный сегмент",
+      "x": 64,
+      "y": 80,
+      "width": 320,
+      "height": 64,
+      "zIndex": 1,
+      "style": {
+        "fontFamily": "Arial",
+        "fontSizePx": 18,
+        "fontWeight": 700,
+        "color": "#123456",
+        "textAlign": "left",
+        "lineHeight": 1.2
+      }
+    }
+  ]
+}

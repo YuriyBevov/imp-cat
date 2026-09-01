@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ICAT Grid Prototype</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand__mark">I</span>
+        <div>
+          <strong>ICAT Grid</strong>
+          <span>DOCX layout hypothesis</span>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <input id="file-input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+        <label class="button button--primary" for="file-input">Загрузить DOCX</label>
+        <button id="sample-button" class="button" type="button">Открыть пример</button>
+        <button id="export-button" class="button button--accent" type="button" disabled>Выгрузить DOCX</button>
+      </div>
+    </header>
+
+    <main class="app-layout">
+      <aside class="inspector">
+        <section>
+          <p class="eyebrow">Документ</p>
+          <h1 id="document-name">Файл не выбран</h1>
+          <dl class="metrics">
+            <div><dt>Страниц</dt><dd id="page-count">0</dd></div>
+            <div><dt>Сегментов</dt><dd id="segment-count">0</dd></div>
+            <div><dt>Наложений</dt><dd id="overlap-count">0</dd></div>
+          </dl>
+        </section>
+
+        <section class="inspector__section">
+          <div class="section-heading">
+            <p class="eyebrow">Рабочее поле</p>
+            <button id="grid-toggle" class="switch is-on" type="button" aria-pressed="true">
+              <span></span> Сетка
+            </button>
+          </div>
+          <label class="grid-scale" for="grid-size">
+            <span>Шаг привязки</span>
+            <select id="grid-size">
+              <option value="1">1 px</option>
+              <option value="2">2 px</option>
+              <option value="4" selected>4 px</option>
+              <option value="8">8 px</option>
+              <option value="16">16 px</option>
+              <option value="32">32 px</option>
+              <option value="48">48 px</option>
+              <option value="64">64 px</option>
+              <option value="96">96 px</option>
+            </select>
+          </label>
+          <p id="grid-hint" class="hint">Крупная линия — 16 px. Исходная геометрия сохраняется без округления; настройка применяется только при ручном перемещении.</p>
+
+          <div class="zoom-heading">
+            <span>Масштаб просмотра</span>
+            <output id="zoom-value" for="view-scale">100%</output>
+          </div>
+          <div class="zoom-control">
+            <button id="zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
+            <input id="view-scale" type="range" min="25" max="250" step="5" value="100" aria-label="Масштаб документа" />
+            <button id="zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
+          </div>
+          <button id="fit-width" class="button button--panel" type="button">По ширине поля</button>
+          <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Зум не меняет координаты экспорта.</p>
+
+          <label class="grid-scale" for="workspace-height-scale">
+            <span>Высота рабочего поля</span>
+            <select id="workspace-height-scale">
+              <option value="100" selected>100%</option>
+              <option value="125">125%</option>
+              <option value="150">150%</option>
+              <option value="200">200%</option>
+              <option value="300">300%</option>
+              <option value="400">400%</option>
+            </select>
+          </label>
+          <p id="workspace-height-hint" class="hint">Добавляет реальное свободное место снизу страницы. При экспорте увеличенное поле делится на обычные страницы Word.</p>
+          <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
+          <p class="hint">Команда сдвигает пересекающиеся сегменты только вниз и при необходимости расширяет поле. Исходное положение можно вернуть через меню сегмента.</p>
+        </section>
+
+        <section class="inspector__section">
+          <p class="eyebrow">Выбранный сегмент</p>
+          <div id="selection-empty" class="empty-selection">Нажмите на рамку сегмента.</div>
+          <dl id="selection-details" class="selection-details" hidden>
+            <div><dt>ID</dt><dd id="selection-id">—</dd></div>
+            <div><dt>Страница</dt><dd id="selection-page">—</dd></div>
+            <div><dt>Ячейка</dt><dd id="selection-cell">—</dd></div>
+            <div><dt>Координаты</dt><dd id="selection-position">—</dd></div>
+            <div><dt>Размер</dt><dd id="selection-size">—</dd></div>
+          </dl>
+        </section>
+
+        <section class="inspector__section inspector__section--note">
+          <p class="eyebrow">Границы прототипа</p>
+          <p>Экспортирует редактируемые текстовые блоки с координатами. Изображения, формулы и сложные Word-объекты пока остаются только в превью.</p>
+        </section>
+      </aside>
+
+      <section id="workspace" class="workspace grid-enabled">
+        <div id="drop-zone" class="drop-zone">
+          <div class="drop-zone__icon">DOCX</div>
+          <h2>Перетащите документ сюда</h2>
+          <p>или загрузите файл через верхнюю панель</p>
+          <button id="empty-sample-button" class="button" type="button">Посмотреть тестовый документ</button>
+        </div>
+
+        <div id="loading" class="loading" hidden>
+          <span class="spinner"></span>
+          <strong>Разбираем структуру DOCX…</strong>
+          <small>Рендерим страницы и рассчитываем координаты сегментов</small>
+        </div>
+
+        <div id="document-stage" class="document-stage" hidden>
+          <div id="docx-host"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="/vendor/jszip/jszip.min.js"></script>
+    <script src="/vendor/docx-preview/docx-preview.min.js"></script>
+    <script src="/layout-model.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

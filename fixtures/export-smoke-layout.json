@@ -1,0 +1,42 @@
+{
+  "title": "ICAT Word compatibility smoke",
+  "gridSize": 4,
+  "pages": [
+    { "id": "page-1", "index": 0, "widthPx": 794, "heightPx": 1122 },
+    { "id": "page-2", "index": 1, "widthPx": 794, "heightPx": 1122 }
+  ],
+  "segments": [
+    {
+      "id": "segment-1",
+      "pageIndex": 0,
+      "text": "Первая страница\nРедактируемый VML-блок",
+      "x": 64,
+      "y": 80,
+      "width": 360,
+      "height": 72,
+      "fontFamily": "Arial",
+      "fontSizePx": 18,
+      "fontWeight": 700,
+      "lineHeight": 1.2,
+      "color": "#123456",
+      "alignment": "left",
+      "zIndex": 1
+    },
+    {
+      "id": "segment-2",
+      "pageIndex": 1,
+      "text": "Вторая страница",
+      "x": 96,
+      "y": 120,
+      "width": 320,
+      "height": 64,
+      "fontFamily": "Arial",
+      "fontSizePx": 16,
+      "fontWeight": 400,
+      "lineHeight": 1.2,
+      "color": "#111827",
+      "alignment": "left",
+      "zIndex": 2
+    }
+  ]
+}
