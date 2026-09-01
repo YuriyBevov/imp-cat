@@ -253,14 +253,17 @@ function extractDocumentModel() {
     const candidates = collectTextCandidates(page.element);
     const accepted = [];
 
-    candidates.forEach((sourceElement, sourceIndex) => {
-      const text = getCandidateText(sourceElement);
-      const rect = getCandidateRect(sourceElement);
+    candidates.forEach((candidate, sourceIndex) => {
+      const sourceElement = candidate.element;
+      const text = candidate.text ?? getCandidateText(sourceElement);
+      const rect = candidate.rect ?? getCandidateRect(sourceElement);
       if (!text || rect.width < 2 || rect.height < 2) return;
       if (isDuplicateCandidate(text, rect, accepted)) return;
       accepted.push({ text, rect });
 
-      const styleElement = sourceElement.querySelector("p span, span, p") || sourceElement;
+      const styleElement = candidate.styleElement
+        || sourceElement.querySelector("p span, span, p")
+        || sourceElement;
       const computedStyle = getComputedStyle(styleElement);
       const fontSizePx = numberOr(computedStyle.fontSize, 14);
       const lineHeight = normalizeLineHeight(computedStyle.lineHeight, fontSizePx);
@@ -285,6 +288,7 @@ function extractDocumentModel() {
         zIndex: state.segments.length + 1,
         deleted: false,
         sourceElement,
+        sourceElements: candidate.sourceElements,
         element: null,
         style: {
           fontFamily: normalizeFontFamily(computedStyle.fontFamily),
@@ -297,7 +301,7 @@ function extractDocumentModel() {
       };
 
       segment.original = snapshotSegment(segment);
-      sourceElement.classList.add("icat-source-hidden");
+      hideCandidateSource(candidate);
       state.segments.push(segment);
       createSegmentElement(segment);
     });
@@ -305,30 +309,7 @@ function extractDocumentModel() {
 }
 
 function collectTextCandidates(pageElement) {
-  const scopeSelector = "article, header, footer";
-  const paragraphSelector = "article p, header p, footer p";
-  const seen = new Set();
-  const candidates = [];
-
-  for (const scope of pageElement.querySelectorAll(scopeSelector)) {
-    for (const shape of scope.querySelectorAll("svg")) {
-      if (!shape.parentElement?.closest("svg") && shape.querySelector("p") && !seen.has(shape)) {
-        seen.add(shape);
-        candidates.push(shape);
-      }
-    }
-  }
-
-  for (const element of pageElement.querySelectorAll(paragraphSelector)) {
-    if (element.closest("svg")) continue;
-    if (element.querySelector("svg, p")) continue;
-    if (!seen.has(element)) {
-      seen.add(element);
-      candidates.push(element);
-    }
-  }
-
-  return candidates.sort(compareDocumentOrder);
+  return window.ICATSegmentation.collectTextCandidates(pageElement, normalizeText);
 }
 
 function getCandidateText(element) {
@@ -336,9 +317,27 @@ function getCandidateText(element) {
     const lines = Array.from(element.querySelectorAll("p"))
       .map((paragraph) => normalizeText(paragraph.textContent))
       .filter(Boolean);
-    return lines.join("\n");
+    if (lines.length) return lines.join("\n");
+    return Array.from(element.querySelectorAll("text"))
+      .filter((textElement) => !textElement.parentElement?.closest("text"))
+      .map((textElement) => normalizeText(textElement.textContent))
+      .filter(Boolean)
+      .join("\n");
   }
   return normalizeText(element.textContent);
+}
+
+function hideCandidateSource(candidate) {
+  for (const sourceElement of candidate.sourceElements) {
+    sourceElement.classList.add("icat-source-hidden");
+  }
+  for (const textNode of candidate.sourceTextNodes) {
+    if (!textNode.isConnected || textNode.parentElement?.closest(".icat-source-hidden")) continue;
+    const wrapper = document.createElement("span");
+    wrapper.className = "icat-source-hidden";
+    textNode.parentNode.insertBefore(wrapper, textNode);
+    wrapper.append(textNode);
+  }
 }
 
 function getCandidateRect(element) {
@@ -360,11 +359,6 @@ function isDuplicateCandidate(text, rect, accepted) {
     candidate.text === text
     && window.ICATLayout.rectangleOverlapRatio(rect, candidate.rect) >= 0.75
   ));
-}
-
-function compareDocumentOrder(first, second) {
-  if (first === second) return 0;
-  return first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
 }
 
 function getPageContentBounds(pageElement, pageWidth, nominalHeight) {

@@ -21,6 +21,28 @@ PX_TO_EMU = 9_525  # CSS reference pixel at 96 DPI; DrawingML uses 914400 EMU/in
 BASE_RELATIVE_HEIGHT = 251_658_240
 WPS_GRAPHIC_URI = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
 INVALID_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+CSS_TO_WORD_ALIGNMENT = {
+    "left": "left",
+    "right": "right",
+    "center": "center",
+    "justify": "both",
+    "justify-all": "distribute",
+    "start": "left",
+    "end": "right",
+    "match-parent": "left",
+}
+VALID_WORD_ALIGNMENTS = {
+    "left",
+    "right",
+    "center",
+    "both",
+    "distribute",
+    "numTab",
+    "highKashida",
+    "lowKashida",
+    "mediumKashida",
+    "thaiDistribute",
+}
 NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
@@ -42,6 +64,12 @@ def px_to_twips(value: float) -> int:
 
 def px_to_emu(value: float) -> int:
     return max(1, round(float(value) * PX_TO_EMU))
+
+
+def normalize_alignment(value: object) -> str:
+    """Translate browser CSS text-align values to WordprocessingML ST_Jc values."""
+    alignment = str(value or "left").strip()
+    return CSS_TO_WORD_ALIGNMENT.get(alignment, alignment if alignment in VALID_WORD_ALIGNMENTS else "left")
 
 
 def element(prefix: str, name: str, attrs: dict | None = None) -> etree._Element:
@@ -126,7 +154,7 @@ def create_text_box_paragraph(segment: dict) -> etree._Element:
     paragraph_properties.append(spacing)
 
     alignment = element("w", "jc")
-    word_attr(alignment, "val", segment.get("alignment", "left"))
+    word_attr(alignment, "val", normalize_alignment(segment.get("alignment")))
     paragraph_properties.append(alignment)
     paragraph_properties.append(element("w", "contextualSpacing"))
     paragraph.append(paragraph_properties)
@@ -447,6 +475,11 @@ def validate_export(output_path: Path, expected_pages: int, expected_segments: i
         raise ValueError("Each DOCX VML shape must have an independent host paragraph")
     if len(host_paragraphs) != expected_segments:
         raise ValueError("DOCX VML host-paragraph count does not match the segment count")
+
+    paragraph_alignments = reopened.element.body.xpath(".//w:txbxContent/w:p/w:pPr/w:jc/@w:val")
+    invalid_alignments = sorted(set(paragraph_alignments).difference(VALID_WORD_ALIGNMENTS))
+    if invalid_alignments:
+        raise ValueError(f"DOCX contains invalid Word paragraph alignments: {invalid_alignments}")
 
     shape_ids = [shape.get(f"{{{NS['o']}}}spid") for shape in shapes]
     if any(not shape_id for shape_id in shape_ids) or len(set(shape_ids)) != len(shape_ids):

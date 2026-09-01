@@ -8,7 +8,7 @@
     "start": "node server.cjs",
     "test": "node --test tests/*.test.cjs",
     "test:python": ".venv/bin/python -m unittest discover -s tests -p 'test_*.py'",
-    "check": "node --check server.cjs && node --check public/layout-model.js && node --check public/history-model.js && node --check public/app.js && npm test && npm run test:python"
+    "check": "node --check server.cjs && node --check public/layout-model.js && node --check public/history-model.js && node --check public/segmentation-model.js && node --check public/app.js && npm test && npm run test:python"
   },
   "dependencies": {
     "docx-preview": "0.4.0",
@@ -16,5 +16,8 @@
   },
   "engines": {
     "node": ">=22.12"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

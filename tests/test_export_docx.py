@@ -9,6 +9,42 @@ from export_docx import export_layout  # noqa: E402
 
 
 class ExportDocxTests(unittest.TestCase):
+    def test_css_justify_is_exported_as_word_both_alignment(self):
+        payload = {
+            "title": "Justified text regression",
+            "pages": [
+                {"id": "page-1", "index": 0, "widthPx": 794, "heightPx": 1123},
+                {"id": "page-2", "index": 1, "widthPx": 794, "heightPx": 1123},
+            ],
+            "segments": [],
+        }
+        for index in range(20):
+            payload["segments"].append({
+                "id": f"segment-{index}",
+                "pageIndex": index // 10,
+                "text": "ИМЕЕТ СРОК: Настоящая доверенность действительна до окончания рабочего дня.",
+                "x": 48,
+                "y": 32 + (index % 10) * 80,
+                "width": 690,
+                "height": 64,
+                "fontFamily": "Times New Roman",
+                "fontSizePx": 16,
+                "fontWeight": 700,
+                "lineHeight": 1.1,
+                "color": "#000000",
+                "alignment": "justify",
+                "zIndex": index + 1,
+            })
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "justified.docx"
+            export_layout(payload, output)
+            document = Document(output)
+
+        alignments = document.element.body.xpath(".//w:txbxContent/w:p/w:pPr/w:jc/@w:val")
+        self.assertEqual(alignments, ["both"] * 20)
+        self.assertNotIn("justify", alignments)
+
     def test_exports_positioned_editable_text_on_two_pages(self):
         payload = {
             "title": "Position test",
