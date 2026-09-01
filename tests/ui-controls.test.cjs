@@ -32,6 +32,8 @@ test('wires page-only grid, visual page insertion, parking and continuous zoom',
   assert.match(app, /getPageSlicePlacement/)
   assert.match(app, /renderPageInsertControls/)
   assert.match(app, /insertBlankPage/)
+  assert.match(app, /undoInsertedPage/)
+  assert.match(app, /commitHistory\(before, "добавление страницы"/)
   assert.match(app, /createParkingArea/)
   assert.match(app, /findDropSurface/)
   assert.match(app, /ICATLayout\.isDocumentSegment/)

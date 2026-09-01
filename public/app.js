@@ -445,6 +445,7 @@ function insertBlankPage(afterPageIndex) {
   commitActiveTextEdit();
   const referencePage = state.pages[afterPageIndex];
   if (!referencePage) return;
+  const before = createHistorySnapshot();
 
   for (const control of elements.docxHost.querySelectorAll(".icat-page-insert")) control.remove();
   const pageElement = referencePage.element.cloneNode(false);
@@ -472,18 +473,12 @@ function insertBlankPage(afterPageIndex) {
     }
     if (segment.original.lastPageIndex > afterPageIndex) segment.original.lastPageIndex += 1;
   }
-  for (const entry of state.history.entries) {
-    for (const savedSegment of entry.snapshot.segments) {
-      if (!savedSegment.parked && savedSegment.pageIndex > afterPageIndex) {
-        savedSegment.pageIndex += 1;
-        savedSegment.pageId = `page-${savedSegment.pageIndex + 1}`;
-      }
-      if (savedSegment.lastPageIndex > afterPageIndex) savedSegment.lastPageIndex += 1;
-    }
-  }
   reindexPages();
   renderPageInsertControls();
   updateSummary();
+  if (commitHistory(before, "добавление страницы")) {
+    state.history.entries.at(-1).insertedPage = page;
+  }
   if (state.viewMode === "fit") requestAnimationFrame(fitDocumentWidth);
   showToast(`Добавлена пустая страница ${page.pageIndex + 1}`);
 }
@@ -1322,6 +1317,7 @@ function snapshotSegment(segment) {
 
 function createHistorySnapshot() {
   return {
+    pages: state.pages.map((page) => ({ id: page.id, isAdded: page.isAdded })),
     segments: state.segments.map((segment) => ({ id: segment.id, ...snapshotSegment(segment) })),
     selectedIds: [...state.selectedIds],
     selectedId: state.selectedId,
@@ -1329,7 +1325,7 @@ function createHistorySnapshot() {
 }
 
 function historyDocumentSignature(snapshot) {
-  return JSON.stringify(snapshot.segments);
+  return JSON.stringify({ pages: snapshot.pages, segments: snapshot.segments });
 }
 
 function commitHistory(before, label) {
@@ -1384,8 +1380,35 @@ function undoLastAction() {
     showToast("Нет действий для отмены");
     return;
   }
-  restoreHistorySnapshot(entry.snapshot);
+  if (entry.insertedPage) {
+    undoInsertedPage(entry);
+  } else {
+    restoreHistorySnapshot(entry.snapshot);
+  }
   showToast(`Отменено: ${entry.label}`);
+}
+
+function undoInsertedPage(entry) {
+  const pageIndex = state.pages.indexOf(entry.insertedPage);
+  if (pageIndex < 0) {
+    restoreHistorySnapshot(entry.snapshot);
+    return;
+  }
+
+  for (const control of elements.docxHost.querySelectorAll(".icat-page-insert")) control.remove();
+  entry.insertedPage.element.remove();
+  state.pages.splice(pageIndex, 1);
+  for (const segment of state.segments) {
+    if (segment.original.pageIndex > pageIndex) {
+      segment.original.pageIndex -= 1;
+      segment.original.pageId = `page-${segment.original.pageIndex + 1}`;
+    }
+    if (segment.original.lastPageIndex > pageIndex) segment.original.lastPageIndex -= 1;
+  }
+  reindexPages();
+  renderPageInsertControls();
+  restoreHistorySnapshot(entry.snapshot);
+  if (state.viewMode === "fit") requestAnimationFrame(fitDocumentWidth);
 }
 
 function restoreHistorySnapshot(snapshot) {
