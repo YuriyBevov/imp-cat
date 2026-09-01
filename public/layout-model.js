@@ -38,35 +38,12 @@
     return { x: contentX, width: contentWidth };
   }
 
-  function getPageSliceCount(renderedHeight, pageHeight, contentBottom = 0) {
-    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
-    const extent = Math.max(
-      safePageHeight,
-      Number(renderedHeight) || 0,
-      Number(contentBottom) || 0,
-    );
-    return Math.max(1, Math.ceil(extent / safePageHeight - 0.02));
-  }
-
-  function getPageSlicePlacement(y, height, pageHeight, sliceCount, contentTop = 0) {
-    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
-    const safeSliceCount = Math.max(1, Math.round(Number(sliceCount) || 1));
-    const safeHeight = Math.max(0, Number(height) || 0);
-    let sliceIndex = clamp(Math.floor((Number(y) || 0) / safePageHeight), 0, safeSliceCount - 1);
-    let localY = Math.max(0, (Number(y) || 0) - sliceIndex * safePageHeight);
-
-    if (
-      localY + safeHeight > safePageHeight
-      && sliceIndex < safeSliceCount - 1
-      && safeHeight <= safePageHeight - contentTop
-    ) {
-      sliceIndex += 1;
-      localY = Math.max(0, Number(contentTop) || 0);
-    }
-
+  function getPhysicalPageSize(declaredWidth, declaredHeight, fallbackWidth, fallbackHeight) {
+    const width = Number(declaredWidth) > 0 ? Number(declaredWidth) : Number(fallbackWidth);
+    const height = Number(declaredHeight) > 0 ? Number(declaredHeight) : Number(fallbackHeight);
     return {
-      sliceIndex,
-      y: clamp(localY, 0, Math.max(0, safePageHeight - Math.min(safeHeight, safePageHeight))),
+      width: clamp(width || 793.7, 200, 2_112),
+      height: clamp(height || 1_122.5, 200, 2_112),
     };
   }
 
@@ -131,13 +108,53 @@
 
   function findSegmentOverlaps(segments, minimumRatio = 0.12) {
     const overlaps = [];
-    for (let firstIndex = 0; firstIndex < segments.length; firstIndex += 1) {
-      const first = segments[firstIndex];
-      for (let secondIndex = firstIndex + 1; secondIndex < segments.length; secondIndex += 1) {
-        const second = segments[secondIndex];
-        if (first.pageIndex !== second.pageIndex) continue;
-        const ratio = rectangleOverlapRatio(first, second);
-        if (ratio >= minimumRatio) overlaps.push({ firstId: first.id, secondId: second.id, ratio });
+    const bucketSize = 256;
+    const segmentsByPage = new Map();
+    for (const segment of segments) {
+      const pageSegments = segmentsByPage.get(segment.pageIndex) || [];
+      pageSegments.push({ segment, rectangle: normalizeRectangle(segment) });
+      segmentsByPage.set(segment.pageIndex, pageSegments);
+    }
+    for (const pageSegments of segmentsByPage.values()) {
+      const buckets = new Map();
+      for (let currentIndex = 0; currentIndex < pageSegments.length; currentIndex += 1) {
+        const current = pageSegments[currentIndex];
+        const firstColumn = Math.floor(current.rectangle.left / bucketSize);
+        const lastColumn = Math.floor(Math.max(current.rectangle.left, current.rectangle.right - 0.001) / bucketSize);
+        const firstRow = Math.floor(current.rectangle.top / bucketSize);
+        const lastRow = Math.floor(Math.max(current.rectangle.top, current.rectangle.bottom - 0.001) / bucketSize);
+        const candidateIndexes = new Set();
+        for (let row = firstRow; row <= lastRow; row += 1) {
+          for (let column = firstColumn; column <= lastColumn; column += 1) {
+            const key = `${row}:${column}`;
+            for (const candidateIndex of buckets.get(key) || []) candidateIndexes.add(candidateIndex);
+          }
+        }
+        for (const candidateIndex of candidateIndexes) {
+          const candidate = pageSegments[candidateIndex];
+          if (
+            current.rectangle.left >= candidate.rectangle.right
+            || current.rectangle.right <= candidate.rectangle.left
+            || current.rectangle.top >= candidate.rectangle.bottom
+            || current.rectangle.bottom <= candidate.rectangle.top
+          ) continue;
+          const ratio = rectangleOverlapRatio(current.rectangle, candidate.rectangle);
+          if (ratio >= minimumRatio) {
+            overlaps.push({
+              firstId: candidate.segment.id,
+              secondId: current.segment.id,
+              ratio,
+            });
+          }
+        }
+        for (let row = firstRow; row <= lastRow; row += 1) {
+          for (let column = firstColumn; column <= lastColumn; column += 1) {
+            const key = `${row}:${column}`;
+            const bucket = buckets.get(key) || [];
+            bucket.push(currentIndex);
+            buckets.set(key, bucket);
+          }
+        }
       }
     }
     return overlaps;
@@ -172,8 +189,7 @@
   return {
     clampGroupDelta,
     findSegmentOverlaps,
-    getPageSliceCount,
-    getPageSlicePlacement,
+    getPhysicalPageSize,
     getSegmentHorizontalGeometry,
     isDocumentSegment,
     rectangleOverlapRatio,

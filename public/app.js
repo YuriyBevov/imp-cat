@@ -16,6 +16,8 @@ const state = {
   viewMode: "fit",
   parkingElement: null,
   parkingOverlay: null,
+  parkingHeight: 0,
+  dropTargetElement: null,
   loading: false,
   history: window.ICATHistory.create(HISTORY_LIMIT),
   activeTextEdit: null,
@@ -187,6 +189,8 @@ function clearDocument() {
   state.viewMode = "fit";
   state.parkingElement = null;
   state.parkingOverlay = null;
+  state.parkingHeight = 0;
+  state.dropTargetElement = null;
   clearHistory();
   elements.documentStage.hidden = true;
   elements.dropZone.hidden = false;
@@ -205,13 +209,14 @@ function extractDocumentModel() {
   if (!sourcePageElements.length) throw new Error("в документе не найдены страницы");
 
   const sourcePages = sourcePageElements.map((pageElement, sourcePageIndex) => {
-    const width = pageElement.clientWidth;
-    const renderedHeight = Math.max(pageElement.clientHeight, pageElement.scrollHeight);
-    const height = clamp(
-      numberOr(getComputedStyle(pageElement).minHeight, renderedHeight),
-      200,
-      2_112,
+    const pageStyle = getComputedStyle(pageElement);
+    const physicalSize = window.ICATLayout.getPhysicalPageSize(
+      numberOr(pageStyle.width, 0),
+      numberOr(pageStyle.minHeight, numberOr(pageStyle.height, 0)),
+      pageElement.clientWidth,
+      pageElement.clientHeight,
     );
+    const { width, height } = physicalSize;
     const contentBounds = getPageContentBounds(pageElement, width, height);
     const pageRect = pageElement.getBoundingClientRect();
     const candidates = collectTextCandidates(pageElement).map((candidate, sourceIndex) => ({
@@ -220,49 +225,25 @@ function extractDocumentModel() {
       text: candidate.text ?? getCandidateText(candidate.element),
       rect: candidate.rect ?? getCandidateRect(candidate.element),
     }));
-    const contentBottom = candidates.reduce(
-      (bottom, item) => Math.max(bottom, item.rect.bottom - pageRect.top),
-      0,
-    );
     return {
       sourcePageIndex,
       element: pageElement,
-      blankTemplate: pageElement.cloneNode(false),
       pageRect,
       width,
       height,
-      renderedHeight,
       contentBounds,
       candidates,
-      sliceCount: window.ICATLayout.getPageSliceCount(renderedHeight, height, contentBottom),
-      pages: [],
     };
   });
 
-  state.pages = [];
-  for (const sourcePage of sourcePages) {
-    let insertionPoint = sourcePage.element;
-    for (let sliceIndex = 0; sliceIndex < sourcePage.sliceCount; sliceIndex += 1) {
-      const pageElement = sliceIndex === 0
-        ? sourcePage.element
-        : sourcePage.blankTemplate.cloneNode(false);
-      if (sliceIndex > 0) {
-        pageElement.classList.add("icat-derived-page");
-        insertionPoint.parentNode.insertBefore(pageElement, insertionPoint.nextSibling);
-        insertionPoint = pageElement;
-      }
-      const page = createPageRecord(
-        pageElement,
-        state.pages.length,
-        sourcePage.width,
-        sourcePage.height,
-        sourcePage.contentBounds,
-        { sourcePageIndex: sourcePage.sourcePageIndex, sliceIndex },
-      );
-      sourcePage.pages.push(page);
-      state.pages.push(page);
-    }
-  }
+  state.pages = sourcePages.map((sourcePage, pageIndex) => createPageRecord(
+    sourcePage.element,
+    pageIndex,
+    sourcePage.width,
+    sourcePage.height,
+    sourcePage.contentBounds,
+    { sourcePageIndex: sourcePage.sourcePageIndex },
+  ));
 
   const wrapper = elements.docxHost.querySelector(":scope > .docx-wrapper")
     || elements.docxHost.querySelector(".docx-wrapper")
@@ -290,14 +271,7 @@ function extractDocumentModel() {
       const lineHeight = normalizeLineHeight(computedStyle.lineHeight, fontSizePx);
       const measuredHeight = Math.max(rect.height, fontSizePx * lineHeight, MIN_SEGMENT_HEIGHT);
       const rawY = Math.max(0, rect.top - sourcePage.pageRect.top);
-      const placement = window.ICATLayout.getPageSlicePlacement(
-        rawY,
-        measuredHeight,
-        sourcePage.height,
-        sourcePage.sliceCount,
-        sourcePage.contentBounds.y,
-      );
-      const page = sourcePage.pages[placement.sliceIndex];
+      const page = state.pages[sourcePage.sourcePageIndex];
       const horizontalGeometry = window.ICATLayout.getSegmentHorizontalGeometry(
         rect,
         sourcePage.pageRect.left,
@@ -307,7 +281,7 @@ function extractDocumentModel() {
         MIN_SEGMENT_WIDTH,
       );
       const x = horizontalGeometry.x;
-      const y = clamp(placement.y, 0, page.height - MIN_SEGMENT_HEIGHT);
+      const y = clamp(rawY, 0, page.height - MIN_SEGMENT_HEIGHT);
       const width = horizontalGeometry.width;
       const height = clamp(
         measuredHeight,
@@ -375,7 +349,6 @@ function createPageRecord(element, pageIndex, width, height, contentBounds, opti
     element,
     overlay,
     sourcePageIndex: options.sourcePageIndex ?? null,
-    sliceIndex: options.sliceIndex ?? 0,
     isAdded: Boolean(options.isAdded),
     insertControl: null,
   };
@@ -404,17 +377,20 @@ function createParkingArea(wrapper) {
 }
 
 function setParkingSurfaceHeight(height) {
-  if (!state.parkingElement || !state.parkingOverlay) return;
+  if (!state.parkingElement || !state.parkingOverlay) return false;
   const maximumHeight = Math.max(...state.pages.map((page) => page.height), MIN_PARKING_HEIGHT);
   const nextHeight = clamp(Math.ceil(height), MIN_PARKING_HEIGHT, maximumHeight);
+  if (nextHeight === state.parkingHeight) return false;
+  state.parkingHeight = nextHeight;
   state.parkingElement.style.height = `${nextHeight + 44}px`;
   state.parkingOverlay.style.height = `${nextHeight}px`;
+  return true;
 }
 
 function ensureParkingCapacity(origins) {
   const top = Math.min(...origins.map((item) => item.y));
   const bottom = Math.max(...origins.map((item) => item.y + item.height));
-  setParkingSurfaceHeight(Math.max(state.parkingOverlay.clientHeight, bottom - top));
+  return setParkingSurfaceHeight(Math.max(state.parkingHeight, bottom - top));
 }
 
 function syncParkingSurfaceHeight() {
@@ -449,7 +425,6 @@ function insertBlankPage(afterPageIndex) {
 
   for (const control of elements.docxHost.querySelectorAll(".icat-page-insert")) control.remove();
   const pageElement = referencePage.element.cloneNode(false);
-  pageElement.classList.remove("icat-derived-page");
   pageElement.classList.add("icat-added-page");
   pageElement.removeAttribute("data-page-index");
   referencePage.element.parentNode.insertBefore(pageElement, referencePage.element.nextSibling);
@@ -763,49 +738,51 @@ function getSegmentSurface(segment) {
   } : null;
 }
 
-function findDropSurface(clientX, clientY) {
-  for (const page of state.pages) {
-    const rectangle = page.element.getBoundingClientRect();
-    if (pointInsideRectangle(clientX, clientY, rectangle)) {
-      return {
-        kind: "page",
-        page,
-        element: page.element,
-        overlay: page.overlay,
-        width: page.width,
-        height: page.height,
-      };
-    }
-  }
-  const parkingRectangle = state.parkingOverlay?.getBoundingClientRect();
-  if (parkingRectangle && pointInsideRectangle(clientX, clientY, parkingRectangle)) {
-    return {
+function measureDropSurfaces() {
+  const surfaces = state.pages.map((page) => ({
+    kind: "page",
+    page,
+    element: page.element,
+    overlay: page.overlay,
+    width: page.width,
+    height: page.height,
+    rectangle: page.element.getBoundingClientRect(),
+  }));
+  if (state.parkingOverlay) {
+    surfaces.push({
       kind: "parking",
       element: state.parkingElement,
       overlay: state.parkingOverlay,
       width: state.parkingOverlay.clientWidth,
-      height: state.parkingOverlay.clientHeight,
-    };
+      height: state.parkingHeight,
+      rectangle: state.parkingOverlay.getBoundingClientRect(),
+    });
   }
-  return null;
+  return surfaces;
+}
+
+function findDropSurface(clientX, clientY, surfaces) {
+  return surfaces.find((surface) => pointInsideRectangle(clientX, clientY, surface.rectangle)) || null;
 }
 
 function pointInsideRectangle(x, y, rectangle) {
   return x >= rectangle.left && x <= rectangle.right && y >= rectangle.top && y <= rectangle.bottom;
 }
 
-function surfacePointFromEvent(surface, event) {
-  const rectangle = surface.overlay.getBoundingClientRect();
+function surfacePointFromCoordinates(surface, clientX, clientY) {
+  const rectangle = surface.rectangle;
   return {
-    x: clamp((event.clientX - rectangle.left) / state.viewScale, 0, surface.width),
-    y: clamp((event.clientY - rectangle.top) / state.viewScale, 0, surface.height),
+    x: clamp((clientX - rectangle.left) / state.viewScale, 0, surface.width),
+    y: clamp((clientY - rectangle.top) / state.viewScale, 0, surface.height),
   };
 }
 
 function showDropTarget(surface) {
-  for (const page of state.pages) page.element.classList.remove("is-drop-target");
-  state.parkingElement?.classList.remove("is-drop-target");
-  surface?.element?.classList.add("is-drop-target");
+  const nextElement = surface?.element || null;
+  if (state.dropTargetElement === nextElement) return;
+  state.dropTargetElement?.classList.remove("is-drop-target");
+  nextElement?.classList.add("is-drop-target");
+  state.dropTargetElement = nextElement;
 }
 
 function attachDragBehavior(segment, handle) {
@@ -831,25 +808,37 @@ function attachDragBehavior(segment, handle) {
       width: candidate.width,
       height: candidate.height,
     }));
-    const sourceSurface = getSegmentSurface(segment);
+    let dropSurfaces = measureDropSurfaces();
+    const sourceSurface = dropSurfaces.find((surface) => (
+      segment.parked ? surface.kind === "parking" : surface.page === state.pages[segment.pageIndex]
+    ));
     if (!sourceSurface) return;
     const primaryOrigin = origins.find((item) => item.segment === segment);
-    const startPoint = surfacePointFromEvent(sourceSurface, event);
+    const startPoint = surfacePointFromCoordinates(
+      sourceSurface,
+      event.clientX,
+      event.clientY,
+    );
     const pointerOffset = { x: startPoint.x - segment.x, y: startPoint.y - segment.y };
     let activeSurface = sourceSurface;
-    handle.setPointerCapture(event.pointerId);
+    let pendingPoint = null;
+    let animationFrame = null;
     for (const item of origins) item.segment.element.classList.add("is-dragging");
 
-    const move = (moveEvent) => {
-      const targetSurface = findDropSurface(moveEvent.clientX, moveEvent.clientY);
+    const applyMove = (pointEvent) => {
+      let targetSurface = findDropSurface(pointEvent.clientX, pointEvent.clientY, dropSurfaces);
       if (!targetSurface) return;
-      if (targetSurface.kind === "parking") {
-        ensureParkingCapacity(origins);
-        targetSurface.height = state.parkingOverlay.clientHeight;
+      if (targetSurface.kind === "parking" && ensureParkingCapacity(origins)) {
+        dropSurfaces = measureDropSurfaces();
+        targetSurface = findDropSurface(pointEvent.clientX, pointEvent.clientY, dropSurfaces);
+        if (!targetSurface) return;
       }
-      activeSurface = targetSurface;
       showDropTarget(targetSurface);
-      const point = surfacePointFromEvent(targetSurface, moveEvent);
+      const point = surfacePointFromCoordinates(
+        targetSurface,
+        pointEvent.clientX,
+        pointEvent.clientY,
+      );
       const requestedDeltaX = snap(point.x - pointerOffset.x) - primaryOrigin.x;
       const requestedDeltaY = snap(point.y - pointerOffset.y) - primaryOrigin.y;
       const clampedDelta = window.ICATLayout.clampGroupDelta(
@@ -860,6 +849,7 @@ function attachDragBehavior(segment, handle) {
         targetSurface.height,
       );
       for (const item of origins) {
+        const surfaceChanged = item.segment.element.parentElement !== targetSurface.overlay;
         if (targetSurface.kind === "parking") {
           if (!item.segment.parked) item.segment.lastPageIndex = item.segment.pageIndex;
           item.segment.parked = true;
@@ -871,20 +861,45 @@ function attachDragBehavior(segment, handle) {
           item.segment.pageId = targetSurface.page.id;
           item.segment.lastPageIndex = targetSurface.page.pageIndex;
         }
-        targetSurface.overlay.append(item.segment.element);
+        if (surfaceChanged) targetSurface.overlay.append(item.segment.element);
         item.segment.x = item.x + clampedDelta.x;
         item.segment.y = item.y + clampedDelta.y;
-        renderSegmentPosition(item.segment);
+        if (surfaceChanged) {
+          renderSegmentPosition(item.segment);
+        } else {
+          renderSegmentCoordinates(item.segment);
+        }
       }
-      updateSelectedDetails();
+      activeSurface = targetSurface;
     };
 
-    const finish = () => {
+    const flushMove = () => {
+      animationFrame = null;
+      if (!pendingPoint) return;
+      const pointEvent = pendingPoint;
+      pendingPoint = null;
+      applyMove(pointEvent);
+    };
+
+    const move = (moveEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) return;
+      pendingPoint = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
+      if (animationFrame === null) animationFrame = requestAnimationFrame(flushMove);
+    };
+
+    const finish = (finishEvent) => {
+      if (finishEvent.pointerId !== event.pointerId) return;
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+      if (pendingPoint) flushMove();
       showDropTarget(null);
-      for (const item of origins) item.segment.element.classList.remove("is-dragging");
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", finish);
-      handle.removeEventListener("pointercancel", finish);
+      for (const item of origins) {
+        item.segment.element.classList.remove("is-dragging");
+        renderSegmentPosition(item.segment);
+      }
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
       updateSummary();
       syncParkingSurfaceHeight();
       const label = activeSurface.kind === "parking"
@@ -898,9 +913,9 @@ function attachDragBehavior(segment, handle) {
       }
     };
 
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", finish);
-    handle.addEventListener("pointercancel", finish);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
   });
 }
 
@@ -972,15 +987,25 @@ function growSegmentToFit(segment, content) {
   }
 }
 
-function renderSegmentPosition(segment) {
+function renderSegmentCoordinates(segment) {
   if (!segment.element) return;
+  segment.element.style.left = `${segment.x}px`;
+  segment.element.style.top = `${segment.y}px`;
+}
+
+function renderSegmentGeometry(segment) {
+  if (!segment.element) return;
+  renderSegmentCoordinates(segment);
   Object.assign(segment.element.style, {
-    left: `${segment.x}px`,
-    top: `${segment.y}px`,
     width: `${segment.width}px`,
     height: `${segment.height}px`,
     zIndex: String(segment.zIndex),
   });
+}
+
+function renderSegmentPosition(segment) {
+  if (!segment.element) return;
+  renderSegmentGeometry(segment);
   segment.element.classList.toggle("is-parked", segment.parked);
   segment.element.classList.toggle("is-in-page-margin", !segment.parked && !isInsideWordTextArea(segment));
   const cell = getCellReference(segment);

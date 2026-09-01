@@ -3,8 +3,7 @@ const assert = require('node:assert/strict')
 const {
   clampGroupDelta,
   findSegmentOverlaps,
-  getPageSliceCount,
-  getPageSlicePlacement,
+  getPhysicalPageSize,
   getSegmentHorizontalGeometry,
   isDocumentSegment,
   rectangleOverlapRatio,
@@ -31,6 +30,18 @@ test('detects and vertically resolves meaningful segment overlaps', () => {
   assert.equal(placements.get('first'), 10)
   assert.equal(placements.get('second'), 64)
   assert.equal(placements.get('other-column'), 20)
+})
+
+test('scans dense multi-page layouts without mixing unrelated page rows', () => {
+  const segments = Array.from({ length: 2_000 }, (_, index) => ({
+    id: `segment-${index}`,
+    pageIndex: Math.floor(index / 100),
+    x: 20,
+    y: (index % 100) * 10,
+    width: 740,
+    height: 8,
+  }))
+  assert.equal(findSegmentOverlaps(segments, 0.12).length, 0)
 })
 
 test('selects intersecting rectangles and clamps a group to the physical page', () => {
@@ -64,16 +75,14 @@ test('uses the full content width for body paragraphs but preserves contained ge
   )
 })
 
-test('turns overflowing source content into separate visual pages', () => {
-  assert.equal(getPageSliceCount(2244, 1122), 2)
-  assert.equal(getPageSliceCount(1122, 1122, 3300), 3)
-  assert.deepEqual(getPageSlicePlacement(1280, 80, 1122, 2, 64), {
-    sliceIndex: 1,
-    y: 158,
+test('uses the declared Word page size instead of overflowing DOM height', () => {
+  assert.deepEqual(getPhysicalPageSize(794, 1122, 794, 2244), {
+    width: 794,
+    height: 1122,
   })
-  assert.deepEqual(getPageSlicePlacement(1100, 80, 1122, 2, 64), {
-    sliceIndex: 1,
-    y: 64,
+  assert.deepEqual(getPhysicalPageSize(0, 0, 816, 1056), {
+    width: 816,
+    height: 1056,
   })
 })
 

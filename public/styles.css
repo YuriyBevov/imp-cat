@@ -617,8 +617,17 @@ button {
 .icat-segment.is-dragging,
 .icat-segment.is-resizing {
   opacity: 0.9;
-  box-shadow: 0 12px 30px rgba(30, 64, 175, 0.24);
+  transition: none;
   user-select: none;
+}
+
+.icat-segment.is-resizing {
+  box-shadow: 0 12px 30px rgba(30, 64, 175, 0.24);
+}
+
+.icat-segment.is-dragging {
+  box-shadow: none;
+  will-change: left, top;
 }
 
 .icat-segment.is-menu-open {
