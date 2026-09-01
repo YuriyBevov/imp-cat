@@ -1,6 +1,7 @@
 const DEFAULT_GRID_SIZE = 4;
 const MIN_SEGMENT_WIDTH = 20;
 const MIN_SEGMENT_HEIGHT = 16;
+const HISTORY_LIMIT = 100;
 
 const state = {
   title: "Новый документ",
@@ -15,6 +16,9 @@ const state = {
   viewMode: "fit",
   workspaceHeightScale: 1,
   loading: false,
+  history: window.ICATHistory.create(HISTORY_LIMIT),
+  activeTextEdit: null,
+  restoringHistory: false,
 };
 
 const elements = {
@@ -75,7 +79,9 @@ elements.zoomIn.addEventListener("click", () => setViewScale(state.viewScale * 1
 elements.fitWidth.addEventListener("click", fitDocumentWidth);
 elements.resolveOverlaps.addEventListener("click", resolveSegmentOverlaps);
 elements.workspaceHeightScale.addEventListener("change", () => {
+  const before = createHistorySnapshot();
   setWorkspaceHeightScale(Number(elements.workspaceHeightScale.value));
+  commitHistory(before, "изменение высоты рабочего поля");
 });
 elements.workspace.addEventListener("wheel", handleWorkspaceZoom, { passive: false });
 window.addEventListener("resize", () => {
@@ -106,6 +112,8 @@ document.addEventListener("pointerdown", (event) => {
     closeAllMenus();
   }
 });
+
+document.addEventListener("keydown", handleUndoShortcut);
 
 async function loadSample() {
   try {
@@ -185,6 +193,7 @@ function clearDocument() {
   state.selectedId = null;
   state.selectedIds = new Set();
   state.viewMode = "fit";
+  clearHistory();
   elements.documentStage.hidden = true;
   elements.dropZone.hidden = false;
   updateSummary();
@@ -434,12 +443,16 @@ function createSegmentElement(segment) {
   renderSegmentPosition(segment);
 
   segmentElement.addEventListener("pointerdown", () => selectSegment(segment.id));
-  content.addEventListener("focus", () => selectSegment(segment.id));
+  content.addEventListener("focus", () => {
+    beginTextEdit(segment);
+    selectSegment(segment.id);
+  });
   content.addEventListener("input", () => {
     segment.text = normalizeEditableText(content.innerText);
     growSegmentToFit(segment, content);
     updateSummary();
   });
+  content.addEventListener("blur", () => commitActiveTextEdit());
 
   menuButton.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -484,6 +497,8 @@ function createSegmentMenu(segment) {
 }
 
 function runSegmentAction(segment, action) {
+  commitActiveTextEdit();
+  const before = createHistorySnapshot();
   if (action === "reset") {
     const original = segment.original;
     Object.assign(segment, {
@@ -513,6 +528,7 @@ function runSegmentAction(segment, action) {
     updateSummary();
     showToast("Сегмент удалён из результата");
   }
+  commitHistory(before, describeSegmentAction(action));
 }
 
 function moveSegmentToPage(segment, targetPageIndex) {
@@ -539,6 +555,8 @@ function attachDragBehavior(segment, handle) {
     event.stopPropagation();
     if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
     closeAllMenus();
+    commitActiveTextEdit();
+    const before = createHistorySnapshot();
 
     const page = state.pages[segment.pageIndex];
     const selectedSegments = state.segments.filter(
@@ -589,6 +607,7 @@ function attachDragBehavior(segment, handle) {
       handle.removeEventListener("pointerup", finish);
       handle.removeEventListener("pointercancel", finish);
       updateSummary();
+      commitHistory(before, origins.length > 1 ? "групповое перемещение" : "перемещение сегмента");
       if (origins.length > 1) showToast(`Перемещено сегментов: ${origins.length}`);
     };
 
@@ -604,6 +623,8 @@ function attachResizeBehavior(segment, handle) {
     event.preventDefault();
     event.stopPropagation();
     selectSegment(segment.id);
+    commitActiveTextEdit();
+    const before = createHistorySnapshot();
 
     const page = state.pages[segment.pageIndex];
     const origin = {
@@ -644,6 +665,7 @@ function attachResizeBehavior(segment, handle) {
       handle.removeEventListener("pointerup", finish);
       handle.removeEventListener("pointercancel", finish);
       updateSummary();
+      commitHistory(before, "изменение размера сегмента");
     };
 
     handle.addEventListener("pointermove", move);
@@ -813,6 +835,8 @@ function getSegmentOverlaps() {
 }
 
 function resolveSegmentOverlaps() {
+  commitActiveTextEdit();
+  const before = createHistorySnapshot();
   const activeSegments = state.segments.filter((segment) => !segment.deleted);
   const placements = window.ICATLayout.resolveVerticalOverlaps(
     activeSegments,
@@ -830,6 +854,7 @@ function resolveSegmentOverlaps() {
   }
   applyWorkspaceHeightScale();
   updateSummary();
+  commitHistory(before, "разнесение наложений");
   showToast(moved ? `Разнесено сегментов: ${moved}` : "Значимых наложений не найдено");
 }
 
@@ -957,6 +982,7 @@ function renderPageBreaks(page) {
 }
 
 async function exportDocument() {
+  commitActiveTextEdit();
   const activeSegments = state.segments.filter((segment) => !segment.deleted);
   if (!activeSegments.length) {
     showToast("В документе нет сегментов для экспорта", "error");
@@ -1036,7 +1062,120 @@ function snapshotSegment(segment) {
     y: segment.y,
     width: segment.width,
     height: segment.height,
+    deleted: segment.deleted,
   };
+}
+
+function createHistorySnapshot() {
+  return {
+    segments: state.segments.map((segment) => ({ id: segment.id, ...snapshotSegment(segment) })),
+    workspaceHeightScale: state.workspaceHeightScale,
+    selectedIds: [...state.selectedIds],
+    selectedId: state.selectedId,
+  };
+}
+
+function historyDocumentSignature(snapshot) {
+  return JSON.stringify({
+    segments: snapshot.segments,
+    workspaceHeightScale: snapshot.workspaceHeightScale,
+  });
+}
+
+function commitHistory(before, label) {
+  if (!before || state.restoringHistory) return false;
+  const after = createHistorySnapshot();
+  return window.ICATHistory.record(
+    state.history,
+    before,
+    after,
+    label,
+    historyDocumentSignature,
+  );
+}
+
+function clearHistory() {
+  window.ICATHistory.clear(state.history);
+  state.activeTextEdit = null;
+}
+
+function beginTextEdit(segment) {
+  if (state.restoringHistory || state.activeTextEdit?.segmentId === segment.id) return;
+  commitActiveTextEdit();
+  state.activeTextEdit = {
+    segmentId: segment.id,
+    before: createHistorySnapshot(),
+  };
+}
+
+function commitActiveTextEdit() {
+  const activeEdit = state.activeTextEdit;
+  if (!activeEdit) return false;
+  state.activeTextEdit = null;
+  return commitHistory(activeEdit.before, "редактирование текста");
+}
+
+function handleUndoShortcut(event) {
+  const isUndoKey = event.code === "KeyZ" || event.key.toLowerCase() === "z";
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || !isUndoKey) return;
+  event.preventDefault();
+  commitActiveTextEdit();
+  undoLastAction();
+  const editingSegmentId = event.target.closest?.(".icat-segment")?.dataset.segmentId;
+  const editingSegment = state.segments.find(
+    (segment) => segment.id === editingSegmentId && !segment.deleted,
+  );
+  if (event.target.isContentEditable && editingSegment) beginTextEdit(editingSegment);
+}
+
+function undoLastAction() {
+  const entry = window.ICATHistory.undo(state.history);
+  if (!entry) {
+    showToast("Нет действий для отмены");
+    return;
+  }
+  restoreHistorySnapshot(entry.snapshot);
+  showToast(`Отменено: ${entry.label}`);
+}
+
+function restoreHistorySnapshot(snapshot) {
+  const previousRestoringState = state.restoringHistory;
+  state.restoringHistory = true;
+  state.activeTextEdit = null;
+  try {
+    const savedSegments = new Map(snapshot.segments.map((segment) => [segment.id, segment]));
+    for (const segment of state.segments) {
+      const saved = savedSegments.get(segment.id);
+      if (!saved) continue;
+      Object.assign(segment, saved);
+      const content = segment.element?.querySelector(".icat-segment__content");
+      if (content) content.textContent = segment.text;
+      if (segment.deleted) {
+        segment.element?.remove();
+        continue;
+      }
+      const page = state.pages[segment.pageIndex];
+      page?.overlay.append(segment.element);
+      renderSegmentPosition(segment);
+    }
+
+    state.workspaceHeightScale = snapshot.workspaceHeightScale;
+    elements.workspaceHeightScale.value = String(Math.round(state.workspaceHeightScale * 100));
+    applyWorkspaceHeightScale();
+    selectSegments(snapshot.selectedIds, snapshot.selectedId);
+    updateSummary();
+  } finally {
+    state.restoringHistory = previousRestoringState;
+  }
+}
+
+function describeSegmentAction(action) {
+  return {
+    reset: "сброс сегмента",
+    "previous-page": "перенос на предыдущую страницу",
+    "next-page": "перенос на следующую страницу",
+    delete: "удаление сегмента",
+  }[action] || "изменение сегмента";
 }
 
 function getCellReference(segment) {

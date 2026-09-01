@@ -73,7 +73,7 @@ class ExportDocxTests(unittest.TestCase):
         )
         self.assertEqual(len(alternate_content), 0)
 
-    def test_many_segments_share_one_flow_anchor_per_page(self):
+    def test_many_segments_use_independent_flow_anchors(self):
         pages = [
             {"id": "page-1", "index": 0, "widthPx": 800, "heightPx": 1100},
             {"id": "page-2", "index": 1, "widthPx": 800, "heightPx": 1100},
@@ -116,7 +116,16 @@ class ExportDocxTests(unittest.TestCase):
             shape.get("{urn:schemas-microsoft-com:office:office}spid") for shape in vml_shapes
         }), 240)
         self.assertEqual(len(document.element.body.xpath(".//w:framePr")), 0)
-        self.assertEqual(len(document.element.body.xpath("./w:p")), 3)
+        host_paragraphs = document.element.body.xpath(
+            "./w:p[.//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']]"
+        )
+        self.assertEqual(len(host_paragraphs), 240)
+        self.assertTrue(all(
+            len(paragraph.xpath(
+                "./w:r/w:pict/*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+            )) == 1
+            for paragraph in host_paragraphs
+        ))
 
 
 if __name__ == "__main__":

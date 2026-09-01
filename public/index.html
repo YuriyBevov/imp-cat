@@ -86,6 +86,7 @@
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
           <p class="hint">Команда сдвигает пересекающиеся сегменты только вниз и при необходимости расширяет поле. Исходное положение можно вернуть через меню сегмента.</p>
           <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите ⠿ у любого выбранного сегмента.</p>
+          <p class="hint"><strong>Отмена:</strong> нажимайте Cmd/Ctrl + Z, чтобы пошагово отменять изменения документа.</p>
         </section>
 
         <section class="inspector__section">
@@ -134,6 +135,7 @@
     <script src="/vendor/jszip/jszip.min.js"></script>
     <script src="/vendor/docx-preview/docx-preview.min.js"></script>
     <script src="/layout-model.js"></script>
+    <script src="/history-model.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

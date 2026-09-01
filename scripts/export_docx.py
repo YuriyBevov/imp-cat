@@ -346,7 +346,19 @@ def create_text_box_drawing(
     return create_vml_text_box(segment, shape_id, include_shape_type)
 
 
-def add_page_anchor(document: Document, segments: list[dict], first_shape_id: int) -> int:
+def add_shape_anchor(
+    document: Document,
+    segment: dict,
+    shape_id: int,
+    include_shape_type: bool = False,
+) -> None:
+    """Put one floating text box in one flow paragraph.
+
+    Desktop Word rejects some dense VML documents when dozens of independent
+    ``w:pict`` text boxes are children of the same paragraph, even though the
+    ZIP and XML remain valid.  A separate, one-twip host paragraph mirrors the
+    structure Word itself writes and isolates every editable shape.
+    """
     paragraph = document.add_paragraph()
     paragraph_properties = paragraph._p.get_or_add_pPr()
     spacing = element("w", "spacing")
@@ -356,17 +368,21 @@ def add_page_anchor(document: Document, segments: list[dict], first_shape_id: in
     word_attr(spacing, "lineRule", "exact")
     paragraph_properties.append(spacing)
 
+    run = element("w", "r")
+    run_properties = element("w", "rPr")
+    run_properties.append(element("w", "noProof"))
+    run_size = element("w", "sz")
+    word_attr(run_size, "val", 2)
+    run_properties.append(run_size)
+    run.append(run_properties)
+    run.append(create_text_box_drawing(segment, shape_id, include_shape_type=include_shape_type))
+    paragraph._p.append(run)
+
+
+def add_page_anchors(document: Document, segments: list[dict], first_shape_id: int) -> int:
     shape_id = first_shape_id
     for segment in segments:
-        run = element("w", "r")
-        run_properties = element("w", "rPr")
-        run_properties.append(element("w", "noProof"))
-        run_size = element("w", "sz")
-        word_attr(run_size, "val", 2)
-        run_properties.append(run_size)
-        run.append(run_properties)
-        run.append(create_text_box_drawing(segment, shape_id, include_shape_type=shape_id == 1))
-        paragraph._p.append(run)
+        add_shape_anchor(document, segment, shape_id, include_shape_type=shape_id == 1)
         shape_id += 1
     return shape_id
 
@@ -422,6 +438,16 @@ def validate_export(output_path: Path, expected_pages: int, expected_segments: i
     if expected_segments and len(shape_types) != 1:
         raise ValueError("DOCX must define the VML text-box shape type exactly once")
 
+    host_paragraphs = reopened.element.body.xpath(
+        "./w:p[.//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']]"
+    )
+    if any(len(paragraph.xpath(
+        "./w:r/w:pict/*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+    )) != 1 for paragraph in host_paragraphs):
+        raise ValueError("Each DOCX VML shape must have an independent host paragraph")
+    if len(host_paragraphs) != expected_segments:
+        raise ValueError("DOCX VML host-paragraph count does not match the segment count")
+
     shape_ids = [shape.get(f"{{{NS['o']}}}spid") for shape in shapes]
     if any(not shape_id for shape_id in shape_ids) or len(set(shape_ids)) != len(shape_ids):
         raise ValueError("DOCX contains missing or duplicate VML shape IDs")
@@ -454,7 +480,7 @@ def export_layout(payload: dict, output_path: Path) -> None:
     for page_index, page in enumerate(pages):
         section = document.sections[0] if page_index == 0 else document.add_section(WD_SECTION.NEW_PAGE)
         configure_section(section, page)
-        next_shape_id = add_page_anchor(document, grouped_segments[page["index"]], next_shape_id)
+        next_shape_id = add_page_anchors(document, grouped_segments[page["index"]], next_shape_id)
 
     configure_vml_settings(document, len(payload["segments"]))
     document.save(output_path)
