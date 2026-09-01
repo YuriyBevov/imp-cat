@@ -47,6 +47,44 @@
     };
   }
 
+  function getFlowPageCount(flowBottom, pageHeight, contentTop = 0) {
+    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
+    const safeFlowBottom = Math.max(0, Number(flowBottom) || 0);
+    const safeContentTop = clamp(Number(contentTop) || 0, 0, safePageHeight - 1);
+    if (safeFlowBottom <= safePageHeight + 1) return 1;
+    const continuationCapacity = Math.max(1, safePageHeight - safeContentTop);
+    return 1 + Math.ceil((safeFlowBottom - safePageHeight - 1) / continuationCapacity);
+  }
+
+  function getFlowPagePlacement(y, height, pageHeight, pageCount, contentTop = 0) {
+    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
+    const safePageCount = Math.max(1, Math.round(Number(pageCount) || 1));
+    const safeHeight = Math.max(0, Number(height) || 0);
+    const safeContentTop = clamp(Number(contentTop) || 0, 0, safePageHeight - 1);
+    const continuationCapacity = Math.max(1, safePageHeight - safeContentTop);
+    const safeY = Math.max(0, Number(y) || 0);
+    let pageOffset = 0;
+    let localY = safeY;
+    if (safeY >= safePageHeight && safePageCount > 1) {
+      const continuationY = safeY - safePageHeight;
+      pageOffset = 1 + Math.floor(continuationY / continuationCapacity);
+      localY = safeContentTop + (continuationY % continuationCapacity);
+    }
+    pageOffset = clamp(pageOffset, 0, safePageCount - 1);
+    if (
+      localY + safeHeight > safePageHeight
+      && pageOffset < safePageCount - 1
+      && safeHeight <= continuationCapacity
+    ) {
+      pageOffset += 1;
+      localY = safeContentTop;
+    }
+    return {
+      pageOffset,
+      y: clamp(localY, 0, Math.max(0, safePageHeight - Math.min(safeHeight, safePageHeight))),
+    };
+  }
+
   function isDocumentSegment(segment) {
     return Boolean(segment)
       && !segment.deleted
@@ -189,6 +227,8 @@
   return {
     clampGroupDelta,
     findSegmentOverlaps,
+    getFlowPageCount,
+    getFlowPagePlacement,
     getPhysicalPageSize,
     getSegmentHorizontalGeometry,
     isDocumentSegment,

@@ -224,26 +224,55 @@ function extractDocumentModel() {
       sourceIndex,
       text: candidate.text ?? getCandidateText(candidate.element),
       rect: candidate.rect ?? getCandidateRect(candidate.element),
+      isFlow: isCandidateInNormalFlow(candidate, pageElement),
     }));
+    const flowBottom = candidates.reduce((bottom, preparedCandidate) => {
+      if (!preparedCandidate.isFlow) return bottom;
+      return Math.max(bottom, preparedCandidate.rect.bottom - pageRect.top);
+    }, height);
+    const pageCount = window.ICATLayout.getFlowPageCount(flowBottom, height, contentBounds.y);
     return {
       sourcePageIndex,
       element: pageElement,
+      blankTemplate: pageElement.cloneNode(false),
       pageRect,
       width,
       height,
       contentBounds,
       candidates,
+      pageCount,
+      pages: [],
     };
   });
 
-  state.pages = sourcePages.map((sourcePage, pageIndex) => createPageRecord(
-    sourcePage.element,
-    pageIndex,
-    sourcePage.width,
-    sourcePage.height,
-    sourcePage.contentBounds,
-    { sourcePageIndex: sourcePage.sourcePageIndex },
-  ));
+  state.pages = [];
+  for (const sourcePage of sourcePages) {
+    let previousElement = sourcePage.element;
+    for (let flowPageOffset = 0; flowPageOffset < sourcePage.pageCount; flowPageOffset += 1) {
+      const pageElement = flowPageOffset === 0
+        ? sourcePage.element
+        : sourcePage.blankTemplate.cloneNode(false);
+      if (flowPageOffset > 0) {
+        pageElement.classList.add("icat-flow-page");
+        pageElement.removeAttribute("data-page-index");
+        previousElement.parentNode.insertBefore(pageElement, previousElement.nextSibling);
+        previousElement = pageElement;
+      }
+      const page = createPageRecord(
+        pageElement,
+        state.pages.length,
+        sourcePage.width,
+        sourcePage.height,
+        sourcePage.contentBounds,
+        {
+          sourcePageIndex: sourcePage.sourcePageIndex,
+          flowPageOffset,
+        },
+      );
+      sourcePage.pages.push(page);
+      state.pages.push(page);
+    }
+  }
 
   const wrapper = elements.docxHost.querySelector(":scope > .docx-wrapper")
     || elements.docxHost.querySelector(".docx-wrapper")
@@ -254,7 +283,9 @@ function extractDocumentModel() {
     const accepted = [];
 
     sourcePage.candidates.forEach((preparedCandidate) => {
-      const { candidate, sourceIndex, text, rect } = preparedCandidate;
+      const {
+        candidate, sourceIndex, text, rect, isFlow,
+      } = preparedCandidate;
       const sourceElement = candidate.element;
       if (!text || rect.width < 2 || rect.height < 2) return;
       if (isDuplicateCandidate(text, rect, accepted)) return;
@@ -264,14 +295,21 @@ function extractDocumentModel() {
         || sourceElement.querySelector("p span, span, p")
         || sourceElement;
       const computedStyle = getComputedStyle(styleElement);
-      const stretchToContentWidth = candidate.kind !== "shape"
-        && !sourceElement.closest("td, th")
-        && getComputedStyle(sourceElement).position !== "absolute";
+      const stretchToContentWidth = isFlow && !sourceElement.closest("td, th");
       const fontSizePx = numberOr(computedStyle.fontSize, 14);
       const lineHeight = normalizeLineHeight(computedStyle.lineHeight, fontSizePx);
       const measuredHeight = Math.max(rect.height, fontSizePx * lineHeight, MIN_SEGMENT_HEIGHT);
       const rawY = Math.max(0, rect.top - sourcePage.pageRect.top);
-      const page = state.pages[sourcePage.sourcePageIndex];
+      const placement = isFlow
+        ? window.ICATLayout.getFlowPagePlacement(
+          rawY,
+          measuredHeight,
+          sourcePage.height,
+          sourcePage.pageCount,
+          sourcePage.contentBounds.y,
+        )
+        : { pageOffset: 0, y: clamp(rawY, 0, sourcePage.height - MIN_SEGMENT_HEIGHT) };
+      const page = sourcePage.pages[placement.pageOffset];
       const horizontalGeometry = window.ICATLayout.getSegmentHorizontalGeometry(
         rect,
         sourcePage.pageRect.left,
@@ -281,7 +319,7 @@ function extractDocumentModel() {
         MIN_SEGMENT_WIDTH,
       );
       const x = horizontalGeometry.x;
-      const y = clamp(rawY, 0, page.height - MIN_SEGMENT_HEIGHT);
+      const y = placement.y;
       const width = horizontalGeometry.width;
       const height = clamp(
         measuredHeight,
@@ -349,6 +387,7 @@ function createPageRecord(element, pageIndex, width, height, contentBounds, opti
     element,
     overlay,
     sourcePageIndex: options.sourcePageIndex ?? null,
+    flowPageOffset: options.flowPageOffset ?? null,
     isAdded: Boolean(options.isAdded),
     insertControl: null,
   };
@@ -425,6 +464,7 @@ function insertBlankPage(afterPageIndex) {
 
   for (const control of elements.docxHost.querySelectorAll(".icat-page-insert")) control.remove();
   const pageElement = referencePage.element.cloneNode(false);
+  pageElement.classList.remove("icat-flow-page");
   pageElement.classList.add("icat-added-page");
   pageElement.removeAttribute("data-page-index");
   referencePage.element.parentNode.insertBefore(pageElement, referencePage.element.nextSibling);
@@ -475,6 +515,19 @@ function reindexPages() {
 
 function collectTextCandidates(pageElement) {
   return window.ICATSegmentation.collectTextCandidates(pageElement, normalizeText);
+}
+
+function isCandidateInNormalFlow(candidate, pageElement) {
+  if (candidate.kind === "shape") return false;
+  for (
+    let element = candidate.element;
+    element && element !== pageElement;
+    element = element.parentElement
+  ) {
+    const position = getComputedStyle(element).position;
+    if (position === "absolute" || position === "fixed") return false;
+  }
+  return true;
 }
 
 function getCandidateText(element) {

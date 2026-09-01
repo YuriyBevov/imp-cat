@@ -3,6 +3,8 @@ const assert = require('node:assert/strict')
 const {
   clampGroupDelta,
   findSegmentOverlaps,
+  getFlowPageCount,
+  getFlowPagePlacement,
   getPhysicalPageSize,
   getSegmentHorizontalGeometry,
   isDocumentSegment,
@@ -83,6 +85,25 @@ test('uses the declared Word page size instead of overflowing DOM height', () =>
   assert.deepEqual(getPhysicalPageSize(0, 0, 816, 1056), {
     width: 816,
     height: 1056,
+  })
+})
+
+test('moves overflowing flow to continuation pages without bottom stacking', () => {
+  assert.equal(getFlowPageCount(1123, 1122, 64), 1)
+  assert.equal(getFlowPageCount(1180, 1122, 64), 2)
+  assert.equal(getFlowPageCount(2300, 1122, 64), 3)
+
+  assert.deepEqual(getFlowPagePlacement(1280, 80, 1122, 3, 64), {
+    pageOffset: 1,
+    y: 222,
+  })
+  assert.deepEqual(getFlowPagePlacement(1100, 80, 1122, 3, 64), {
+    pageOffset: 1,
+    y: 64,
+  })
+  assert.deepEqual(getFlowPagePlacement(2180, 60, 1122, 3, 64), {
+    pageOffset: 2,
+    y: 64,
   })
 })
 
