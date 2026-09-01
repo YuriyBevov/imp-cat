@@ -1,16 +1,22 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  captureZoomAnchor,
   clampGroupDelta,
   findSegmentOverlaps,
   getFlowPageCount,
   getFlowPagePlacement,
   getPhysicalPageSize,
+  getSegmentActionTargets,
   getSegmentHorizontalGeometry,
+  getZoomScrollAdjustment,
   isDocumentSegment,
+  isPageEmpty,
+  layoutSequentialFlowBoxes,
   rectangleOverlapRatio,
   rectanglesIntersect,
   resolveVerticalOverlaps,
+  remapPageIndexAfterRemoval,
   screenDeltaToDocument,
 } = require('../public/layout-model.js')
 
@@ -18,6 +24,29 @@ test('separates visual zoom from document geometry', () => {
   assert.equal(screenDeltaToDocument(100, 2), 50)
   assert.equal(screenDeltaToDocument(100, 0.5), 200)
   assert.equal(screenDeltaToDocument(100, 0.25), 400)
+})
+
+test('keeps the document point under the cursor while zooming', () => {
+  const anchor = captureZoomAnchor(
+    { left: 100, top: 50, width: 800, height: 1200 },
+    500,
+    350,
+  )
+  assert.deepEqual(anchor, {
+    clientX: 500,
+    clientY: 350,
+    ratioX: 0.5,
+    ratioY: 0.25,
+  })
+  assert.deepEqual(getZoomScrollAdjustment(anchor, {
+    left: 80,
+    top: 20,
+    width: 1200,
+    height: 1800,
+  }), {
+    x: 180,
+    y: 120,
+  })
 })
 
 test('detects and vertically resolves meaningful segment overlaps', () => {
@@ -113,4 +142,57 @@ test('keeps parked and detached segments outside the document model', () => {
   assert.equal(isDocumentSegment({ deleted: false, parked: false, pageIndex: null, pageId: null }), false)
   assert.equal(isDocumentSegment({ deleted: false, parked: false, pageIndex: 0, pageId: null }), false)
   assert.equal(isDocumentSegment({ deleted: true, parked: false, pageIndex: 0, pageId: 'page-1' }), false)
+})
+
+test('moves following flow blocks after a paragraph is carried to the next page', () => {
+  const result = layoutSequentialFlowBoxes([
+    { id: 'before-break', y: 900, height: 180, order: 0 },
+    { id: 'following', y: 1090, height: 80, order: 1 },
+  ], 1122, 70, 1050)
+
+  assert.deepEqual(result.placements.get('before-break'), { pageOffset: 1, y: 70 })
+  assert.deepEqual(result.placements.get('following'), { pageOffset: 1, y: 260 })
+  assert.equal(result.pageCount, 2)
+})
+
+test('uses the Word text bottom instead of placing flow text in the bottom margin', () => {
+  const result = layoutSequentialFlowBoxes([
+    { id: 'paragraph', y: 980, height: 100, order: 0 },
+  ], 1122, 70, 1050)
+
+  assert.deepEqual(result.placements.get('paragraph'), { pageOffset: 1, y: 70 })
+  assert.equal(result.pageCount, 2)
+})
+
+test('allows removing only empty pages and remaps surviving page references', () => {
+  const segments = [
+    { deleted: false, parked: false, pageIndex: 0, pageId: 'page-1' },
+    { deleted: true, parked: false, pageIndex: 1, pageId: 'page-2' },
+    { deleted: false, parked: true, pageIndex: null, pageId: null },
+  ]
+  assert.equal(isPageEmpty(segments, 0), false)
+  assert.equal(isPageEmpty(segments, 1), true)
+  assert.equal(remapPageIndexAfterRemoval(0, 1, 2), 0)
+  assert.equal(remapPageIndexAfterRemoval(1, 1, 2), 1)
+  assert.equal(remapPageIndexAfterRemoval(2, 1, 2), 1)
+  assert.equal(remapPageIndexAfterRemoval(null, 1, 2), null)
+})
+
+test('applies a menu action to the selected group when its member opens the menu', () => {
+  const segments = [
+    { id: 'first', deleted: false },
+    { id: 'second', deleted: false },
+    { id: 'third', deleted: false },
+    { id: 'deleted', deleted: true },
+  ]
+  assert.deepEqual(
+    getSegmentActionTargets(segments, new Set(['first', 'second', 'deleted']), 'second')
+      .map((segment) => segment.id),
+    ['first', 'second'],
+  )
+  assert.deepEqual(
+    getSegmentActionTargets(segments, new Set(['first', 'second']), 'third')
+      .map((segment) => segment.id),
+    ['third'],
+  )
 })

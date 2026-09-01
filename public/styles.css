@@ -36,6 +36,10 @@ button {
   color: inherit;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .topbar {
   position: relative;
   z-index: 20;
@@ -433,7 +437,28 @@ button {
 
 #docx-host .docx-wrapper {
   padding: 48px 72px 120px;
+  display: block;
   background: transparent;
+}
+
+.icat-editor-layout {
+  width: max-content;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  align-items: start;
+  column-gap: 28px;
+}
+
+.icat-pages-column {
+  min-width: max-content;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}
+
+.icat-pages-column > section.docx {
+  margin: 0 !important;
 }
 
 #docx-host section.docx {
@@ -457,6 +482,8 @@ button {
 .icat-source-hidden,
 .icat-source-hidden * {
   color: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
   text-shadow: none !important;
 }
 
@@ -491,10 +518,16 @@ button {
 }
 
 .icat-parking {
-  position: relative;
+  position: sticky;
+  top: 24px;
   box-sizing: content-box;
-  margin: 0 auto 34px;
+  margin: 0;
   overflow: hidden;
+  min-width: 340px;
+  min-height: 274px;
+  max-width: 2000px;
+  max-height: 4064px;
+  resize: both;
   border: 2px dashed #94a3b8;
   border-radius: 14px;
   color: #475569;
@@ -505,10 +538,12 @@ button {
   position: absolute;
   top: 12px;
   left: 14px;
+  right: 14px;
   z-index: 2;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
   pointer-events: none;
 }
 
@@ -523,7 +558,7 @@ button {
 
 .icat-parking__overlay {
   position: absolute;
-  top: 44px;
+  top: 64px;
   left: 0;
 }
 
@@ -538,6 +573,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
 }
 
 .icat-page-insert button {
@@ -555,6 +591,22 @@ button {
   border-color: var(--segment);
   color: #1d4ed8;
   background: #eff6ff;
+}
+
+.icat-page-insert__delete {
+  border-color: #fca5a5 !important;
+  color: #b91c1c !important;
+}
+
+.icat-page-insert__delete:hover:not(:disabled) {
+  border-color: #ef4444 !important;
+  color: #991b1b !important;
+  background: #fef2f2 !important;
+}
+
+.icat-page-insert button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 #docx-host section.docx.is-drop-target {
@@ -643,17 +695,46 @@ button {
   outline: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  tab-size: 8;
+}
+
+.icat-segment__run {
+  white-space: pre-wrap;
+}
+
+.icat-segment__tab {
+  display: inline-block;
+  min-width: 1px;
+  overflow: hidden;
+  font-size: 0;
+  vertical-align: baseline;
 }
 
 .icat-segment__tools {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: -30px;
+  left: 0;
   z-index: 4;
+  width: max-content;
+  padding: 2px;
   display: flex;
   gap: 2px;
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.13);
   opacity: 0;
   transition: opacity 120ms ease;
+}
+
+.icat-segment__tools.is-inside {
+  top: 2px;
+}
+
+.icat-segment__format[aria-pressed="true"] {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .icat-segment:hover .icat-segment__tools,
@@ -690,7 +771,7 @@ button {
   top: 30px;
   right: 2px;
   z-index: 100001;
-  width: 170px;
+  width: 240px;
   padding: 5px;
   display: none;
   border: 1px solid #d8deea;

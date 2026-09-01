@@ -54,3 +54,23 @@ test('combines multiple outside runs but excludes text rendered inside SVG', () 
   assert.deepEqual(mixed.rect, rectangle(10, 20, 190, 20))
   assert.deepEqual(mixed.sourceElements.map(element => element.id), ['first', 'second'])
 })
+
+test('preserves semantic Word tabs and run-level boldness', () => {
+  const dom = new JSDOM(`
+    <p id="signature"><span style="font-weight: 400">/Подпись/</span><span
+      id="tab" class="docx-tab-stop">&nbsp;</span><strong style="font-weight: 700">/Круговая печать/</strong></p>
+  `)
+  const document = dom.window.document
+  document.querySelector('#tab').getBoundingClientRect = () => rectangle(100, 20, 84, 20)
+  const runs = segmentation.collectStyledTextRuns(
+    document.querySelector('#signature'),
+    element => {
+      const weight = dom.window.getComputedStyle(element).fontWeight
+      return { fontWeight: weight === 'bold' ? 700 : Number(weight) || 400 }
+    },
+  )
+
+  assert.equal(runs.map(run => run.text).join(''), '/Подпись/\t/Круговая печать/')
+  assert.equal(runs.find(run => run.text === '\t').tabWidthPx, 84)
+  assert.equal(runs.at(-1).fontWeight, 700)
+})

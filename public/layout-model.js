@@ -12,6 +12,30 @@
     return Number(screenDelta) / scale;
   }
 
+  function captureZoomAnchor(rectangle, clientX, clientY) {
+    const width = Math.max(1, Number(rectangle?.width) || 1);
+    const height = Math.max(1, Number(rectangle?.height) || 1);
+    const left = Number(rectangle?.left) || 0;
+    const top = Number(rectangle?.top) || 0;
+    return {
+      clientX: Number(clientX) || 0,
+      clientY: Number(clientY) || 0,
+      ratioX: ((Number(clientX) || 0) - left) / width,
+      ratioY: ((Number(clientY) || 0) - top) / height,
+    };
+  }
+
+  function getZoomScrollAdjustment(anchor, rectangle) {
+    const width = Math.max(1, Number(rectangle?.width) || 1);
+    const height = Math.max(1, Number(rectangle?.height) || 1);
+    const left = Number(rectangle?.left) || 0;
+    const top = Number(rectangle?.top) || 0;
+    return {
+      x: left + width * (Number(anchor?.ratioX) || 0) - (Number(anchor?.clientX) || 0),
+      y: top + height * (Number(anchor?.ratioY) || 0) - (Number(anchor?.clientY) || 0),
+    };
+  }
+
   function getSegmentHorizontalGeometry(
     rectangle,
     pageLeft,
@@ -85,6 +109,56 @@
     };
   }
 
+  function layoutSequentialFlowBoxes(boxes, pageHeight, contentTop = 0, contentBottom = pageHeight) {
+    const safePageHeight = Math.max(1, Number(pageHeight) || 1);
+    const safeContentTop = clamp(Number(contentTop) || 0, 0, safePageHeight - 1);
+    const safeContentBottom = clamp(
+      Number(contentBottom) || safePageHeight,
+      safeContentTop + 1,
+      safePageHeight,
+    );
+    const continuationCapacity = Math.max(1, safeContentBottom - safeContentTop);
+    const ordered = [...(boxes || [])].sort((first, second) => (
+      (Number(first.y) || 0) - (Number(second.y) || 0)
+      || (Number(first.order) || 0) - (Number(second.order) || 0)
+    ));
+    const placements = new Map();
+    let previousSourceBottom = null;
+    let previousPlacedBottom = null;
+    let pageCount = 1;
+
+    for (const box of ordered) {
+      const sourceY = Math.max(0, Number(box.y) || 0);
+      const height = Math.max(0, Number(box.height) || 0);
+      const sourceBottom = sourceY + height;
+      const sourceGap = previousSourceBottom == null
+        ? 0
+        : Math.max(0, sourceY - previousSourceBottom);
+      let globalY = previousPlacedBottom == null
+        ? sourceY
+        : Math.max(sourceY, previousPlacedBottom + sourceGap);
+      let pageOffset = Math.floor(globalY / safePageHeight);
+      let localY = globalY - pageOffset * safePageHeight;
+
+      if (pageOffset > 0 && localY < safeContentTop) localY = safeContentTop;
+      if (localY + height > safeContentBottom) {
+        if (height <= continuationCapacity || localY > safeContentTop) {
+          pageOffset += 1;
+          localY = safeContentTop;
+        }
+      }
+
+      globalY = pageOffset * safePageHeight + localY;
+      const occupiedPages = Math.max(1, Math.ceil(Math.max(height, 1) / continuationCapacity));
+      pageCount = Math.max(pageCount, pageOffset + occupiedPages);
+      placements.set(box.id, { pageOffset, y: localY });
+      previousSourceBottom = Math.max(previousSourceBottom ?? 0, sourceBottom);
+      previousPlacedBottom = globalY + height;
+    }
+
+    return { placements, pageCount };
+  }
+
   function isDocumentSegment(segment) {
     return Boolean(segment)
       && !segment.deleted
@@ -93,6 +167,29 @@
       && segment.pageIndex >= 0
       && typeof segment.pageId === "string"
       && segment.pageId.length > 0;
+  }
+
+  function isPageEmpty(segments, pageIndex) {
+    return !segments.some(
+      (segment) => isDocumentSegment(segment) && segment.pageIndex === pageIndex,
+    );
+  }
+
+  function getSegmentActionTargets(segments, selectedIds, triggerId) {
+    const selection = selectedIds instanceof Set ? selectedIds : new Set(selectedIds || []);
+    const triggerIsSelected = selection.has(triggerId);
+    return segments.filter(
+      (segment) => !segment.deleted
+        && (triggerIsSelected ? selection.has(segment.id) : segment.id === triggerId),
+    );
+  }
+
+  function remapPageIndexAfterRemoval(pageIndex, removedPageIndex, remainingPageCount) {
+    if (!Number.isInteger(pageIndex)) return pageIndex;
+    const safeRemainingCount = Math.max(1, Math.round(Number(remainingPageCount) || 1));
+    if (pageIndex > removedPageIndex) return pageIndex - 1;
+    if (pageIndex === removedPageIndex) return clamp(removedPageIndex, 0, safeRemainingCount - 1);
+    return pageIndex;
   }
 
   function normalizeRectangle(rectangle) {
@@ -225,15 +322,21 @@
   }
 
   return {
+    captureZoomAnchor,
     clampGroupDelta,
     findSegmentOverlaps,
     getFlowPageCount,
     getFlowPagePlacement,
+    layoutSequentialFlowBoxes,
     getPhysicalPageSize,
+    getSegmentActionTargets,
     getSegmentHorizontalGeometry,
+    getZoomScrollAdjustment,
     isDocumentSegment,
+    isPageEmpty,
     rectangleOverlapRatio,
     rectanglesIntersect,
+    remapPageIndexAfterRemoval,
     resolveVerticalOverlaps,
     screenDeltaToDocument,
   };

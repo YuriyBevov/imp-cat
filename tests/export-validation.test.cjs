@@ -47,3 +47,29 @@ test('clamps coordinates inside the selected page', () => {
   assert.equal(payload.segments[0].x, 600)
   assert.equal(payload.segments[0].y, 0)
 })
+
+test('preserves validated rich text runs and falls back when their text diverges', () => {
+  const page = [{ widthPx: 800, heightPx: 1100 }]
+  const payload = normalizeExportPayload({
+    pages: page,
+    segments: [{
+      id: 'rich', pageIndex: 0, text: 'Обычный\tжирный',
+      style: { fontWeight: 400, fontStyle: 'normal' },
+      runs: [
+        { text: 'Обычный\t', fontWeight: 400 },
+        { text: 'жирный', fontWeight: 700, fontStyle: 'italic', backgroundColor: '#ffff00' },
+      ],
+    }, {
+      id: 'fallback', pageIndex: 0, text: 'Актуальный текст',
+      runs: [{ text: 'Устаревший текст', fontWeight: 700 }],
+    }],
+  })
+
+  assert.equal(payload.segments[0].runs.length, 2)
+  assert.equal(payload.segments[0].runs[1].fontWeight, 700)
+  assert.equal(payload.segments[0].runs[1].fontStyle, 'italic')
+  assert.equal(payload.segments[0].runs[1].backgroundColor, '#ffff00')
+  assert.deepEqual(payload.segments[1].runs, [{
+    text: 'Актуальный текст', fontWeight: 400, fontStyle: 'normal', backgroundColor: null,
+  }])
+})

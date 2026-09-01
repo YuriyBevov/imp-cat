@@ -4,11 +4,14 @@
   root.ICATSegmentation = api;
 }(typeof globalThis !== "undefined" ? globalThis : window, () => {
   const TEXT_NODE = 4;
+  const ELEMENT_NODE_TYPE = 1;
+  const TEXT_NODE_TYPE = 3;
 
   function elementCandidate(element, kind = "element") {
     return {
       kind,
       element,
+      textRoot: element,
       sourceElements: [element],
       sourceTextNodes: [],
       styleElement: null,
@@ -72,6 +75,7 @@
     return {
       kind: "mixed-paragraph-text",
       element: sourceElements[0] || paragraph,
+      textRoot: paragraph,
       sourceElements,
       sourceTextNodes,
       styleElement: textNodes[0]?.parentElement || paragraph,
@@ -110,6 +114,48 @@
     return candidates.sort(compareCandidates);
   }
 
+  function isTabStopElement(element) {
+    return element?.classList?.contains("icat-segment__tab")
+      || Array.from(element?.classList || []).some((className) => className.endsWith("-tab-stop"));
+  }
+
+  function collectStyledTextRuns(element, styleResolver = () => ({}), options = {}) {
+    const runs = [];
+    const excludeNestedSvg = Boolean(options.excludeNestedSvg);
+
+    function append(text, sourceElement, extra = {}) {
+      if (!text) return;
+      runs.push({
+        text,
+        ...(styleResolver(sourceElement) || {}),
+        ...extra,
+      });
+    }
+
+    function visit(node) {
+      if (node.nodeType === TEXT_NODE_TYPE) {
+        append(node.textContent || "", node.parentElement || element);
+        return;
+      }
+      if (node.nodeType !== ELEMENT_NODE_TYPE) return;
+      if (excludeNestedSvg && node !== element && node.matches?.("svg")) return;
+      if (isTabStopElement(node)) {
+        append("\t", node, {
+          tabWidthPx: Math.max(0, Number(node.getBoundingClientRect?.().width) || 0),
+        });
+        return;
+      }
+      if (node.matches?.("br")) {
+        append("\n", node);
+        return;
+      }
+      for (const child of node.childNodes || []) visit(child);
+    }
+
+    visit(element);
+    return runs;
+  }
+
   function compareCandidates(first, second) {
     if (first.element === second.element) return 0;
     const following = first.element.ownerDocument.defaultView?.Node?.DOCUMENT_POSITION_FOLLOWING ?? 4;
@@ -123,6 +169,8 @@
   return {
     collectTextCandidates,
     collectTextNodesOutside,
+    collectStyledTextRuns,
+    isTabStopElement,
     mixedParagraphCandidate,
     rectangleFromTextNodes,
   };

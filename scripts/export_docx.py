@@ -98,7 +98,8 @@ def configure_section(section, page: dict) -> None:
     section.footer_distance = Twips(0)
 
 
-def create_run_properties(segment: dict) -> etree._Element:
+def create_run_properties(segment: dict, run_style: dict | None = None) -> etree._Element:
+    run_style = run_style or {}
     properties = element("w", "rPr")
     font_name = INVALID_XML_CHARS.sub("", str(segment.get("fontFamily") or "Arial"))[:200]
     fonts = element("w", "rFonts")
@@ -106,9 +107,13 @@ def create_run_properties(segment: dict) -> etree._Element:
         word_attr(fonts, attribute, font_name)
     properties.append(fonts)
 
-    if float(segment.get("fontWeight", 400)) >= 600:
+    if float(run_style.get("fontWeight", segment.get("fontWeight", 400))) >= 600:
         properties.append(element("w", "b"))
         properties.append(element("w", "bCs"))
+
+    if str(run_style.get("fontStyle", segment.get("fontStyle", "normal"))) == "italic":
+        properties.append(element("w", "i"))
+        properties.append(element("w", "iCs"))
 
     half_points = max(2, round(float(segment["fontSizePx"]) * 1.5))
     size = element("w", "sz")
@@ -120,6 +125,13 @@ def create_run_properties(segment: dict) -> etree._Element:
     color = element("w", "color")
     word_attr(color, "val", str(segment.get("color", "#111827")).lstrip("#").upper())
     properties.append(color)
+    background_color = run_style.get("backgroundColor")
+    if isinstance(background_color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", background_color):
+        shading = element("w", "shd")
+        word_attr(shading, "val", "clear")
+        word_attr(shading, "color", "auto")
+        word_attr(shading, "fill", background_color.lstrip("#").upper())
+        properties.append(shading)
     return properties
 
 
@@ -159,10 +171,18 @@ def create_text_box_paragraph(segment: dict) -> etree._Element:
     paragraph_properties.append(element("w", "contextualSpacing"))
     paragraph.append(paragraph_properties)
 
-    run = element("w", "r")
-    run.append(create_run_properties(segment))
-    append_text_content(run, segment["text"])
-    paragraph.append(run)
+    runs = segment.get("runs") or [{
+        "text": segment["text"],
+        "fontWeight": segment.get("fontWeight", 400),
+        "fontStyle": segment.get("fontStyle", "normal"),
+    }]
+    for run_data in runs:
+        if not run_data.get("text"):
+            continue
+        run = element("w", "r")
+        run.append(create_run_properties(segment, run_data))
+        append_text_content(run, str(run_data["text"]))
+        paragraph.append(run)
     return paragraph
 
 

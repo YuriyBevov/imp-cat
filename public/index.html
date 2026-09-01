@@ -18,7 +18,7 @@
 
       <div class="topbar__actions">
         <input id="file-input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
-        <label class="button button--primary" for="file-input">Загрузить DOCX</label>
+        <label id="upload-button" class="button button--primary" for="file-input">Загрузить DOCX</label>
         <button id="sample-button" class="button" type="button">Открыть пример</button>
         <button id="export-button" class="button button--accent" type="button" disabled>Выгрузить DOCX</button>
       </div>
@@ -70,7 +70,7 @@
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
           <p class="hint">Команда сдвигает пересекающиеся сегменты вниз в пределах исходной страницы. Исходное положение можно вернуть через меню сегмента.</p>
           <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите ⠿ у любого выбранного сегмента.</p>
-          <p class="hint"><strong>Вне документа:</strong> перетащите выбранные сегменты в верхний буфер. Там они теряют координаты страницы и не участвуют в экспорте, пока вы не вернёте их на лист.</p>
+          <p class="hint"><strong>Вне документа:</strong> перетащите выбранные сегменты в буфер справа от листов. Там они теряют координаты страницы и не участвуют в экспорте, пока вы не вернёте их на лист.</p>
           <p class="hint"><strong>Отмена:</strong> нажимайте Cmd/Ctrl + Z, чтобы пошагово отменять изменения документа.</p>
         </section>
 

@@ -9,6 +9,44 @@ from export_docx import export_layout  # noqa: E402
 
 
 class ExportDocxTests(unittest.TestCase):
+    def test_exports_tabs_and_run_level_bold_italic_highlight(self):
+        payload = {
+            "title": "Rich text",
+            "pages": [{"id": "page-1", "index": 0, "widthPx": 800, "heightPx": 1100}],
+            "segments": [{
+                "id": "rich", "pageIndex": 0, "text": "/Подпись/\t/Печать/", "x": 32, "y": 48,
+                "width": 700, "height": 60, "fontFamily": "Times New Roman", "fontSizePx": 16,
+                "fontWeight": 400, "fontStyle": "normal", "lineHeight": 1.2, "color": "#111827",
+                "alignment": "left", "zIndex": 1,
+                "runs": [
+                    {"text": "/Подпись/\t", "fontWeight": 400, "fontStyle": "italic"},
+                    {"text": "/Печать/", "fontWeight": 700, "fontStyle": "italic",
+                     "backgroundColor": "#FFFF00"},
+                ],
+            }],
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "rich.docx"
+            export_layout(payload, output)
+            document = Document(output)
+
+        text_box = document.element.body.xpath(".//w:txbxContent")[0]
+        self.assertEqual(len(text_box.xpath(".//*[local-name()='tab']")), 1)
+        bold_text = "".join(
+            node.text or "" for node in text_box.xpath(
+                ".//*[local-name()='r'][./*[local-name()='rPr']/*[local-name()='b']]/*[local-name()='t']"
+            )
+        )
+        self.assertEqual(bold_text, "/Печать/")
+        self.assertEqual(len(text_box.xpath(
+            ".//*[local-name()='r'][./*[local-name()='rPr']/*[local-name()='i']]"
+        )), 2)
+        self.assertEqual(
+            text_box.xpath(".//*[local-name()='rPr']/*[local-name()='shd']/@*[local-name()='fill']"),
+            ["FFFF00"],
+        )
+
     def test_css_justify_is_exported_as_word_both_alignment(self):
         payload = {
             "title": "Justified text regression",

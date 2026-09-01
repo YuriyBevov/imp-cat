@@ -2,6 +2,10 @@ const DEFAULT_GRID_SIZE = 4;
 const MIN_SEGMENT_WIDTH = 20;
 const MIN_SEGMENT_HEIGHT = 16;
 const MIN_PARKING_HEIGHT = 210;
+const MIN_PARKING_WIDTH = 340;
+const MAX_PARKING_HEIGHT = 4000;
+const MAX_PARKING_WIDTH = 2000;
+const PARKING_HEADER_HEIGHT = 64;
 const HISTORY_LIMIT = 100;
 
 const state = {
@@ -17,6 +21,8 @@ const state = {
   parkingElement: null,
   parkingOverlay: null,
   parkingHeight: 0,
+  parkingWidth: 0,
+  parkingResizeObserver: null,
   dropTargetElement: null,
   loading: false,
   history: window.ICATHistory.create(HISTORY_LIMIT),
@@ -26,6 +32,7 @@ const state = {
 
 const elements = {
   fileInput: document.querySelector("#file-input"),
+  uploadButton: document.querySelector("#upload-button"),
   sampleButton: document.querySelector("#sample-button"),
   sampleEmptyButton: document.querySelector("#empty-sample-button"),
   exportButton: document.querySelector("#export-button"),
@@ -102,13 +109,28 @@ elements.workspace.addEventListener("drop", async (event) => {
   if (file) await loadDocument(file, file.name);
 });
 
-document.addEventListener("pointerdown", (event) => {
-  if (!event.target.closest(".icat-segment__menu, .icat-segment__more")) {
-    closeAllMenus();
-  }
-});
+function handleDocumentPointerDown(event) {
+  const insideSegment = event.target.closest?.(".icat-segment");
+  if (!event.target.closest?.(".icat-segment__menu, .icat-segment__more")) closeAllMenus();
+  if (!insideSegment) clearSegmentFocus();
+}
+
+function handleFocusShortcut(event) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  clearSegmentFocus();
+}
+
+function clearSegmentFocus() {
+  if (document.activeElement?.closest?.(".icat-segment")) document.activeElement.blur();
+  closeAllMenus();
+  selectSegments([]);
+}
+
+document.addEventListener("pointerdown", handleDocumentPointerDown);
 
 document.addEventListener("keydown", handleUndoShortcut);
+document.addEventListener("keydown", handleFocusShortcut);
 
 async function loadSample() {
   try {
@@ -116,14 +138,14 @@ async function loadSample() {
     const response = await fetch("/api/sample");
     if (!response.ok) throw new Error("Не удалось получить пример документа");
     const blob = await response.blob();
-    await loadDocument(blob, "пример-документа.docx", { loadingAlreadySet: true });
+    await loadDocument(blob, "пример-документа.docx");
   } catch (error) {
     setLoading(false);
     showToast(error.message, "error");
   }
 }
 
-async function loadDocument(blob, fileName, options = {}) {
+async function loadDocument(blob, fileName) {
   if (!fileName.toLowerCase().endsWith(".docx")) {
     showToast("Для прототипа поддерживается только формат DOCX", "error");
     return;
@@ -135,8 +157,8 @@ async function loadDocument(blob, fileName, options = {}) {
   }
 
   try {
-    if (!options.loadingAlreadySet) setLoading(true, "Разбираем DOCX…");
     clearDocument();
+    setLoading(true, "Разбираем DOCX…");
     state.fileName = fileName;
     state.title = fileName.replace(/\.docx$/i, "") || "document";
 
@@ -159,6 +181,7 @@ async function loadDocument(blob, fileName, options = {}) {
     });
 
     if (document.fonts?.ready) await document.fonts.ready;
+    await waitForWordTabLayout();
     await nextPaint();
     await nextPaint();
     extractDocumentModel();
@@ -179,6 +202,7 @@ async function loadDocument(blob, fileName, options = {}) {
 }
 
 function clearDocument() {
+  state.parkingResizeObserver?.disconnect();
   elements.docxHost.replaceChildren();
   elements.documentStage.classList.remove("is-measuring");
   elements.documentStage.removeAttribute("aria-hidden");
@@ -190,10 +214,13 @@ function clearDocument() {
   state.parkingElement = null;
   state.parkingOverlay = null;
   state.parkingHeight = 0;
+  state.parkingWidth = 0;
+  state.parkingResizeObserver = null;
   state.dropTargetElement = null;
   clearHistory();
   elements.documentStage.hidden = true;
   elements.dropZone.hidden = false;
+  elements.uploadButton.hidden = false;
   updateSummary();
 }
 
@@ -219,18 +246,63 @@ function extractDocumentModel() {
     const { width, height } = physicalSize;
     const contentBounds = getPageContentBounds(pageElement, width, height);
     const pageRect = pageElement.getBoundingClientRect();
-    const candidates = collectTextCandidates(pageElement).map((candidate, sourceIndex) => ({
-      candidate,
-      sourceIndex,
-      text: candidate.text ?? getCandidateText(candidate.element),
-      rect: candidate.rect ?? getCandidateRect(candidate.element),
-      isFlow: isCandidateInNormalFlow(candidate, pageElement),
-    }));
+    const candidates = collectTextCandidates(pageElement).map((candidate, sourceIndex) => {
+      const sourceElement = candidate.element;
+      const rect = candidate.rect ?? getCandidateRect(sourceElement);
+      const styleElement = candidate.styleElement
+        || sourceElement.querySelector("p span, span, p")
+        || sourceElement;
+      const computedStyle = getComputedStyle(styleElement);
+      const fontSizePx = numberOr(computedStyle.fontSize, 14);
+      const lineHeight = normalizeLineHeight(computedStyle.lineHeight, fontSizePx);
+      const runs = getCandidateRichTextRuns(candidate);
+      const richText = runs.map((run) => run.text).join("");
+      const text = richText || candidate.text || getCandidateText(sourceElement);
+      const isFlow = isCandidateInNormalFlow(candidate, pageElement);
+      const rawY = Math.max(0, rect.top - pageRect.top);
+      return {
+        candidate,
+        sourceIndex,
+        text,
+        runs,
+        rect,
+        isFlow,
+        isSequentialFlow: isSequentialFlowCandidate(candidate, pageElement, isFlow),
+        rawY,
+        measuredHeight: Math.max(rect.height, fontSizePx * lineHeight, MIN_SEGMENT_HEIGHT),
+        computedStyle,
+        fontSizePx,
+        lineHeight,
+        flowPlacement: null,
+      };
+    });
+    const contentBottom = contentBounds.y + contentBounds.height;
+    const sequentialLayout = window.ICATLayout.layoutSequentialFlowBoxes(
+      candidates
+        .filter((preparedCandidate) => preparedCandidate.isSequentialFlow)
+        .map((preparedCandidate) => ({
+          id: preparedCandidate.sourceIndex,
+          y: preparedCandidate.rawY,
+          height: preparedCandidate.measuredHeight,
+          order: preparedCandidate.sourceIndex,
+        })),
+      height,
+      contentBounds.y,
+      contentBottom,
+    );
+    for (const preparedCandidate of candidates) {
+      if (preparedCandidate.isSequentialFlow) {
+        preparedCandidate.flowPlacement = sequentialLayout.placements.get(preparedCandidate.sourceIndex);
+      }
+    }
     const flowBottom = candidates.reduce((bottom, preparedCandidate) => {
       if (!preparedCandidate.isFlow) return bottom;
       return Math.max(bottom, preparedCandidate.rect.bottom - pageRect.top);
     }, height);
-    const pageCount = window.ICATLayout.getFlowPageCount(flowBottom, height, contentBounds.y);
+    const pageCount = Math.max(
+      window.ICATLayout.getFlowPageCount(flowBottom, height, contentBounds.y),
+      sequentialLayout.pageCount,
+    );
     return {
       sourcePageIndex,
       element: pageElement,
@@ -277,30 +349,24 @@ function extractDocumentModel() {
   const wrapper = elements.docxHost.querySelector(":scope > .docx-wrapper")
     || elements.docxHost.querySelector(".docx-wrapper")
     || sourcePages[0].element.parentElement;
-  createParkingArea(wrapper);
+  const editorLayout = createEditorLayout(wrapper);
+  createParkingArea(editorLayout);
 
   for (const sourcePage of sourcePages) {
     const accepted = [];
 
     sourcePage.candidates.forEach((preparedCandidate) => {
       const {
-        candidate, sourceIndex, text, rect, isFlow,
+        candidate, sourceIndex, text, runs, rect, isFlow, rawY, measuredHeight,
+        computedStyle, fontSizePx, lineHeight, flowPlacement,
       } = preparedCandidate;
       const sourceElement = candidate.element;
       if (!text || rect.width < 2 || rect.height < 2) return;
       if (isDuplicateCandidate(text, rect, accepted)) return;
       accepted.push({ text, rect });
 
-      const styleElement = candidate.styleElement
-        || sourceElement.querySelector("p span, span, p")
-        || sourceElement;
-      const computedStyle = getComputedStyle(styleElement);
       const stretchToContentWidth = isFlow && !sourceElement.closest("td, th");
-      const fontSizePx = numberOr(computedStyle.fontSize, 14);
-      const lineHeight = normalizeLineHeight(computedStyle.lineHeight, fontSizePx);
-      const measuredHeight = Math.max(rect.height, fontSizePx * lineHeight, MIN_SEGMENT_HEIGHT);
-      const rawY = Math.max(0, rect.top - sourcePage.pageRect.top);
-      const placement = isFlow
+      const placement = flowPlacement || (isFlow
         ? window.ICATLayout.getFlowPagePlacement(
           rawY,
           measuredHeight,
@@ -308,7 +374,7 @@ function extractDocumentModel() {
           sourcePage.pageCount,
           sourcePage.contentBounds.y,
         )
-        : { pageOffset: 0, y: clamp(rawY, 0, sourcePage.height - MIN_SEGMENT_HEIGHT) };
+        : { pageOffset: 0, y: clamp(rawY, 0, sourcePage.height - MIN_SEGMENT_HEIGHT) });
       const page = sourcePage.pages[placement.pageOffset];
       const horizontalGeometry = window.ICATLayout.getSegmentHorizontalGeometry(
         rect,
@@ -332,6 +398,7 @@ function extractDocumentModel() {
         pageId: page.id,
         pageIndex: page.pageIndex,
         text,
+        runs: runs.map((run) => ({ ...run })),
         x,
         y,
         width,
@@ -347,6 +414,7 @@ function extractDocumentModel() {
           fontFamily: normalizeFontFamily(computedStyle.fontFamily),
           fontSizePx,
           fontWeight: normalizeFontWeight(computedStyle.fontWeight),
+          fontStyle: normalizeFontStyle(computedStyle.fontStyle),
           color: colorToHex(computedStyle.color),
           textAlign: normalizeAlignment(computedStyle.textAlign),
           lineHeight,
@@ -396,40 +464,82 @@ function createPageRecord(element, pageIndex, width, height, contentBounds, opti
   return page;
 }
 
-function createParkingArea(wrapper) {
-  const parkingWidth = Math.max(...state.pages.map((page) => page.width));
+function createEditorLayout(wrapper) {
+  const layout = document.createElement("div");
+  layout.className = "icat-editor-layout";
+  const pagesColumn = document.createElement("div");
+  pagesColumn.className = "icat-pages-column";
+  wrapper.insertBefore(layout, state.pages[0].element);
+  for (const page of state.pages) pagesColumn.append(page.element);
+  layout.append(pagesColumn);
+  return layout;
+}
+
+function createParkingArea(editorLayout) {
   const parking = document.createElement("section");
   parking.className = "icat-parking";
   parking.innerHTML = `
     <div class="icat-parking__heading">
       <strong>Вне документа</strong>
-      <span>Перетащите сегменты сюда: координаты страницы сбросятся, экспорт их пропустит</span>
+      <span>Перемещенные внутрь блока сегменты не будут учавствовать в сборке финального документа</span>
     </div>
     <div class="icat-parking__overlay" aria-label="Сегменты вне документа"></div>
   `;
-  parking.style.width = `${parkingWidth}px`;
-  wrapper.prepend(parking);
+  editorLayout.append(parking);
   state.parkingElement = parking;
   state.parkingOverlay = parking.querySelector(".icat-parking__overlay");
-  state.parkingOverlay.style.width = `${parkingWidth}px`;
+  setParkingSurfaceWidth(MIN_PARKING_WIDTH);
   setParkingSurfaceHeight(MIN_PARKING_HEIGHT);
+  observeParkingResize();
+}
+
+function observeParkingResize() {
+  state.parkingResizeObserver?.disconnect();
+  if (!window.ResizeObserver || !state.parkingElement || !state.parkingOverlay) return;
+  state.parkingResizeObserver = new ResizeObserver(([entry]) => {
+    if (!entry || entry.target !== state.parkingElement) return;
+    const nextWidth = clamp(Math.round(entry.contentRect.width), MIN_PARKING_WIDTH, MAX_PARKING_WIDTH);
+    const nextHeight = clamp(
+      Math.round(entry.contentRect.height - PARKING_HEADER_HEIGHT),
+      MIN_PARKING_HEIGHT,
+      MAX_PARKING_HEIGHT,
+    );
+    state.parkingWidth = nextWidth;
+    state.parkingHeight = nextHeight;
+    state.parkingOverlay.style.width = `${nextWidth}px`;
+    state.parkingOverlay.style.height = `${nextHeight}px`;
+  });
+  state.parkingResizeObserver.observe(state.parkingElement);
+}
+
+function setParkingSurfaceWidth(width) {
+  if (!state.parkingElement || !state.parkingOverlay) return false;
+  const nextWidth = clamp(Math.ceil(width), MIN_PARKING_WIDTH, MAX_PARKING_WIDTH);
+  if (nextWidth === state.parkingWidth) return false;
+  state.parkingWidth = nextWidth;
+  state.parkingElement.style.width = `${nextWidth}px`;
+  state.parkingOverlay.style.width = `${nextWidth}px`;
+  return true;
 }
 
 function setParkingSurfaceHeight(height) {
   if (!state.parkingElement || !state.parkingOverlay) return false;
-  const maximumHeight = Math.max(...state.pages.map((page) => page.height), MIN_PARKING_HEIGHT);
-  const nextHeight = clamp(Math.ceil(height), MIN_PARKING_HEIGHT, maximumHeight);
+  const nextHeight = clamp(Math.ceil(height), MIN_PARKING_HEIGHT, MAX_PARKING_HEIGHT);
   if (nextHeight === state.parkingHeight) return false;
   state.parkingHeight = nextHeight;
-  state.parkingElement.style.height = `${nextHeight + 44}px`;
+  state.parkingElement.style.height = `${nextHeight + PARKING_HEADER_HEIGHT}px`;
   state.parkingOverlay.style.height = `${nextHeight}px`;
   return true;
 }
 
 function ensureParkingCapacity(origins) {
+  const left = Math.min(...origins.map((item) => item.x));
+  const right = Math.max(...origins.map((item) => item.x + item.width));
   const top = Math.min(...origins.map((item) => item.y));
   const bottom = Math.max(...origins.map((item) => item.y + item.height));
-  return setParkingSurfaceHeight(Math.max(state.parkingHeight, bottom - top));
+  const widthChanged = setParkingSurfaceWidth(Math.max(state.parkingWidth, right - left));
+  const heightChanged = setParkingSurfaceHeight(Math.max(state.parkingHeight, bottom - top));
+  return widthChanged || heightChanged;
 }
 
 function syncParkingSurfaceHeight() {
@@ -438,7 +548,7 @@ function syncParkingSurfaceHeight() {
     (bottom, segment) => Math.max(bottom, segment.y + segment.height),
     MIN_PARKING_HEIGHT,
   );
-  setParkingSurfaceHeight(contentBottom);
+  setParkingSurfaceHeight(Math.max(state.parkingHeight, contentBottom));
 }
 
 function renderPageInsertControls() {
@@ -446,13 +556,33 @@ function renderPageInsertControls() {
   for (const page of state.pages) {
     const control = document.createElement("div");
     control.className = "icat-page-insert";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "+ Добавить пустую страницу здесь";
-    button.addEventListener("click", () => insertBlankPage(page.pageIndex));
-    control.append(button);
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.className = "icat-page-insert__add";
+    addButton.textContent = "+ Добавить пустую страницу здесь";
+    addButton.addEventListener("click", () => insertBlankPage(page.pageIndex));
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "icat-page-insert__delete";
+    deleteButton.dataset.pageIndex = String(page.pageIndex);
+    deleteButton.textContent = "Удалить пустую страницу";
+    deleteButton.addEventListener("click", () => removeEmptyPage(page.pageIndex));
+    control.append(addButton, deleteButton);
     page.element.insertAdjacentElement("afterend", control);
     page.insertControl = control;
+  }
+  updatePageDeleteControls();
+}
+
+function updatePageDeleteControls() {
+  for (const button of elements.docxHost.querySelectorAll(".icat-page-insert__delete")) {
+    const pageIndex = Number.parseInt(button.dataset.pageIndex, 10);
+    const isLastPage = state.pages.length <= 1;
+    const isEmpty = window.ICATLayout.isPageEmpty(state.segments, pageIndex);
+    button.disabled = isLastPage || !isEmpty;
+    button.title = isLastPage
+      ? "В документе должна остаться хотя бы одна страница"
+      : isEmpty ? "Удалить страницу" : "Сначала перенесите или удалите все сегменты страницы";
   }
 }
 
@@ -498,6 +628,66 @@ function insertBlankPage(afterPageIndex) {
   showToast(`Добавлена пустая страница ${page.pageIndex + 1}`);
 }
 
+function removeEmptyPage(pageIndex) {
+  commitActiveTextEdit();
+  const page = state.pages[pageIndex];
+  if (!page) return;
+  if (state.pages.length <= 1) {
+    showToast("В документе должна остаться хотя бы одна страница", "error");
+    return;
+  }
+  if (!window.ICATLayout.isPageEmpty(state.segments, pageIndex)) {
+    showToast("Страница не пустая. Сначала перенесите или удалите её сегменты.", "error");
+    return;
+  }
+
+  const before = createHistorySnapshot();
+  const originalSegments = state.segments.map((segment) => ({
+    id: segment.id,
+    original: { ...segment.original },
+  }));
+  for (const control of elements.docxHost.querySelectorAll(".icat-page-insert")) control.remove();
+  page.element.remove();
+  state.pages.splice(pageIndex, 1);
+
+  for (const segment of state.segments) {
+    if (!segment.parked) {
+      segment.pageIndex = window.ICATLayout.remapPageIndexAfterRemoval(
+        segment.pageIndex,
+        pageIndex,
+        state.pages.length,
+      );
+    }
+    segment.lastPageIndex = window.ICATLayout.remapPageIndexAfterRemoval(
+      segment.lastPageIndex,
+      pageIndex,
+      state.pages.length,
+    );
+    segment.original.pageIndex = window.ICATLayout.remapPageIndexAfterRemoval(
+      segment.original.pageIndex,
+      pageIndex,
+      state.pages.length,
+    );
+    segment.original.lastPageIndex = window.ICATLayout.remapPageIndexAfterRemoval(
+      segment.original.lastPageIndex,
+      pageIndex,
+      state.pages.length,
+    );
+    segment.original.pageId = Number.isInteger(segment.original.pageIndex)
+      ? `page-${segment.original.pageIndex + 1}`
+      : null;
+  }
+
+  reindexPages();
+  renderPageInsertControls();
+  updateSummary();
+  if (commitHistory(before, "удаление пустой страницы")) {
+    state.history.entries.at(-1).removedPage = { page, pageIndex, originalSegments };
+  }
+  if (state.viewMode === "fit") requestAnimationFrame(fitDocumentWidth);
+  showToast(`Удалена пустая страница ${pageIndex + 1}`);
+}
+
 function reindexPages() {
   state.pages.forEach((page, pageIndex) => {
     page.pageIndex = pageIndex;
@@ -530,6 +720,13 @@ function isCandidateInNormalFlow(candidate, pageElement) {
   return true;
 }
 
+function isSequentialFlowCandidate(candidate, pageElement, isFlow = null) {
+  if (!(isFlow ?? isCandidateInNormalFlow(candidate, pageElement))) return false;
+  const sourceElement = candidate.element;
+  return Boolean(sourceElement.closest("article"))
+    && !sourceElement.closest("table, thead, tbody, tfoot, tr, td, th");
+}
+
 function getCandidateText(element) {
   if (element.matches("svg")) {
     const lines = Array.from(element.querySelectorAll("p"))
@@ -543,6 +740,124 @@ function getCandidateText(element) {
       .join("\n");
   }
   return normalizeText(element.textContent);
+}
+
+function getCandidateRichTextRuns(candidate) {
+  const rawRuns = [];
+  const appendElementRuns = (element, options = {}) => {
+    rawRuns.push(...window.ICATSegmentation.collectStyledTextRuns(
+      element,
+      getSourceRunStyle,
+      options,
+    ));
+  };
+
+  if (candidate.kind === "shape") {
+    const paragraphs = Array.from(candidate.element.querySelectorAll("p"))
+      .filter((paragraph) => !paragraph.parentElement?.closest("p"));
+    const roots = paragraphs.length
+      ? paragraphs
+      : Array.from(candidate.element.querySelectorAll("text"))
+        .filter((textElement) => !textElement.parentElement?.closest("text"));
+    roots.forEach((root, index) => {
+      if (index > 0) rawRuns.push({ text: "\n", ...getSourceRunStyle(root) });
+      appendElementRuns(root);
+    });
+  } else {
+    appendElementRuns(candidate.textRoot || candidate.element, {
+      excludeNestedSvg: candidate.kind === "mixed-paragraph-text",
+    });
+  }
+
+  return normalizeRichTextRuns(rawRuns);
+}
+
+function getSourceRunStyle(element) {
+  const directStyle = getDirectRunStyle(element);
+  let { backgroundColor } = directStyle;
+  for (let ancestor = element.parentElement; !backgroundColor && ancestor; ancestor = ancestor.parentElement) {
+    backgroundColor = normalizeBackgroundColor(getComputedStyle(ancestor).backgroundColor);
+    if (ancestor.matches("p, article, header, footer")) break;
+  }
+  return { ...directStyle, backgroundColor };
+}
+
+function getDirectRunStyle(element) {
+  const computedStyle = getComputedStyle(element);
+  return {
+    fontWeight: normalizeFontWeight(computedStyle.fontWeight),
+    fontStyle: normalizeFontStyle(computedStyle.fontStyle),
+    backgroundColor: normalizeBackgroundColor(computedStyle.backgroundColor),
+  };
+}
+
+function getEditorRunStyle(element) {
+  const directStyle = getDirectRunStyle(element);
+  let { backgroundColor } = directStyle;
+  for (let ancestor = element.parentElement; !backgroundColor && ancestor; ancestor = ancestor.parentElement) {
+    if (ancestor.classList.contains("icat-segment__content")) break;
+    backgroundColor = normalizeBackgroundColor(getComputedStyle(ancestor).backgroundColor);
+  }
+  return { ...directStyle, backgroundColor };
+}
+
+function normalizeRichTextRuns(rawRuns) {
+  const result = [];
+  let pendingSpace = null;
+  let newlineCount = 0;
+
+  const append = (text, style) => {
+    if (!text) return;
+    const normalizedStyle = {
+      fontWeight: normalizeFontWeight(style.fontWeight),
+      fontStyle: normalizeFontStyle(style.fontStyle),
+      backgroundColor: style.backgroundColor || null,
+      ...(style.tabWidthPx > 0 ? { tabWidthPx: style.tabWidthPx } : {}),
+    };
+    const previous = result.at(-1);
+    if (previous && richRunStylesEqual(previous, normalizedStyle)) {
+      previous.text += text;
+    } else {
+      result.push({ text, ...normalizedStyle });
+    }
+  };
+
+  for (const rawRun of rawRuns || []) {
+    const value = String(rawRun.text || "").replace(/\u00a0/g, " ").replace(/\r\n?/g, "\n");
+    for (const character of value) {
+      if (character === " " || character === "\f" || character === "\v") {
+        if (result.length && result.at(-1).text.at(-1) !== "\n" && !pendingSpace) pendingSpace = rawRun;
+        continue;
+      }
+      if (character === "\n") {
+        pendingSpace = null;
+        if (result.length && newlineCount < 2) append("\n", rawRun);
+        newlineCount += 1;
+        continue;
+      }
+      if (character === "\t") {
+        pendingSpace = null;
+        append("\t", rawRun);
+        newlineCount = 0;
+        continue;
+      }
+      if (pendingSpace) append(" ", pendingSpace);
+      pendingSpace = null;
+      append(character, rawRun);
+      newlineCount = 0;
+    }
+  }
+
+  while (result.length && /^[\n ]+$/.test(result.at(-1).text)) result.pop();
+  if (result.length) result.at(-1).text = result.at(-1).text.replace(/[\n ]+$/g, "");
+  return result.filter((run) => run.text);
+}
+
+function richRunStylesEqual(first, second) {
+  return first.fontWeight === second.fontWeight
+    && first.fontStyle === second.fontStyle
+    && first.backgroundColor === second.backgroundColor
+    && Number(first.tabWidthPx || 0) === Number(second.tabWidthPx || 0);
 }
 
 function hideCandidateSource(candidate) {
@@ -629,14 +944,35 @@ function createSegmentElement(segment) {
   menuButton.setAttribute("aria-label", "Открыть меню сегмента");
   menuButton.textContent = "⋮";
 
-  tools.append(dragButton, menuButton);
+  const formattingActions = [
+    ["bold", "B", "Полужирный текст"],
+    ["italic", "I", "Курсив"],
+    ["align-left", "⇤", "Выровнять по левому краю"],
+    ["align-center", "≡", "Выровнять по центру"],
+    ["align-right", "⇥", "Выровнять по правому краю"],
+  ];
+  const formattingButtons = formattingActions.map(([action, label, title]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `icat-segment__button icat-segment__format icat-segment__format--${action}`;
+    button.dataset.editorAction = action;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.setAttribute("aria-pressed", "false");
+    button.textContent = label;
+    if (action === "bold") button.style.fontWeight = "900";
+    if (action === "italic") button.style.fontStyle = "italic";
+    return button;
+  });
+
+  tools.append(dragButton, ...formattingButtons, menuButton);
 
   const content = document.createElement("div");
   content.className = "icat-segment__content";
   content.contentEditable = "true";
   content.spellcheck = true;
-  content.textContent = segment.text;
   applyTypography(content, segment.style);
+  renderSegmentText(content, segment);
 
   const menu = createSegmentMenu(segment);
 
@@ -653,15 +989,19 @@ function createSegmentElement(segment) {
   page.overlay.append(segmentElement);
   segment.element = segmentElement;
   renderSegmentPosition(segment);
+  updateEditorToolbarState(segment);
 
-  segmentElement.addEventListener("pointerdown", () => selectSegment(segment.id));
+  segmentElement.addEventListener("pointerdown", () => {
+    if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
+  });
   content.addEventListener("focus", () => {
     beginTextEdit(segment);
     selectSegment(segment.id);
   });
   content.addEventListener("input", () => {
-    segment.text = normalizeEditableText(content.innerText);
+    syncSegmentTextFromEditor(segment, content);
     growSegmentToFit(segment, content);
+    updateEditorToolbarState(segment);
     updateSummary();
   });
   content.addEventListener("blur", () => commitActiveTextEdit());
@@ -672,11 +1012,103 @@ function createSegmentElement(segment) {
     closeAllMenus();
     menu.classList.toggle("is-open", willOpen);
     segmentElement.classList.toggle("is-menu-open", willOpen);
-    selectSegment(segment.id);
+    if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
+    menuButton.blur();
   });
+  menuButton.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+
+  for (const button of formattingButtons) {
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      runEditorAction(segment, content, button.dataset.editorAction);
+    });
+  }
 
   attachDragBehavior(segment, dragButton);
   attachResizeBehavior(segment, resizeHandle);
+}
+
+function syncSegmentTextFromEditor(segment, content) {
+  segment.runs = normalizeRichTextRuns(
+    window.ICATSegmentation.collectStyledTextRuns(content, getEditorRunStyle),
+  );
+  segment.text = segment.runs.map((run) => run.text).join("")
+    || normalizeEditableText(content.innerText);
+}
+
+function runEditorAction(segment, content, action) {
+  commitActiveTextEdit();
+  const before = createHistorySnapshot();
+  if (action === "bold" || action === "italic") {
+    selectEditorTextIfNeeded(content);
+    document.execCommand(action, false);
+    syncSegmentTextFromEditor(segment, content);
+    growSegmentToFit(segment, content);
+  } else {
+    const alignment = {
+      "align-left": "left",
+      "align-center": "center",
+      "align-right": "right",
+    }[action];
+    if (!alignment) return;
+    segment.style.textAlign = alignment;
+    content.style.textAlign = alignment;
+  }
+  updateEditorToolbarState(segment);
+  updateSummary();
+  commitHistory(before, describeEditorAction(action));
+  if (document.activeElement === content) beginTextEdit(segment);
+}
+
+function selectEditorTextIfNeeded(content) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const activeRange = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const insideEditor = activeRange && content.contains(
+    activeRange.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? activeRange.commonAncestorContainer
+      : activeRange.commonAncestorContainer.parentElement,
+  );
+  if (insideEditor && !activeRange.collapsed) return;
+  content.focus({ preventScroll: true });
+  const range = document.createRange();
+  range.selectNodeContents(content);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function updateEditorToolbarState(segment) {
+  if (!segment.element) return;
+  const runs = segment.runs || [];
+  const allBold = runs.length > 0 && runs.every((run) => Number(run.fontWeight) >= 600);
+  const allItalic = runs.length > 0 && runs.every((run) => run.fontStyle === "italic");
+  const states = {
+    bold: allBold,
+    italic: allItalic,
+    "align-left": segment.style.textAlign === "left",
+    "align-center": segment.style.textAlign === "center",
+    "align-right": segment.style.textAlign === "right",
+  };
+  for (const button of segment.element.querySelectorAll("[data-editor-action]")) {
+    button.setAttribute("aria-pressed", String(Boolean(states[button.dataset.editorAction])));
+  }
+}
+
+function describeEditorAction(action) {
+  return {
+    bold: "изменение жирности текста",
+    italic: "изменение курсива текста",
+    "align-left": "выравнивание текста по левому краю",
+    "align-center": "выравнивание текста по центру",
+    "align-right": "выравнивание текста по правому краю",
+  }[action] || "форматирование текста";
 }
 
 function createSegmentMenu(segment) {
@@ -685,10 +1117,7 @@ function createSegmentMenu(segment) {
   menu.setAttribute("role", "menu");
 
   const actions = [
-    ["reset", "Вернуть исходное"],
-    ["restore-page", "Вернуть в документ"],
-    ["previous-page", "На предыдущую страницу"],
-    ["next-page", "На следующую страницу"],
+    ["reset", "Вернуть в исходное положение в документе"],
     ["delete", "Удалить сегмент"],
   ];
 
@@ -702,6 +1131,7 @@ function createSegmentMenu(segment) {
       event.stopPropagation();
       runSegmentAction(segment, action);
       closeAllMenus();
+      button.blur();
     });
     menu.append(button);
   }
@@ -712,62 +1142,52 @@ function createSegmentMenu(segment) {
 function runSegmentAction(segment, action) {
   commitActiveTextEdit();
   const before = createHistorySnapshot();
+  const targets = window.ICATLayout.getSegmentActionTargets(
+    state.segments,
+    state.selectedIds,
+    segment.id,
+  );
   if (action === "reset") {
-    const original = segment.original;
-    Object.assign(segment, {
-      pageId: original.pageId,
-      pageIndex: original.pageIndex,
-      text: original.text,
-      x: original.x,
-      y: original.y,
-      width: original.width,
-      height: original.height,
-      deleted: false,
-      parked: false,
-      lastPageIndex: original.pageIndex,
-    });
-    state.pages[segment.pageIndex].overlay.append(segment.element);
+    const restoredIds = [];
+    for (const target of targets) {
+      const original = target.original;
+      const originalPage = state.pages[original.pageIndex];
+      if (!originalPage) continue;
+      Object.assign(target, {
+        pageId: originalPage.id,
+        pageIndex: originalPage.pageIndex,
+        x: clamp(original.x, 0, Math.max(0, originalPage.width - target.width)),
+        y: clamp(original.y, 0, Math.max(0, originalPage.height - target.height)),
+        deleted: false,
+        parked: false,
+        lastPageIndex: originalPage.pageIndex,
+      });
+      originalPage.overlay.append(target.element);
+      renderSegmentPosition(target);
+      restoredIds.push(target.id);
+    }
     syncParkingSurfaceHeight();
-    segment.element.querySelector(".icat-segment__content").textContent = segment.text;
-    renderSegmentPosition(segment);
-    selectSegment(segment.id);
-    showToast("Сегмент возвращён в исходное состояние");
-  } else if (action === "restore-page") {
-    moveSegmentToPage(segment, clamp(segment.lastPageIndex ?? 0, 0, state.pages.length - 1));
-  } else if (action === "previous-page") {
-    moveSegmentToPage(segment, (segment.pageIndex ?? segment.lastPageIndex ?? 0) - 1);
-  } else if (action === "next-page") {
-    moveSegmentToPage(segment, (segment.pageIndex ?? segment.lastPageIndex ?? -1) + 1);
-  } else if (action === "delete") {
-    segment.deleted = true;
-    segment.element.remove();
-    syncParkingSurfaceHeight();
-    const remainingSelection = [...state.selectedIds].filter((segmentId) => segmentId !== segment.id);
-    selectSegments(remainingSelection);
+    selectSegments(restoredIds, segment.id);
     updateSummary();
-    showToast("Сегмент удалён из результата");
+    showToast(targets.length > 1
+      ? `В исходное положение возвращено сегментов: ${restoredIds.length}`
+      : "Сегмент возвращён в исходное положение");
+  } else if (action === "delete") {
+    for (const target of targets) {
+      target.deleted = true;
+      target.element.remove();
+    }
+    syncParkingSurfaceHeight();
+    selectSegments([]);
+    updateSummary();
+    showToast(targets.length > 1
+      ? `Удалено сегментов: ${targets.length}`
+      : "Сегмент удалён из результата");
   }
-  commitHistory(before, describeSegmentAction(action));
-}
-
-function moveSegmentToPage(segment, targetPageIndex) {
-  const targetPage = state.pages[targetPageIndex];
-  if (!targetPage) {
-    showToast("Такой страницы нет", "error");
-    return;
-  }
-
-  segment.pageIndex = targetPageIndex;
-  segment.pageId = targetPage.id;
-  segment.parked = false;
-  segment.lastPageIndex = targetPageIndex;
-  segment.x = clamp(segment.x, 0, Math.max(0, targetPage.width - segment.width));
-  segment.y = clamp(segment.y, 0, Math.max(0, targetPage.height - segment.height));
-  targetPage.overlay.append(segment.element);
-  syncParkingSurfaceHeight();
-  renderSegmentPosition(segment);
-  selectSegment(segment.id);
-  showToast(`Сегмент перемещён на страницу ${targetPageIndex + 1}`);
+  const label = targets.length > 1
+    ? action === "reset" ? "групповой возврат в исходное положение" : "групповое удаление сегментов"
+    : describeSegmentAction(action);
+  commitHistory(before, label);
 }
 
 function getSegmentSurface(segment) {
@@ -843,6 +1263,7 @@ function attachDragBehavior(segment, handle) {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    handle.blur();
     if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
     closeAllMenus();
     commitActiveTextEdit();
@@ -1059,6 +1480,8 @@ function renderSegmentGeometry(segment) {
 function renderSegmentPosition(segment) {
   if (!segment.element) return;
   renderSegmentGeometry(segment);
+  segment.element.querySelector(".icat-segment__tools")
+    ?.classList.toggle("is-inside", segment.y < 34);
   segment.element.classList.toggle("is-parked", segment.parked);
   segment.element.classList.toggle("is-in-page-margin", !segment.parked && !isInsideWordTextArea(segment));
   const cell = getCellReference(segment);
@@ -1196,6 +1619,7 @@ function updateSummary() {
   elements.overlapCount.closest("div")?.classList.toggle("has-warning", overlaps.length > 0);
   elements.exportButton.disabled = state.loading || activeSegments.length === 0;
   elements.resolveOverlaps.disabled = state.loading || overlaps.length === 0;
+  updatePageDeleteControls();
   updateSelectedDetails();
 }
 
@@ -1253,22 +1677,25 @@ function handleWorkspaceZoom(event) {
 }
 
 function setViewScale(percent, anchor = null) {
-  const previousScale = state.viewScale;
-  const workspaceRectangle = elements.workspace.getBoundingClientRect();
-  const pointer = anchor ? {
-    x: anchor.clientX - workspaceRectangle.left,
-    y: anchor.clientY - workspaceRectangle.top,
-  } : null;
-  const contentAnchor = pointer ? {
-    x: (elements.workspace.scrollLeft + pointer.x) / previousScale,
-    y: (elements.workspace.scrollTop + pointer.y) / previousScale,
-  } : null;
+  const wrapper = elements.docxHost.querySelector(":scope > .docx-wrapper")
+    || elements.docxHost.querySelector(".docx-wrapper");
+  const zoomAnchor = anchor && wrapper
+    ? window.ICATLayout.captureZoomAnchor(
+      wrapper.getBoundingClientRect(),
+      anchor.clientX,
+      anchor.clientY,
+    )
+    : null;
   state.viewMode = "manual";
   state.viewScale = clamp((Number(percent) || 100) / 100, 0.25, 2.5);
   applyViewScale();
-  if (contentAnchor && pointer) {
-    elements.workspace.scrollLeft = contentAnchor.x * state.viewScale - pointer.x;
-    elements.workspace.scrollTop = contentAnchor.y * state.viewScale - pointer.y;
+  if (zoomAnchor && wrapper) {
+    const adjustment = window.ICATLayout.getZoomScrollAdjustment(
+      zoomAnchor,
+      wrapper.getBoundingClientRect(),
+    );
+    elements.workspace.scrollLeft += adjustment.x;
+    elements.workspace.scrollTop += adjustment.y;
   }
 }
 
@@ -1278,7 +1705,13 @@ function fitDocumentWidth() {
   if (!wrapper || !state.pages.length) return;
   const wrapperStyle = getComputedStyle(wrapper);
   const padding = numberOr(wrapperStyle.paddingLeft, 0) + numberOr(wrapperStyle.paddingRight, 0);
-  const documentWidth = Math.max(...state.pages.map((page) => page.width)) + padding;
+  const editorLayout = wrapper.querySelector(":scope > .icat-editor-layout");
+  const layoutStyle = editorLayout ? getComputedStyle(editorLayout) : null;
+  const layoutGap = numberOr(layoutStyle?.columnGap, 0);
+  const documentWidth = Math.max(...state.pages.map((page) => page.width))
+    + state.parkingWidth
+    + layoutGap
+    + padding;
   const availableWidth = Math.max(240, elements.workspace.clientWidth - 24);
   state.viewMode = "fit";
   state.viewScale = clamp(availableWidth / documentWidth, 0.25, 2.5);
@@ -1353,6 +1786,7 @@ async function exportDocument() {
 function setLoading(isLoading, message = "Обрабатываем документ…") {
   state.loading = isLoading;
   elements.loading.hidden = !isLoading;
+  elements.uploadButton.hidden = isLoading || state.pages.length > 0;
   elements.loadingText.textContent = message;
   if (isLoading) {
     elements.dropZone.hidden = true;
@@ -1383,6 +1817,8 @@ function snapshotSegment(segment) {
     pageId: segment.pageId,
     pageIndex: segment.pageIndex,
     text: segment.text,
+    runs: (segment.runs || []).map((run) => ({ ...run })),
+    style: { ...segment.style },
     x: segment.x,
     y: segment.y,
     width: segment.width,
@@ -1460,10 +1896,37 @@ function undoLastAction() {
   }
   if (entry.insertedPage) {
     undoInsertedPage(entry);
+  } else if (entry.removedPage) {
+    undoRemovedPage(entry);
   } else {
     restoreHistorySnapshot(entry.snapshot);
   }
   showToast(`Отменено: ${entry.label}`);
+}
+
+function undoRemovedPage(entry) {
+  const {
+    page, pageIndex, originalSegments,
+  } = entry.removedPage;
+  const pagesColumn = elements.docxHost.querySelector(".icat-pages-column");
+  if (!pagesColumn || state.pages.includes(page)) {
+    restoreHistorySnapshot(entry.snapshot);
+    return;
+  }
+
+  for (const control of elements.docxHost.querySelectorAll(".icat-page-insert")) control.remove();
+  const referenceElement = state.pages[pageIndex]?.element || null;
+  pagesColumn.insertBefore(page.element, referenceElement);
+  state.pages.splice(pageIndex, 0, page);
+  const originalsById = new Map(originalSegments.map((item) => [item.id, item.original]));
+  for (const segment of state.segments) {
+    const original = originalsById.get(segment.id);
+    if (original) segment.original = { ...original };
+  }
+  reindexPages();
+  renderPageInsertControls();
+  restoreHistorySnapshot(entry.snapshot);
+  if (state.viewMode === "fit") requestAnimationFrame(fitDocumentWidth);
 }
 
 function undoInsertedPage(entry) {
@@ -1500,7 +1963,10 @@ function restoreHistorySnapshot(snapshot) {
       if (!saved) continue;
       Object.assign(segment, saved);
       const content = segment.element?.querySelector(".icat-segment__content");
-      if (content) content.textContent = segment.text;
+      if (content) {
+        applyTypography(content, segment.style);
+        renderSegmentText(content, segment);
+      }
       if (segment.deleted) {
         segment.element?.remove();
         continue;
@@ -1508,6 +1974,7 @@ function restoreHistorySnapshot(snapshot) {
       const surface = getSegmentSurface(segment);
       surface?.overlay.append(segment.element);
       renderSegmentPosition(segment);
+      updateEditorToolbarState(segment);
     }
 
     selectSegments(snapshot.selectedIds, snapshot.selectedId);
@@ -1520,10 +1987,7 @@ function restoreHistorySnapshot(snapshot) {
 
 function describeSegmentAction(action) {
   return {
-    reset: "сброс сегмента",
-    "restore-page": "возврат сегмента в документ",
-    "previous-page": "перенос на предыдущую страницу",
-    "next-page": "перенос на следующую страницу",
+    reset: "возврат сегмента в исходное положение",
     delete: "удаление сегмента",
   }[action] || "изменение сегмента";
 }
@@ -1557,6 +2021,7 @@ function createExportPayload(activeSegments) {
       pageId: segment.pageId,
       pageIndex: segment.pageIndex,
       text: segment.text,
+      runs: (segment.runs || []).map((run) => ({ ...run })),
       x: segment.x,
       y: segment.y,
       width: segment.width,
@@ -1580,18 +2045,48 @@ function applyTypography(element, style) {
     fontFamily: style.fontFamily,
     fontSize: `${style.fontSizePx}px`,
     fontWeight: String(style.fontWeight),
+    fontStyle: normalizeFontStyle(style.fontStyle),
     color: style.color,
     textAlign: style.textAlign,
     lineHeight: String(style.lineHeight),
   });
 }
 
+function renderSegmentText(content, segment) {
+  content.replaceChildren();
+  const runs = Array.isArray(segment.runs) && segment.runs.length
+    ? segment.runs
+    : [{
+      text: segment.text,
+      fontWeight: segment.style.fontWeight,
+      fontStyle: segment.style.fontStyle,
+      backgroundColor: null,
+    }];
+  for (const run of runs) {
+    const runElement = document.createElement("span");
+    runElement.className = "icat-segment__run";
+    runElement.style.fontWeight = String(normalizeFontWeight(run.fontWeight));
+    runElement.style.fontStyle = normalizeFontStyle(run.fontStyle);
+    if (run.backgroundColor) runElement.style.backgroundColor = run.backgroundColor;
+    if (run.text === "\t" && Number(run.tabWidthPx) > 0) {
+      runElement.classList.add("icat-segment__tab");
+      runElement.style.width = `${run.tabWidthPx}px`;
+    }
+    runElement.textContent = run.text;
+    content.append(runElement);
+  }
+}
+
 function normalizeText(value) {
-  return value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return value
+    .replace(/\u00a0/g, " ")
+    .replace(/ {2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^[ \n]+|[ \n]+$/g, "");
 }
 
 function normalizeEditableText(value) {
-  return value.replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return normalizeText(value);
 }
 
 function normalizeFontFamily(value) {
@@ -1603,6 +2098,11 @@ function normalizeFontWeight(value) {
   if (value === "bold") return 700;
   const numeric = Number.parseInt(value, 10);
   return Number.isFinite(numeric) ? numeric : 400;
+}
+
+function normalizeFontStyle(value) {
+  const normalized = String(value || "").toLowerCase();
+  return normalized === "italic" || normalized.startsWith("oblique") ? "italic" : "normal";
 }
 
 function normalizeAlignment(value) {
@@ -1623,6 +2123,13 @@ function colorToHex(value) {
   return `#${[match[1], match[2], match[3]]
     .map((channel) => Number(channel).toString(16).padStart(2, "0"))
     .join("")}`;
+}
+
+function normalizeBackgroundColor(value) {
+  if (!value || value === "transparent") return null;
+  const alphaMatch = value.match(/rgba\([^)]*[, /](0(?:\.0+)?)\s*\)$/i);
+  if (alphaMatch) return null;
+  return colorToHex(value);
 }
 
 function numberOr(value, fallback) {
@@ -1652,6 +2159,18 @@ function sanitizeFileName(value) {
 
 function nextPaint() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function waitForWordTabLayout() {
+  const tabStops = Array.from(elements.docxHost.querySelectorAll(".docx-tab-stop"));
+  if (!tabStops.length) return;
+  const startedAt = performance.now();
+  while (
+    tabStops.some((tabStop) => !tabStop.style.wordSpacing)
+    && performance.now() - startedAt < 900
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
 }
 
 updateSummary();
