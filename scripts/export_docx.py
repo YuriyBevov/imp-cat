@@ -233,34 +233,36 @@ def create_vml_text_box(
         pict.append(shape_type)
 
     points = lambda value: f"{float(value) * 0.75:.3f}".rstrip("0").rstrip(".")
-    style = ";".join(
-        (
-            "position:absolute",
-            "left:0",
-            "top:0",
-            "text-align:left",
-            f"margin-left:{points(segment['x'])}pt",
-            f"margin-top:{points(segment['y'])}pt",
-            f"width:{points(segment['width'])}pt",
-            f"height:{points(segment['height'])}pt",
-            f"z-index:{BASE_RELATIVE_HEIGHT + int(segment.get('zIndex', shape_id))}",
-            "visibility:visible",
-            "mso-wrap-style:square",
-            "mso-width-percent:0",
-            "mso-height-percent:0",
-            "mso-wrap-distance-left:0",
-            "mso-wrap-distance-top:0",
-            "mso-wrap-distance-right:0",
-            "mso-wrap-distance-bottom:0",
-            "mso-position-horizontal:absolute",
-            "mso-position-horizontal-relative:page",
-            "mso-position-vertical:absolute",
-            "mso-position-vertical-relative:page",
-            "mso-width-relative:page",
-            "mso-height-relative:page",
-            "v-text-anchor:top",
-        )
-    )
+    style_parts = [
+        "position:absolute",
+        "left:0",
+        "top:0",
+        "text-align:left",
+        f"margin-left:{points(segment['x'])}pt",
+        f"margin-top:{points(segment['y'])}pt",
+        f"width:{points(segment['width'])}pt",
+        f"height:{points(segment['height'])}pt",
+        f"z-index:{BASE_RELATIVE_HEIGHT + int(segment.get('zIndex', shape_id))}",
+        "visibility:visible",
+        "mso-wrap-style:square",
+        "mso-width-percent:0",
+        "mso-height-percent:0",
+        "mso-wrap-distance-left:0",
+        "mso-wrap-distance-top:0",
+        "mso-wrap-distance-right:0",
+        "mso-wrap-distance-bottom:0",
+        "mso-position-horizontal:absolute",
+        "mso-position-horizontal-relative:page",
+        "mso-position-vertical:absolute",
+        "mso-position-vertical-relative:page",
+        "mso-width-relative:page",
+        "mso-height-relative:page",
+        "v-text-anchor:top",
+    ]
+    rotation = float(segment.get("rotation", 0))
+    if rotation:
+        style_parts.append(f"rotation:{rotation:.3f}".rstrip("0").rstrip("."))
+    style = ";".join(style_parts)
     shape = element(
         "v",
         "shape",

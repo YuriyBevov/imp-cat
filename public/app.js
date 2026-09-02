@@ -20,6 +20,8 @@ const state = {
   viewMode: "fit",
   sourceOverlayVisible: false,
   sourceOpacity: 0.45,
+  sourceImages: [],
+  wordFloatingObjects: [],
   parkingElement: null,
   parkingOverlay: null,
   parkingHeight: 0,
@@ -50,6 +52,10 @@ const elements = {
   showSource: document.querySelector("#show-source"),
   sourceOpacity: document.querySelector("#source-opacity"),
   sourceOpacityValue: document.querySelector("#source-opacity-value"),
+  sourceImageInput: document.querySelector("#source-image-input"),
+  sourceImageButton: document.querySelector("#source-image-button"),
+  sourceImageClear: document.querySelector("#source-image-clear"),
+  sourceImageStatus: document.querySelector("#source-image-status"),
   workspace: document.querySelector("#workspace"),
   dropZone: document.querySelector("#drop-zone"),
   loading: document.querySelector("#loading"),
@@ -99,6 +105,12 @@ elements.showSource.addEventListener("change", () => {
 elements.sourceOpacity.addEventListener("input", () => {
   setSourceOpacity(Number(elements.sourceOpacity.value) / 100);
 });
+elements.sourceImageButton.addEventListener("click", () => elements.sourceImageInput.click());
+elements.sourceImageInput.addEventListener("change", () => {
+  loadSourceImages(elements.sourceImageInput.files);
+  elements.sourceImageInput.value = "";
+});
+elements.sourceImageClear.addEventListener("click", clearSourceImages);
 elements.resolveOverlaps.addEventListener("click", resolveSegmentOverlaps);
 elements.workspace.addEventListener("wheel", handleWorkspaceZoom, { passive: false });
 for (const button of elements.editorActionButtons) {
@@ -197,7 +209,15 @@ async function loadDocument(blob, fileName) {
     elements.documentStage.classList.add("is-measuring");
     elements.documentStage.setAttribute("aria-hidden", "true");
 
-    await window.docx.renderAsync(await blob.arrayBuffer(), elements.docxHost, null, {
+    const arrayBuffer = await blob.arrayBuffer();
+    try {
+      state.wordFloatingObjects = await window.ICATOOXML.parseFloatingObjects(arrayBuffer);
+    } catch (error) {
+      state.wordFloatingObjects = [];
+      console.warn("[icat-grid] Не удалось прочитать плавающие OOXML-объекты:", error);
+    }
+
+    await window.docx.renderAsync(arrayBuffer, elements.docxHost, null, {
       className: "docx",
       inWrapper: true,
       breakPages: true,
@@ -231,6 +251,7 @@ async function loadDocument(blob, fileName) {
 }
 
 function clearDocument() {
+  releaseSourceImageUrls();
   state.parkingResizeObserver?.disconnect();
   elements.docxHost.replaceChildren();
   elements.documentStage.classList.remove("is-measuring");
@@ -242,6 +263,8 @@ function clearDocument() {
   state.viewMode = "fit";
   state.sourceOverlayVisible = false;
   state.sourceOpacity = 0.45;
+  state.sourceImages = [];
+  state.wordFloatingObjects = [];
   state.parkingElement = null;
   state.parkingOverlay = null;
   state.parkingHeight = 0;
@@ -271,6 +294,12 @@ function extractDocumentModel() {
 
   if (!sourcePageElements.length) throw new Error("в документе не найдены страницы");
 
+  const usedFloatingObjectKeys = new Set();
+  const wordLayerRanks = new Map(
+    [...state.wordFloatingObjects]
+      .sort((left, right) => left.zIndex - right.zIndex)
+      .map((object, index) => [object.id, index + 1]),
+  );
   const sourcePages = sourcePageElements.map((pageElement, sourcePageIndex) => {
     const pageStyle = getComputedStyle(pageElement);
     const physicalSize = window.ICATLayout.getPhysicalPageSize(
@@ -284,7 +313,7 @@ function extractDocumentModel() {
     const pageRect = pageElement.getBoundingClientRect();
     const candidates = collectTextCandidates(pageElement).map((candidate, sourceIndex) => {
       const sourceElement = candidate.element;
-      const rect = candidate.rect ?? getCandidateRect(sourceElement);
+      const browserRect = candidate.rect ?? getCandidateRect(sourceElement);
       const styleElement = candidate.styleElement
         || sourceElement.querySelector("p span, span, p")
         || sourceElement;
@@ -295,6 +324,35 @@ function extractDocumentModel() {
       const richText = runs.map((run) => run.text).join("");
       const text = richText || candidate.text || getCandidateText(sourceElement);
       const isFlow = isCandidateInNormalFlow(candidate, pageElement);
+      const partKind = sourceElement.closest("header")
+        ? "header"
+        : sourceElement.closest("footer") ? "footer" : "document";
+      const wordFloatingObject = (candidate.kind.startsWith("shape") || !isFlow)
+        ? window.ICATOOXML.matchFloatingObject(
+          state.wordFloatingObjects,
+          text,
+          usedFloatingObjectKeys,
+          { partKind, pageIndex: sourcePageIndex },
+        )
+        : null;
+      const floatingGeometry = window.ICATOOXML.resolveFloatingGeometry(
+        wordFloatingObject,
+        { width, height, contentBounds },
+        {
+          x: Math.max(0, browserRect.left - pageRect.left),
+          y: Math.max(0, browserRect.top - pageRect.top),
+          width: browserRect.width,
+          height: browserRect.height,
+        },
+      );
+      const rect = wordFloatingObject ? {
+        left: pageRect.left + floatingGeometry.x,
+        top: pageRect.top + floatingGeometry.y,
+        right: pageRect.left + floatingGeometry.x + floatingGeometry.width,
+        bottom: pageRect.top + floatingGeometry.y + floatingGeometry.height,
+        width: floatingGeometry.width,
+        height: floatingGeometry.height,
+      } : browserRect;
       const rawY = Math.max(0, rect.top - pageRect.top);
       return {
         candidate,
@@ -309,6 +367,7 @@ function extractDocumentModel() {
         computedStyle,
         fontSizePx,
         lineHeight,
+        wordFloatingObject,
         flowPlacement: null,
       };
     });
@@ -394,7 +453,7 @@ function extractDocumentModel() {
     sourcePage.candidates.forEach((preparedCandidate) => {
       const {
         candidate, sourceIndex, text, runs, rect, isFlow, rawY, measuredHeight,
-        computedStyle, fontSizePx, lineHeight, flowPlacement,
+        computedStyle, fontSizePx, lineHeight, wordFloatingObject, flowPlacement,
       } = preparedCandidate;
       const sourceElement = candidate.element;
       if (!text || rect.width < 2 || rect.height < 2) return;
@@ -442,13 +501,18 @@ function extractDocumentModel() {
         y,
         width,
         height,
-        zIndex: state.segments.length + 1,
+        zIndex: wordLayerRanks.get(wordFloatingObject?.id) || state.segments.length + 1,
         deleted: false,
         parked: false,
         lastPageIndex: page.pageIndex,
         sourceKind: candidate.kind,
         isFloating: candidate.kind.startsWith("shape") || !isFlow,
-        autoFitWidth: true,
+        wordObjectId: wordFloatingObject?.id || null,
+        wordObjectType: wordFloatingObject?.sourceType || null,
+        wordRotation: wordFloatingObject?.rotation || 0,
+        wordRelativeHeight: wordFloatingObject?.zIndex || 0,
+        wordBehindText: Boolean(wordFloatingObject?.behindText),
+        autoFitWidth: !wordFloatingObject,
         sourceElement,
         sourceElements: candidate.sourceElements,
         element: null,
@@ -743,6 +807,7 @@ function reindexPages() {
     segment.lastPageIndex = segment.pageIndex;
     renderSegmentPosition(segment);
   }
+  syncSourceImageEntries();
 }
 
 function collectTextCandidates(pageElement) {
@@ -927,14 +992,8 @@ function hideCandidateSource(candidate) {
 }
 
 function setSourceOverlayVisible(visible) {
-  if (!state.pages.length) return;
-  state.sourceOverlayVisible = Boolean(visible);
-  const sourceClass = state.sourceOverlayVisible ? "icat-source-hidden" : "icat-source-reference";
-  const targetClass = state.sourceOverlayVisible ? "icat-source-reference" : "icat-source-hidden";
-  for (const element of elements.docxHost.querySelectorAll(`.${sourceClass}`)) {
-    element.classList.remove(sourceClass);
-    element.classList.add(targetClass);
-  }
+  if (!state.pages.length || !state.sourceImages.length) return;
+  state.sourceOverlayVisible = Boolean(visible) && state.sourceImages.length > 0;
   elements.docxHost.classList.toggle("is-source-overlay-visible", state.sourceOverlayVisible);
   updateSourceOverlayControls();
 }
@@ -947,11 +1006,103 @@ function setSourceOpacity(opacity) {
 
 function updateSourceOverlayControls() {
   const hasDocument = state.pages.length > 0;
-  elements.showSource.disabled = !hasDocument;
-  elements.showSource.checked = hasDocument && state.sourceOverlayVisible;
-  elements.sourceOpacity.disabled = !hasDocument || !state.sourceOverlayVisible;
+  const imageCount = state.sourceImages.length;
+  elements.sourceImageButton.disabled = !hasDocument;
+  elements.sourceImageClear.disabled = !imageCount;
+  elements.showSource.disabled = !hasDocument || !imageCount;
+  elements.showSource.checked = hasDocument && imageCount > 0 && state.sourceOverlayVisible;
+  elements.sourceOpacity.disabled = !hasDocument || !imageCount || !state.sourceOverlayVisible;
   elements.sourceOpacity.value = String(Math.round(state.sourceOpacity * 100));
   elements.sourceOpacityValue.textContent = `${Math.round(state.sourceOpacity * 100)}%`;
+  elements.sourceImageStatus.textContent = imageCount
+    ? `Загружено изображений: ${imageCount}. Сопоставление выполнено по порядку имён.`
+    : "Загрузите по одному PNG/JPG на страницу в порядке имён файлов.";
+}
+
+function compareFileNames(left, right) {
+  return left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function loadSourceImages(fileList) {
+  if (!state.pages.length) {
+    showToast("Сначала загрузите DOCX.", "error");
+    return;
+  }
+  const files = Array.from(fileList || [])
+    .filter((file) => /^image\/(?:png|jpeg|webp)$/i.test(file.type))
+    .sort(compareFileNames);
+  if (!files.length) {
+    showToast("Выберите изображения PNG, JPG или WebP.", "error");
+    return;
+  }
+
+  releaseSourceImageUrls();
+  state.sourceImages = files.slice(0, state.pages.length).map((file, pageIndex) => ({
+    pageIndex,
+    name: file.name,
+    url: URL.createObjectURL(file),
+  }));
+  applySourceImageLayers();
+  setSourceOverlayVisible(true);
+  const ignored = Math.max(0, files.length - state.pages.length);
+  const missing = Math.max(0, state.pages.length - files.length);
+  const suffix = ignored
+    ? ` Лишних файлов пропущено: ${ignored}.`
+    : missing ? ` Без эталона осталось страниц: ${missing}.` : "";
+  showToast(`Растровый эталон загружен.${suffix}`);
+}
+
+function applySourceImageLayers() {
+  for (const image of elements.docxHost.querySelectorAll(".icat-source-image")) image.remove();
+  for (const entry of state.sourceImages) {
+    const page = state.pages[entry.pageIndex];
+    if (!page) continue;
+    const image = document.createElement("img");
+    image.className = "icat-source-image";
+    image.src = entry.url;
+    image.alt = `Растровый эталон страницы ${entry.pageIndex + 1}`;
+    image.draggable = false;
+    image.setAttribute("aria-hidden", "true");
+    page.element.append(image);
+    entry.element = image;
+  }
+}
+
+function releaseSourceImageUrls() {
+  for (const entry of state.sourceImages) {
+    if (entry.url) URL.revokeObjectURL(entry.url);
+    entry.element?.remove();
+  }
+}
+
+function syncSourceImageEntries() {
+  const surviving = [];
+  for (const entry of state.sourceImages) {
+    const page = state.pages.find((candidate) => candidate.element.contains(entry.element));
+    if (!page) {
+      if (entry.url) URL.revokeObjectURL(entry.url);
+      entry.element?.remove();
+      continue;
+    }
+    entry.pageIndex = page.pageIndex;
+    entry.element.alt = `Растровый эталон страницы ${page.pageIndex + 1}`;
+    surviving.push(entry);
+  }
+  state.sourceImages = surviving;
+  if (!surviving.length) {
+    state.sourceOverlayVisible = false;
+    elements.docxHost.classList.remove("is-source-overlay-visible");
+  }
+  updateSourceOverlayControls();
+}
+
+function clearSourceImages() {
+  releaseSourceImageUrls();
+  state.sourceImages = [];
+  state.sourceOverlayVisible = false;
+  elements.docxHost.classList.remove("is-source-overlay-visible");
+  updateSourceOverlayControls();
+  showToast("Растровый эталон удалён.");
 }
 
 function getCandidateRect(element) {
@@ -1443,6 +1594,11 @@ function mergeSegments(primarySegment, mergePlan) {
     style: { ...first.style },
     sourceKind: "merged",
     isFloating: ordered.every((segment) => segment.isFloating),
+    wordObjectId: null,
+    wordObjectType: null,
+    wordRotation: 0,
+    wordRelativeHeight: 0,
+    wordBehindText: false,
     autoFitWidth: true,
     zIndex: Math.max(...ordered.map((segment) => segment.zIndex)),
   });
@@ -1814,6 +1970,8 @@ function renderSegmentGeometry(segment) {
     width: `${segment.width}px`,
     height: `${segment.height}px`,
     zIndex: String(segment.zIndex),
+    transform: segment.wordRotation ? `rotate(${segment.wordRotation}deg)` : "",
+    transformOrigin: "center center",
   });
 }
 
@@ -1960,9 +2118,11 @@ function updateSelectedDetails() {
   elements.selectionSize.textContent = `${formatGeometry(segment.width)} × ${formatGeometry(segment.height)} px`;
   elements.selectionArea.textContent = segment.parked
     ? "Вне документа — не экспортируется"
-    : isInsideWordTextArea(segment)
-      ? "Текстовая область"
-      : segment.isFloating ? "Плавающий объект в поле страницы" : "За текстовой областью";
+    : segment.wordObjectType
+      ? `Плавающий Word-объект (${segment.wordObjectType === "vml-shape" ? "VML" : "DrawingML"})`
+      : isInsideWordTextArea(segment)
+        ? "Текстовая область"
+        : segment.isFloating ? "Плавающий объект в поле страницы" : "За текстовой областью";
 }
 
 function updateSummary() {
@@ -2184,6 +2344,11 @@ function snapshotSegment(segment) {
     autoFitWidth: segment.autoFitWidth !== false,
     sourceKind: segment.sourceKind,
     isFloating: Boolean(segment.isFloating),
+    wordObjectId: segment.wordObjectId || null,
+    wordObjectType: segment.wordObjectType || null,
+    wordRotation: Number(segment.wordRotation) || 0,
+    wordRelativeHeight: Number(segment.wordRelativeHeight) || 0,
+    wordBehindText: Boolean(segment.wordBehindText),
     deleted: segment.deleted,
     parked: segment.parked,
     lastPageIndex: segment.lastPageIndex,
@@ -2388,6 +2553,7 @@ function createExportPayload(activeSegments) {
       y: segment.y,
       width: segment.width,
       height: Math.min(segment.height, page.height - segment.y),
+      rotation: Number(segment.wordRotation) || 0,
       zIndex: segment.zIndex,
       cellId: getCellReference(segment).id,
       style: { ...segment.style },

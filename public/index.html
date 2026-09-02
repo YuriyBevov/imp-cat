@@ -68,17 +68,21 @@
           <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Cmd/Ctrl + колесо меняет зум под курсором и не влияет на экспорт.</p>
 
           <div class="source-compare">
+            <input id="source-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden />
+            <button id="source-image-button" class="button button--panel" type="button" disabled>Загрузить изображения страниц</button>
             <label class="source-compare__toggle" for="show-source">
               <input id="show-source" type="checkbox" disabled />
-              <span>Наложить исходный текст</span>
+              <span>Показать растровый эталон</span>
             </label>
             <label class="source-compare__opacity" for="source-opacity">
-              <span>Прозрачность исходника</span>
+              <span>Прозрачность эталона</span>
               <output id="source-opacity-value" for="source-opacity">45%</output>
               <input id="source-opacity" type="range" min="10" max="100" step="5" value="45" disabled />
             </label>
+            <button id="source-image-clear" class="source-compare__clear" type="button" disabled>Удалить эталон</button>
+            <small id="source-image-status">Загрузите по одному PNG/JPG на страницу в порядке имён файлов.</small>
           </div>
-          <p class="hint">Эталонный слой показывает текст в координатах исходного DOCX и не участвует в редактировании или экспорте.</p>
+          <p class="hint">Как в PixelPerfect: изображения накладываются на листы, не перехватывают мышь и не участвуют в экспорте.</p>
 
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
           <p class="hint">Команда сдвигает пересекающиеся сегменты вниз в пределах исходной страницы. Исходное положение можно вернуть через меню сегмента.</p>
@@ -168,6 +172,7 @@
     <script src="/vendor/docx-preview/docx-preview.min.js"></script>
     <script src="/layout-model.js"></script>
     <script src="/history-model.js"></script>
+    <script src="/ooxml-model.js"></script>
     <script src="/segmentation-model.js"></script>
     <script src="/app.js"></script>
   </body>

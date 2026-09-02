@@ -30,13 +30,15 @@
       ? paragraphs
       : Array.from(shape.querySelectorAll("text"))
         .filter((textElement) => !textElement.parentElement?.closest("text"));
-
-    return roots.map((root) => ({
-      ...elementCandidate(root, "shape-text"),
+    const textNodes = roots.flatMap((root) => collectTextNodesOutside(root, null));
+    if (!textNodes.length) return [];
+    return [{
+      ...elementCandidate(shape, "shape"),
       shape,
-      styleElement: root.querySelector?.("span") || root,
-      rect: rectangleFromTextNodes(collectTextNodesOutside(root, null)),
-    }));
+      textRoot: shape,
+      styleElement: textNodes[0]?.parentElement || roots[0] || shape,
+      rect: rectangleFromTextNodes(textNodes),
+    }];
   }
 
   function collectTextNodesOutside(container, excludedSelector = "svg") {

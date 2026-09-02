@@ -9,7 +9,7 @@ test('normalizes a valid page and positioned segment', () => {
     pages: [{ id: 'page-1', widthPx: 800, heightPx: 1100 }],
     segments: [{
       id: 'segment-1', pageIndex: 0, text: 'Hello',
-      x: 24, y: 40, width: 300, height: 60,
+      x: 24, y: 40, width: 300, height: 60, rotation: 12,
       style: {
         fontFamily: 'Arial', fontSizePx: 16, fontWeight: 700,
         color: '#112233', textAlign: 'center', lineHeight: 1.4,
@@ -20,6 +20,7 @@ test('normalizes a valid page and positioned segment', () => {
   assert.equal(payload.segments[0].color, '#112233')
   assert.equal(payload.segments[0].alignment, 'center')
   assert.equal(payload.segments[0].fontWeight, 700)
+  assert.equal(payload.segments[0].rotation, 12)
   assert.equal(payload.gridSize, 8)
   assert.equal(payload.segments[0].cellId, 'P1:R6:C4')
 })

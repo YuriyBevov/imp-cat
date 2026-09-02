@@ -17,7 +17,7 @@ class ExportDocxTests(unittest.TestCase):
                 "id": "rich", "pageIndex": 0, "text": "/Подпись/\t/Печать/", "x": 32, "y": 48,
                 "width": 700, "height": 60, "fontFamily": "Times New Roman", "fontSizePx": 16,
                 "fontWeight": 400, "fontStyle": "normal", "lineHeight": 1.2, "color": "#111827",
-                "alignment": "left", "zIndex": 1,
+                "alignment": "left", "zIndex": 1, "rotation": 12,
                 "runs": [
                     {"text": "/Подпись/\t", "fontWeight": 400, "fontStyle": "italic",
                      "tabStopPx": 180},
@@ -34,6 +34,10 @@ class ExportDocxTests(unittest.TestCase):
             document = Document(output)
 
         text_box = document.element.body.xpath(".//w:txbxContent")[0]
+        shape = document.element.body.xpath(
+            ".//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
+        )[0]
+        self.assertIn("rotation:12", shape.get("style"))
         self.assertEqual(len(text_box.xpath(
             ".//*[local-name()='r']/*[local-name()='tab']"
         )), 1)
