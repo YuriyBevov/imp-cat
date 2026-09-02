@@ -5,6 +5,7 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const { spawn } = require('node:child_process')
 const { normalizeExportPayload } = require('./lib/validation.cjs')
+const { createStudioRouter } = require('./lib/studio.cjs')
 const {
   buildOnlyOfficeConfig,
   isDocxBuffer,
@@ -31,6 +32,7 @@ app.disable('x-powered-by')
 app.use(express.json({ limit: '20mb' }))
 app.use('/vendor/docx-preview', express.static(path.join(rootDir, 'node_modules', 'docx-preview', 'dist')))
 app.use('/vendor/jszip', express.static(path.join(rootDir, 'node_modules', 'jszip', 'dist')))
+app.get('/', (request, response) => response.sendFile(path.join(publicDir, 'studio.html')))
 app.use(express.static(publicDir))
 
 app.get('/api/health', (request, response) => {
@@ -197,11 +199,13 @@ app.post('/api/export', async (request, response, next) => {
   }
 })
 
+app.use('/api/studio', createStudioRouter({ rootDir, pythonBin, runProcess }))
+
 app.use((error, request, response, next) => {
   if (response.headersSent) return next(error)
   const status = error.code === 'VALIDATION_ERROR' ? 400 : error.status || 500
   console.error(`[icat-grid] ${request.method} ${request.path}: ${error.message}`)
-  response.status(status).json({ error: status >= 500 ? 'Не удалось собрать DOCX' : error.message })
+  response.status(status).json({ error: error.message || 'Внутренняя ошибка сервера' })
 })
 
 function runProcess(command, args, timeoutMs) {

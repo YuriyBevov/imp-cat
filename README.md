@@ -1,6 +1,30 @@
-# ICAT Grid Prototype
+# ICAT Translation Studio
 
-Изолированный прототип гипотезы редактора DOCX. Он не меняет основной проект `icat` и не использует AI или внешние API.
+В ветке `experiment/client-requirements-v2` находится новый сквозной прототип для бюро переводов: локальная загрузка PDF/изображений, OCR, сцена сегментов, ручной и агентный перевод, память переводов, визуальная верстка, QA и экспорт в DOCX/PDF.
+
+Новый интерфейс открывается по адресу [http://127.0.0.1:3100](http://127.0.0.1:3100). Пошаговая проверка на реальном файле описана в [STUDIO_TEST_GUIDE.md](STUDIO_TEST_GUIDE.md), выполненные и отложенные части — в [STUDIO_IMPLEMENTATION_CHECKLIST.md](STUDIO_IMPLEMENTATION_CHECKLIST.md).
+
+Исходные страницы, OCR и экспорт обрабатываются локально. Опционально наружу отправляются только тексты выбранных сегментов — через настраиваемый OpenAI-совместимый API. Без API доступны ручной перевод и локальная база переводов.
+
+Предыдущие эксперименты сохранены: исходный DOCX/Grid-интерфейс доступен по `/index.html`, ONLYOFFICE — по `/onlyoffice.html`.
+
+## Быстрый запуск Studio
+
+Требуется macOS, Node.js 22+ и Python 3.11+.
+
+```bash
+cd /Users/yuriybevov/Desktop/local-projects/icat-test
+npm install
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+npm start
+```
+
+Для API-перевода скопируйте `.env.example` в `.env` и укажите URL, ключ и модель провайдера. Ключ используется только сервером.
+
+## Предыдущий Grid-прототип
+
+Изолированный прототип гипотезы редактора DOCX. Он не меняет основной проект `icat`.
 
 В экспериментальной ветке доступна отдельная интеграция с локальным ONLYOFFICE Document Server. Она не заменяет текущий редактор и запускается по адресу [http://127.0.0.1:3100/onlyoffice.html](http://127.0.0.1:3100/onlyoffice.html). Инструкция: [ONLYOFFICE_POC.md](ONLYOFFICE_POC.md).
 

@@ -1,0 +1,97 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const { JSDOM, VirtualConsole } = require('jsdom')
+
+const root = path.resolve(__dirname, '..')
+const html = fs.readFileSync(path.join(root, 'public/studio.html'), 'utf8')
+const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
+const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
+const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
+
+test('studio exposes the complete source-to-export workflow', () => {
+  for (const id of [
+    'file-input', 'page-thumbnails', 'document-canvas', 'overlay-toggle', 'overlay-opacity',
+    'source-text', 'translation-text', 'object-type', 'analyze-button', 'translate-button',
+    'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
+    'memory-search-button', 'approve-button', 'merge-button',
+  ]) assert.match(html, new RegExp(`id="${id}"`))
+  assert.match(server, /app\.use\('\/api\/studio'/)
+  assert.match(server, /studio\.html/)
+  assert.match(client, /\/api\/studio\/documents/)
+  assert.match(client, /\/translation-memory/)
+  assert.match(client, /event\.ctrlKey \|\| event\.metaKey/)
+  assert.match(client, /beginMarquee/)
+  assert.match(client, /beginDrag/)
+  assert.match(client, /moveSelectionToPage/)
+  assert.match(client, /function undo/)
+  assert.match(client, /function redo/)
+  assert.match(client, /exportDocument\('docx'\)/)
+  assert.match(client, /exportDocument\('pdf'\)/)
+})
+
+test('studio keeps the source overlay behind editable page objects', () => {
+  assert.match(styles, /\.source-page[\s\S]*pointer-events: none/)
+  assert.match(styles, /\.scene-object[\s\S]*position: absolute/)
+  assert.match(styles, /\.studio-page[\s\S]*overflow: hidden/)
+  assert.match(styles, /\.content-boundary/)
+})
+
+test('studio client boots on the upload screen without runtime errors', async () => {
+  const errors = []
+  const virtualConsole = new VirtualConsole()
+  virtualConsole.on('jsdomError', error => errors.push(error))
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously',
+    url: 'http://127.0.0.1:3100/',
+    virtualConsole,
+  })
+  dom.window.fetch = async () => ({
+    ok: true,
+    json: async () => ({ translationProviderConfigured: false, translationModel: null }),
+  })
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(dom.window.document.querySelector('#upload-view').hidden, false)
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, true)
+  assert.deepEqual(errors, [])
+  dom.window.close()
+})
+
+test('studio restores a saved scene and renders editable page objects', async () => {
+  const errors = []
+  const virtualConsole = new VirtualConsole()
+  virtualConsole.on('jsdomError', error => errors.push(error))
+  const id = '1'.repeat(32)
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    url: `http://127.0.0.1:3100/?document=${id}`,
+    virtualConsole,
+  })
+  const scene = {
+    title: 'Fixture', sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'object-1', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText: 'Source', translation: 'Перевод', confidence: .98,
+      x: 50, y: 60, width: 200, height: 32, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      originalBounds: { x: 50, y: 60, width: 200, height: 32 },
+    }],
+  }
+  dom.window.fetch = async url => ({
+    ok: true,
+    json: async () => String(url).endsWith('/status')
+      ? { translationProviderConfigured: false, translationModel: null }
+      : { metadata: { id, revision: 1 }, scene },
+  })
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
+  assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
+  assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
+  assert.deepEqual(errors, [])
+  dom.window.close()
+})

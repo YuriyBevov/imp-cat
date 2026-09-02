@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ICAT Translation Studio</title>
+    <link rel="stylesheet" href="/studio.css" />
+  </head>
+  <body>
+    <header class="appbar">
+      <a class="brand" href="/" aria-label="ICAT Translation Studio">
+        <span class="brand__mark">IC</span>
+        <span><strong>ICAT</strong><small>Translation Studio</small></span>
+      </a>
+      <div class="document-heading">
+        <strong id="document-title">Новый перевод</strong>
+        <span id="document-status">Загрузите PDF или изображение</span>
+      </div>
+      <div class="appbar__actions">
+        <button id="undo-button" class="icon-button" type="button" title="Отменить (Cmd/Ctrl+Z)" disabled>↶</button>
+        <button id="redo-button" class="icon-button" type="button" title="Повторить" disabled>↷</button>
+        <button id="new-document-button" class="button" type="button" hidden>Другой документ</button>
+        <button id="export-docx-button" class="button button--primary" type="button" disabled>Скачать DOCX</button>
+        <button id="export-pdf-button" class="button" type="button" disabled>Скачать PDF</button>
+      </div>
+    </header>
+
+    <nav class="workflow" aria-label="Этапы работы">
+      <button class="workflow__step is-active" data-stage="source"><span>1</span>Исходник</button>
+      <button class="workflow__step" data-stage="structure"><span>2</span>Структура</button>
+      <button class="workflow__step" data-stage="translation"><span>3</span>Перевод</button>
+      <button class="workflow__step" data-stage="layout"><span>4</span>Верстка</button>
+      <button class="workflow__step" data-stage="qa"><span>5</span>Проверка</button>
+    </nav>
+
+    <main id="upload-view" class="upload-view">
+      <section id="upload-zone" class="upload-card">
+        <input id="file-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.heic,.bmp,application/pdf,image/*" hidden />
+        <div class="upload-card__icon">PDF</div>
+        <p class="eyebrow">Новый проект</p>
+        <h1>Загрузите документ на перевод</h1>
+        <p>PDF, скан или изображение. Файл будет разобран и распознан локально на этом компьютере.</p>
+        <label class="button button--primary button--large" for="file-input">Выбрать документ</label>
+        <small>Исходный файл и изображения страниц не отправляются провайдеру перевода.</small>
+      </section>
+      <section class="pipeline-card">
+        <div><span>01</span><strong>Распознавание</strong><small>страницы, текст, координаты</small></div>
+        <div><span>02</span><strong>Перевод</strong><small>агент или ручная работа</small></div>
+        <div><span>03</span><strong>Редактура</strong><small>структура и верстка</small></div>
+        <div><span>04</span><strong>Сборка</strong><small>DOCX и PDF</small></div>
+      </section>
+    </main>
+
+    <main id="loading-view" class="loading-view" hidden>
+      <div class="loader"></div>
+      <h1>Готовим документ к переводу</h1>
+      <p id="loading-message">Рендерим страницы и распознаём текст…</p>
+      <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
+    </main>
+
+    <main id="studio-view" class="studio" hidden>
+      <aside class="pages-panel">
+        <div class="panel-heading">
+          <span>Страницы</span>
+          <strong id="page-count">0</strong>
+        </div>
+        <div id="page-thumbnails" class="page-thumbnails"></div>
+      </aside>
+
+      <section class="workbench">
+        <div class="workbench-toolbar">
+          <div class="toolbar-group">
+            <button id="zoom-out" class="icon-button" type="button" title="Уменьшить">−</button>
+            <output id="zoom-output">80%</output>
+            <button id="zoom-in" class="icon-button" type="button" title="Увеличить">+</button>
+            <button id="zoom-fit" class="compact-button" type="button">По ширине</button>
+          </div>
+          <div class="toolbar-group overlay-controls">
+            <label><input id="overlay-toggle" type="checkbox" checked /> Исходник</label>
+            <input id="overlay-opacity" type="range" min="0" max="100" value="35" aria-label="Прозрачность исходника" />
+            <output id="overlay-output">35%</output>
+          </div>
+          <div class="toolbar-group formatting" aria-label="Форматирование сегмента">
+            <button class="format-button" data-format="bold" type="button" title="Полужирный"><strong>B</strong></button>
+            <button class="format-button" data-format="italic" type="button" title="Курсив"><em>I</em></button>
+            <button class="format-button" data-format="left" type="button" title="По левому краю">⇤</button>
+            <button class="format-button" data-format="center" type="button" title="По центру">≡</button>
+            <button class="format-button" data-format="right" type="button" title="По правому краю">⇥</button>
+            <button class="format-button" data-format="justify" type="button" title="По ширине">☰</button>
+            <select id="toolbar-font-size" title="Размер шрифта">
+              <option value="9">9</option><option value="10">10</option><option value="11">11</option>
+              <option value="12" selected>12</option><option value="14">14</option><option value="16">16</option>
+              <option value="18">18</option><option value="20">20</option><option value="24">24</option><option value="28">28</option>
+            </select>
+          </div>
+          <span class="workbench-toolbar__hint">Cmd/Ctrl + колесо — зум под курсором</span>
+        </div>
+        <div id="canvas-scroll" class="canvas-scroll">
+          <div id="document-canvas" class="document-canvas"></div>
+        </div>
+      </section>
+
+      <aside class="inspector-panel">
+        <div class="agent-card">
+          <div class="agent-card__title"><span class="agent-dot"></span><strong>Агент-переводчик</strong></div>
+          <p id="agent-status">Документ распознан. Запустите анализ структуры.</p>
+          <div class="agent-actions">
+            <button id="analyze-button" class="button button--primary" type="button">Проверить структуру</button>
+            <button id="translate-button" class="button" type="button">Перевести выбранное</button>
+            <button id="auto-layout-button" class="button" type="button">Исправить наложения</button>
+            <button id="qa-button" class="button" type="button">Финальная проверка</button>
+          </div>
+        </div>
+
+        <section class="language-card">
+          <label>Язык исходника
+            <select id="source-language"><option value="auto">Определить автоматически</option><option value="tr">Турецкий</option><option value="en">Английский</option><option value="de">Немецкий</option><option value="ru">Русский</option></select>
+          </label>
+          <span>→</span>
+          <label>Язык перевода
+            <select id="target-language"><option value="ru">Русский</option><option value="en">Английский</option><option value="tr">Турецкий</option><option value="de">Немецкий</option></select>
+          </label>
+        </section>
+
+        <section id="empty-inspector" class="empty-inspector">
+          <div>⌁</div>
+          <h2>Выберите сегмент</h2>
+          <p>Кликните по текстовому блоку на странице. Cmd/Ctrl + клик добавляет блоки к выделению.</p>
+          <button id="add-object-button" class="button" type="button">Добавить служебный объект</button>
+        </section>
+
+        <section id="object-inspector" class="object-inspector" hidden>
+          <div class="selection-heading">
+            <div><p class="eyebrow">Выделение</p><h2 id="selection-title">Сегмент</h2></div>
+            <span id="selection-count">1</span>
+          </div>
+          <label>Тип содержимого
+            <select id="object-type">
+              <option value="text">Текст</option><option value="stamp">Штамп</option><option value="seal">Круглая печать</option>
+              <option value="signature">Подпись</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
+            </select>
+          </label>
+          <label>Распознанный исходник
+            <textarea id="source-text" rows="6" spellcheck="true"></textarea>
+          </label>
+          <div class="confidence-row"><span>Уверенность OCR</span><strong id="confidence-value">—</strong></div>
+          <label>Перевод / обозначение
+            <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
+          </label>
+          <div class="object-grid">
+            <label>Шрифт, px<input id="font-size" type="number" min="6" max="96" step="0.5" /></label>
+            <label>Интервал<input id="line-height" type="number" min="0.8" max="3" step="0.05" /></label>
+            <label>X<input id="object-x" type="number" step="1" /></label>
+            <label>Y<input id="object-y" type="number" step="1" /></label>
+            <label>Ширина<input id="object-width" type="number" min="12" step="1" /></label>
+            <label>Высота<input id="object-height" type="number" min="12" step="1" /></label>
+          </div>
+          <div class="memory-card">
+            <div><strong>База переводов</strong><button id="memory-search-button" type="button">Найти похожие</button></div>
+            <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
+          </div>
+          <div class="object-actions">
+            <button id="approve-button" class="button button--primary" type="button">Подтвердить и добавить в БЗ</button>
+            <button id="merge-button" class="button" type="button" disabled>Объединить выбранные</button>
+            <button id="reset-position-button" class="button" type="button">Вернуть исходное положение</button>
+            <button id="exclude-button" class="button button--danger" type="button">Исключить из сборки</button>
+          </div>
+        </section>
+
+        <section id="qa-panel" class="qa-panel" hidden>
+          <div class="qa-panel__header"><strong>Проверка документа</strong><button id="qa-close" type="button">×</button></div>
+          <div id="qa-summary" class="qa-summary"></div>
+          <div id="qa-list" class="qa-list"></div>
+        </section>
+      </aside>
+    </main>
+
+    <div id="selection-box" class="selection-box" hidden></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/studio.js"></script>
+  </body>
+</html>
