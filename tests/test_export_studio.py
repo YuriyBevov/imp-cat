@@ -27,6 +27,7 @@ class StudioExporterTests(unittest.TestCase):
                     "sourceText": "Original", "translation": "Перевод документа",
                     "x": 60, "y": 80, "width": 400, "height": 60,
                     "style": {"fontFamily": "Arial", "fontSizePx": 18, "fontWeight": 700, "fontStyle": "normal", "lineHeight": 1.2, "textAlign": "left", "color": "#111827"},
+                    "translationTextStyles": [{"start": 0, "end": 7, "fontSizePx": 24, "fontStyle": "italic"}],
                 },
                 {
                     "id": "signature-1", "pageIndex": 1, "type": "signature",
@@ -46,6 +47,8 @@ class StudioExporterTests(unittest.TestCase):
         payload = MODULE.normalize_scene(self.scene())
         self.assertEqual(len(payload["segments"]), 2)
         self.assertEqual(payload["segments"][0]["text"], "Перевод документа")
+        self.assertEqual(payload["segments"][0]["runs"][0]["fontSizePx"], 24)
+        self.assertEqual(payload["segments"][0]["runs"][0]["text"], "Перевод")
 
     def test_exports_valid_two_page_docx_and_pdf(self):
         payload = MODULE.normalize_scene(self.scene())
@@ -58,7 +61,8 @@ class StudioExporterTests(unittest.TestCase):
             self.assertGreater(pdf_path.stat().st_size, 1_000)
             with ZipFile(docx_path) as archive:
                 xml = archive.read("word/document.xml").decode("utf-8")
-                self.assertIn("Перевод документа", xml)
+                self.assertIn("Перевод", xml)
+                self.assertIn(" документа", xml)
                 self.assertNotIn("Не экспортировать", xml)
             self.assertTrue(pdf_path.read_bytes().startswith(b"%PDF"))
 

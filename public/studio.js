@@ -7,17 +7,18 @@
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), pageCount: $('#page-count'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomOutput: $('#zoom-output'),
-    overlayToggle: $('#overlay-toggle'), overlayOpacity: $('#overlay-opacity'), overlayOutput: $('#overlay-output'),
+    sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
+    sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
-    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
+    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), ocrReview: $('#ocr-review-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
     objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
-    merge: $('#merge-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
-    qaPanel: $('#qa-panel'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
+    merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
+    qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
   }
 
@@ -25,10 +26,10 @@
     metadata: null,
     scene: null,
     zoom: .8,
+    sourceZoom: .5,
+    sourceRenderedPage: null,
     selected: new Set(),
     activePage: 0,
-    overlayVisible: true,
-    overlayOpacity: .35,
     history: [],
     future: [],
     saveTimer: null,
@@ -36,6 +37,7 @@
     pointerAction: null,
     toastTimer: null,
     serviceStatus: null,
+    lastTextSelection: null,
   }
 
   function showToast(message, isError = false) {
@@ -91,6 +93,7 @@
     state.history = []
     state.future = []
     state.activePage = 0
+    state.sourceRenderedPage = null
     elements.documentTitle.textContent = state.scene.title
     elements.documentStatus.textContent = `${state.scene.pages.length} стр. · ${state.scene.objects.length} сегментов · сохранено локально`
     elements.pageCount.textContent = state.scene.pages.length
@@ -104,7 +107,7 @@
     elements.exportPdf.disabled = false
     setView('studio')
     renderDocument()
-    requestAnimationFrame(fitWidth)
+    requestAnimationFrame(() => { fitWidth(); fitSourceWidth() })
     refreshUndoButtons()
   }
 
@@ -121,18 +124,6 @@
       surface.style.width = `${page.widthPx}px`
       surface.style.height = `${page.heightPx}px`
       surface.addEventListener('pointerdown', beginMarquee)
-
-      const image = document.createElement('img')
-      image.className = 'source-page'
-      image.src = page.imageUrl
-      image.alt = `Исходная страница ${page.index + 1}`
-      image.style.opacity = state.overlayVisible ? String(state.overlayOpacity) : '0'
-      const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
-      Object.assign(image.style, {
-        left: `${sourceFrame.x}px`, top: `${sourceFrame.y}px`,
-        width: `${sourceFrame.width}px`, height: `${sourceFrame.height}px`,
-      })
-      surface.append(image)
 
       const boundary = document.createElement('div')
       boundary.className = 'content-boundary'
@@ -153,7 +144,69 @@
       elements.canvas.append(shell)
     }
     applyZoom()
+    renderSourcePreview()
     refreshSelection()
+  }
+
+  function renderSourcePreview() {
+    if (!state.scene || !elements.sourcePreviewCanvas) return
+    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    if (state.sourceRenderedPage === page.index && elements.sourcePreviewCanvas.firstElementChild) {
+      applySourceZoom()
+      return
+    }
+    elements.sourcePreviewCanvas.replaceChildren()
+    const shell = document.createElement('div')
+    shell.className = 'source-preview-page-shell'
+    const surface = document.createElement('div')
+    surface.className = 'source-preview-page'
+    surface.style.width = `${page.widthPx}px`
+    surface.style.height = `${page.heightPx}px`
+    const image = document.createElement('img')
+    image.src = page.imageUrl
+    image.alt = `Оригинал страницы ${page.index + 1}`
+    const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+    Object.assign(image.style, {
+      left: `${sourceFrame.x}px`, top: `${sourceFrame.y}px`,
+      width: `${sourceFrame.width}px`, height: `${sourceFrame.height}px`,
+    })
+    surface.append(image)
+    shell.append(surface)
+    elements.sourcePreviewCanvas.append(shell)
+    state.sourceRenderedPage = page.index
+    applySourceZoom()
+  }
+
+  function applySourceZoom() {
+    if (!state.scene || !elements.sourcePreviewCanvas) return
+    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const shell = elements.sourcePreviewCanvas.querySelector('.source-preview-page-shell')
+    const surface = shell?.querySelector('.source-preview-page')
+    if (!shell || !surface) return
+    shell.style.width = `${page.widthPx * state.sourceZoom}px`
+    shell.style.height = `${page.heightPx * state.sourceZoom}px`
+    surface.style.transform = `scale(${state.sourceZoom})`
+    elements.sourceZoomOutput.value = `${Math.round(state.sourceZoom * 100)}%`
+  }
+
+  function setSourceZoom(nextZoom, anchorEvent) {
+    const next = Math.min(3, Math.max(.15, Math.round(nextZoom * 20) / 20))
+    if (next === state.sourceZoom) return
+    const scroller = elements.sourcePreviewScroll
+    const before = anchorEvent ? { x: anchorEvent.clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft, y: anchorEvent.clientY - scroller.getBoundingClientRect().top + scroller.scrollTop } : null
+    const ratio = next / state.sourceZoom
+    state.sourceZoom = next
+    applySourceZoom()
+    if (before) requestAnimationFrame(() => {
+      scroller.scrollLeft = before.x * ratio - (anchorEvent.clientX - scroller.getBoundingClientRect().left)
+      scroller.scrollTop = before.y * ratio - (anchorEvent.clientY - scroller.getBoundingClientRect().top)
+    })
+  }
+
+  function fitSourceWidth() {
+    if (!state.scene || !elements.sourcePreviewScroll) return
+    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    setSourceZoom((elements.sourcePreviewScroll.clientWidth - 56) / page.widthPx)
   }
 
   function renderThumbnails() {
@@ -180,6 +233,107 @@
 
   function objectOutput(object) {
     return object.translation || object.sourceText || ''
+  }
+
+  function objectOutputField(object) {
+    return object.translation ? 'translation' : 'sourceText'
+  }
+
+  function styleRanges(object, field = objectOutputField(object)) {
+    const key = field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
+    if (!Array.isArray(object[key])) object[key] = []
+    return object[key]
+  }
+
+  function effectiveTextStyle(object, field, offset) {
+    const result = {}
+    for (const range of styleRanges(object, field)) {
+      if (offset < range.start || offset >= range.end) continue
+      for (const property of ['fontSizePx', 'fontWeight', 'fontStyle', 'color']) {
+        if (range[property] != null) result[property] = range[property]
+      }
+    }
+    return result
+  }
+
+  function renderTextContent(content, object) {
+    const text = objectOutput(object)
+    const field = objectOutputField(object)
+    content.dataset.outputField = field
+    const ranges = styleRanges(object, field).filter(range => range.end > range.start && range.start < text.length)
+    if (!ranges.length) {
+      content.textContent = text
+      return
+    }
+    const points = new Set([0, text.length])
+    for (const range of ranges) {
+      points.add(Math.max(0, Math.min(text.length, range.start)))
+      points.add(Math.max(0, Math.min(text.length, range.end)))
+    }
+    const sorted = [...points].sort((left, right) => left - right)
+    const fragment = document.createDocumentFragment()
+    for (let index = 0; index < sorted.length - 1; index += 1) {
+      const start = sorted[index]
+      const end = sorted[index + 1]
+      if (end <= start) continue
+      const value = text.slice(start, end)
+      const runStyle = effectiveTextStyle(object, field, start)
+      if (!Object.keys(runStyle).length) {
+        fragment.append(document.createTextNode(value))
+        continue
+      }
+      const span = document.createElement('span')
+      span.dataset.textStyle = 'true'
+      span.textContent = value
+      if (runStyle.fontSizePx != null) span.style.fontSize = `${runStyle.fontSizePx}px`
+      if (runStyle.fontWeight != null) span.style.fontWeight = runStyle.fontWeight
+      if (runStyle.fontStyle != null) span.style.fontStyle = runStyle.fontStyle
+      if (runStyle.color != null) span.style.color = runStyle.color
+      fragment.append(span)
+    }
+    content.replaceChildren(fragment)
+  }
+
+  function getTextSelection(content, objectId) {
+    const selection = window.getSelection?.()
+    if (!selection?.rangeCount) return null
+    const range = selection.getRangeAt(0)
+    if (!content.contains(range.commonAncestorContainer)) return null
+    const before = range.cloneRange()
+    before.selectNodeContents(content)
+    before.setEnd(range.startContainer, range.startOffset)
+    return { objectId, start: before.toString().length, end: before.toString().length + range.toString().length }
+  }
+
+  function rememberTextSelection(content, objectId) {
+    const selection = getTextSelection(content, objectId)
+    if (selection) state.lastTextSelection = selection
+  }
+
+  function extractInlineStyles(content, expectedText) {
+    const ranges = []
+    let cursor = 0
+    const visit = node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const length = node.nodeValue?.length || 0
+        const parent = node.parentElement?.closest?.('[data-text-style]')
+        if (parent && length) {
+          const range = { start: cursor, end: cursor + length }
+          if (parent.style.fontSize) range.fontSizePx = Number.parseFloat(parent.style.fontSize)
+          if (parent.style.fontWeight) range.fontWeight = Number.parseFloat(parent.style.fontWeight) || (parent.style.fontWeight === 'bold' ? 700 : undefined)
+          if (parent.style.fontStyle) range.fontStyle = parent.style.fontStyle
+          if (parent.style.color) range.color = parent.style.color
+          ranges.push(range)
+        }
+        cursor += length
+        return
+      }
+      for (const child of node.childNodes) visit(child)
+    }
+    visit(content)
+    return cursor === expectedText.length
+      ? ranges.filter(range => range.end > range.start && Object.keys(range).length > 2)
+      : []
   }
 
   function createObjectElement(object) {
@@ -214,14 +368,16 @@
     content.className = 'scene-object__content'
     content.contentEditable = 'true'
     content.spellcheck = true
-    content.textContent = objectOutput(object)
+    renderTextContent(content, object)
     content.addEventListener('focus', () => {
       if (!state.selected.has(object.id)) selectOnly(object.id)
       if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
     })
+    for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
     content.addEventListener('blur', () => { state.textCheckpoint = false; scheduleSave() })
     content.addEventListener('input', () => {
-      object.translation = content.innerText.replace(/\n{3,}/g, '\n\n')
+      object.translation = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
+      object.translationTextStyles = extractInlineStyles(content, object.translation)
       object.status = 'edited'
       node.classList.toggle('is-untranslated', !object.translation && object.type === 'text')
       if (state.selected.size === 1) elements.translationText.value = object.translation
@@ -292,6 +448,7 @@
 
   function selectOnly(id) {
     state.selected = new Set(id ? [id] : [])
+    if (!id || state.lastTextSelection?.objectId !== id) state.lastTextSelection = null
     refreshSelection()
   }
 
@@ -384,6 +541,7 @@
     if (event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
+    state.lastTextSelection = null
     if (!state.selected.has(id)) state.selected = new Set([id])
     checkpoint()
     refreshSelection()
@@ -597,8 +755,28 @@
     } catch (error) { showToast(error.message, true) }
   }
 
+  async function runOcrReview() {
+    if (!state.scene) return
+    elements.agentStatus.textContent = 'Проверяем полноту OCR, склейки слов и смысл соседних сегментов…'
+    try {
+      await saveScene(true)
+      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/review-ocr`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: [...state.selected] }),
+      })
+      const report = await response.json()
+      showOcrReview(report)
+      elements.agentStatus.textContent = report.message
+      showToast(`Проверка OCR: ${report.counts.total} рекомендаций`)
+    } catch (error) {
+      elements.agentStatus.textContent = 'Проверка OCR не выполнена.'
+      showToast(error.message, true)
+    }
+  }
+
   function showQa(report) {
     elements.qaPanel.hidden = false
+    elements.qaTitle.textContent = 'Проверка документа'
+    elements.qaActions.replaceChildren()
     elements.qaSummary.innerHTML = `
       <div><strong>${report.counts.errors}</strong><span>ошибок</span></div>
       <div><strong>${report.counts.warnings}</strong><span>предупреждений</span></div>
@@ -630,6 +808,103 @@
     }
   }
 
+  function applyOcrSuggestions(suggestions) {
+    const applicable = suggestions.filter(suggestion => suggestion.applicable && suggestion.objectId && suggestion.suggestedText)
+    if (!applicable.length) return
+    checkpoint()
+    let applied = 0
+    for (const suggestion of applicable) {
+      const object = state.scene.objects.find(item => item.id === suggestion.objectId)
+      if (!object || String(object.sourceText || '').trim() !== String(suggestion.originalText || '').trim()) continue
+      object.sourceText = suggestion.suggestedText
+      object.sourceTextStyles = []
+      object.status = 'ocr-reviewed'
+      applied += 1
+    }
+    renderDocument()
+    scheduleSave()
+    showToast(`Применено OCR-правок: ${applied}`)
+  }
+
+  function showOcrReview(report) {
+    elements.qaPanel.hidden = false
+    elements.qaTitle.textContent = 'Рекомендации по OCR'
+    elements.qaSummary.innerHTML = `
+      <div><strong>${report.counts.total}</strong><span>всего</span></div>
+      <div><strong>${report.counts.agent}</strong><span>от агента</span></div>
+      <div><strong>${report.counts.applicable}</strong><span>можно применить</span></div>`
+    elements.qaActions.replaceChildren()
+    const highConfidence = report.suggestions.filter(item => item.applicable && item.confidence >= .82)
+    if (highConfidence.length) {
+      const applyAll = document.createElement('button')
+      applyAll.type = 'button'
+      applyAll.className = 'button button--primary'
+      applyAll.textContent = `Применить надёжные (${highConfidence.length})`
+      applyAll.addEventListener('click', () => applyOcrSuggestions(highConfidence))
+      elements.qaActions.append(applyAll)
+    }
+    elements.qaList.replaceChildren()
+    if (!report.suggestions.length) {
+      const item = document.createElement('div')
+      item.className = 'qa-item'
+      item.textContent = 'Локальная проверка не нашла подозрительных фрагментов.'
+      elements.qaList.append(item)
+      return
+    }
+    for (const suggestion of report.suggestions) {
+      const item = document.createElement('article')
+      item.className = 'qa-suggestion'
+      item.dataset.source = suggestion.source
+      const meta = document.createElement('div')
+      meta.className = 'qa-suggestion__meta'
+      meta.innerHTML = `<span>${suggestion.source === 'agent' ? 'Агент' : 'Локальная проверка'} · стр. ${suggestion.pageIndex + 1}</span><strong>${Math.round(suggestion.confidence * 100)}%</strong>`
+      const reason = document.createElement('strong')
+      reason.textContent = suggestion.reason
+      item.append(meta, reason)
+      if (suggestion.originalText) {
+        const original = document.createElement('del')
+        original.textContent = suggestion.originalText
+        item.append(original)
+      }
+      if (suggestion.suggestedText) {
+        const proposed = document.createElement('ins')
+        proposed.textContent = suggestion.suggestedText
+        item.append(proposed)
+      }
+      const buttons = document.createElement('div')
+      buttons.className = 'qa-suggestion__buttons'
+      if (suggestion.objectId) {
+        const show = document.createElement('button')
+        show.type = 'button'
+        show.textContent = 'Показать'
+        show.addEventListener('click', () => {
+          state.selected = new Set([suggestion.objectId])
+          focusPage(suggestion.pageIndex, suggestion.objectId)
+          refreshSelection()
+        })
+        buttons.append(show)
+      }
+      if (suggestion.applicable) {
+        const apply = document.createElement('button')
+        apply.type = 'button'
+        apply.textContent = 'Применить'
+        apply.addEventListener('click', () => { applyOcrSuggestions([suggestion]); item.remove() })
+        buttons.append(apply)
+      } else if (suggestion.kind === 'missing-text' && suggestion.suggestedText) {
+        const create = document.createElement('button')
+        create.type = 'button'
+        create.textContent = 'Создать сегмент'
+        create.addEventListener('click', () => {
+          addObject({ pageIndex: suggestion.pageIndex, sourceText: suggestion.suggestedText })
+          item.remove()
+        })
+        buttons.append(create)
+      }
+      if (buttons.childElementCount) item.append(buttons)
+      elements.qaList.append(item)
+    }
+  }
+
   async function findMemory() {
     const object = selectedObjects()[0]
     if (!object) return
@@ -649,7 +924,7 @@
         button.innerHTML = `<span>${escapeHtml(match.translation)}</span><small>Совпадение ${Math.round(match.score * 100)}%</small>`
         button.addEventListener('click', () => {
           checkpoint()
-          for (const selected of selectedObjects()) selected.translation = match.translation
+          for (const selected of selectedObjects()) { selected.translation = match.translation; selected.translationTextStyles = [] }
           renderDocument()
           scheduleSave()
         })
@@ -672,6 +947,21 @@
     } catch (error) { showToast(error.message, true) }
   }
 
+  function mergeStyledField(objects, field) {
+    const styleField = field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
+    let text = ''
+    const ranges = []
+    for (const object of objects) {
+      const value = String(object[field] || '')
+      if (!value) continue
+      if (text) text += '\n'
+      const offset = text.length
+      text += value
+      for (const range of object[styleField] || []) ranges.push({ ...range, start: range.start + offset, end: range.end + offset })
+    }
+    return { text, ranges }
+  }
+
   function mergeSelected() {
     const objects = selectedObjects().sort((left, right) => left.y - right.y || left.x - right.x)
     if (objects.length < 2 || new Set(objects.map(item => item.pageIndex)).size !== 1) return
@@ -679,12 +969,16 @@
     const first = objects[0]
     const right = Math.max(...objects.map(item => item.x + item.width))
     const bottom = Math.max(...objects.map(item => item.y + item.height))
+    const source = mergeStyledField(objects, 'sourceText')
+    const translation = mergeStyledField(objects, 'translation')
     first.x = Math.min(...objects.map(item => item.x))
     first.y = Math.min(...objects.map(item => item.y))
     first.width = right - first.x
     first.height = bottom - first.y
-    first.sourceText = objects.map(item => item.sourceText).filter(Boolean).join('\n')
-    first.translation = objects.map(item => item.translation).filter(Boolean).join('\n')
+    first.sourceText = source.text
+    first.sourceTextStyles = source.ranges
+    first.translation = translation.text
+    first.translationTextStyles = translation.ranges
     first.type = 'text'
     first.originalBounds = { x: first.x, y: first.y, width: first.width, height: first.height }
     const removed = new Set(objects.slice(1).map(item => item.id))
@@ -694,22 +988,133 @@
     scheduleSave()
   }
 
-  function addObject() {
+  function addObject(options = {}) {
     if (!state.scene) return
     checkpoint()
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const requestedPage = Number.isInteger(options.pageIndex) ? options.pageIndex : state.activePage
+    const page = state.scene.pages[requestedPage] || state.scene.pages[0]
+    const sourceText = typeof options.sourceText === 'string' ? options.sourceText : ''
     const id = `manual-${Date.now().toString(36)}`
     state.scene.objects.push({
-      id, pageIndex: page.index, type: 'signature', readingOrder: state.scene.objects.length + 1,
-      sourceText: '', translation: '/Подпись/', confidence: 1,
-      x: page.widthPx * .65, y: page.heightPx * .82, width: 160, height: 28, rotation: 0,
+      id, pageIndex: page.index, type: 'text', readingOrder: state.scene.objects.length + 1,
+      sourceText, translation: '', confidence: 1,
+      sourceTextStyles: [], translationTextStyles: [], ocrAlternatives: [],
+      x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42, rotation: 0,
       excluded: false, status: 'manual', sourceLineIds: [],
-      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'italic', textAlign: 'center', lineHeight: 1.2, color: '#111827' },
-      originalBounds: { x: page.widthPx * .65, y: page.heightPx * .82, width: 160, height: 28 },
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      originalBounds: { x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42 },
     })
+    state.activePage = page.index
     state.selected = new Set([id])
     renderDocument()
     scheduleSave()
+    return id
+  }
+
+  function clippedRanges(ranges, start, end, offset = 0) {
+    return (ranges || []).map(range => ({
+      ...range,
+      start: Math.max(start, range.start) - offset,
+      end: Math.min(end, range.end) - offset,
+    })).filter(range => range.end > range.start)
+  }
+
+  function rangesAfterRemoval(ranges, start, end) {
+    const removed = end - start
+    const result = []
+    for (const range of ranges || []) {
+      if (range.end <= start) result.push({ ...range })
+      else if (range.start >= end) result.push({ ...range, start: range.start - removed, end: range.end - removed })
+      else {
+        if (range.start < start) result.push({ ...range, end: start })
+        if (range.end > end) result.push({ ...range, start, end: range.end - removed })
+      }
+    }
+    return result.filter(range => range.end > range.start)
+  }
+
+  function splitSelectedText() {
+    const objects = selectedObjects()
+    if (objects.length !== 1) return showToast('Для разделения выберите один сегмент', true)
+    const object = objects[0]
+    const selection = state.lastTextSelection
+    if (!selection || selection.objectId !== object.id) return showToast('Поставьте курсор или выделите текст внутри сегмента', true)
+    const field = objectOutputField(object)
+    const styleField = field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
+    const text = String(object[field] || '')
+    const start = Math.max(0, Math.min(text.length, selection.start))
+    const end = Math.max(start, Math.min(text.length, selection.end))
+    if (start === 0 && end === 0) return showToast('Разделение в начале сегмента не требуется', true)
+    if (start === text.length && end === text.length) return showToast('Разделение в конце сегмента не требуется', true)
+    checkpoint()
+    const extractedEnd = end > start ? end : text.length
+    const extractedText = text.slice(start, extractedEnd)
+    const originalRanges = [...styleRanges(object, field)]
+    object[field] = text.slice(0, start) + (end > start ? text.slice(end) : '')
+    object[styleField] = end > start
+      ? rangesAfterRemoval(originalRanges, start, end)
+      : clippedRanges(originalRanges, 0, start)
+
+    const page = state.scene.pages[object.pageIndex]
+    const id = `manual-${Date.now().toString(36)}`
+    const next = JSON.parse(JSON.stringify(object))
+    next.id = id
+    next.readingOrder = state.scene.objects.length + 1
+    next.sourceLineIds = []
+    next.ocrAlternatives = []
+    next.confidence = 1
+    next.status = 'manual-split'
+    next.sourceText = field === 'sourceText' ? extractedText : ''
+    next.translation = field === 'translation' ? extractedText : ''
+    next.sourceTextStyles = field === 'sourceText' ? clippedRanges(originalRanges, start, extractedEnd, start) : []
+    next.translationTextStyles = field === 'translation' ? clippedRanges(originalRanges, start, extractedEnd, start) : []
+    const below = object.y + object.height + 8
+    next.y = below + next.height <= page.heightPx ? below : Math.max(0, object.y - next.height - 8)
+    next.originalBounds = { x: next.x, y: next.y, width: next.width, height: next.height }
+    state.scene.objects.push(next)
+    state.selected = new Set([id])
+    state.lastTextSelection = null
+    renderDocument()
+    scheduleSave()
+    showToast(end > start ? 'Выделенный текст перенесён в новый сегмент' : 'Сегмент разделён по позиции курсора')
+  }
+
+  function selectedTextRange() {
+    const objects = selectedObjects()
+    if (objects.length !== 1) return null
+    const liveContent = elements.canvas.querySelector(`[data-id="${CSS.escape(objects[0].id)}"] .scene-object__content`)
+    const liveRange = liveContent ? getTextSelection(liveContent, objects[0].id) : null
+    const range = liveRange && liveRange.end > liveRange.start ? liveRange : state.lastTextSelection
+    if (!range || range.objectId !== objects[0].id || range.end <= range.start) return null
+    const text = objectOutput(objects[0])
+    return { object: objects[0], field: objectOutputField(objects[0]), start: Math.max(0, Math.min(text.length, range.start)), end: Math.max(0, Math.min(text.length, range.end)) }
+  }
+
+  function applySelectedTextStyle(patch) {
+    const selection = selectedTextRange()
+    if (!selection) return false
+    checkpoint()
+    styleRanges(selection.object, selection.field).push({ start: selection.start, end: selection.end, ...patch })
+    renderDocument()
+    scheduleSave()
+    return true
+  }
+
+  function applyFormatting(action) {
+    const textSelection = selectedTextRange()
+    if (textSelection && ['bold', 'italic'].includes(action)) {
+      const current = effectiveTextStyle(textSelection.object, textSelection.field, textSelection.start)
+      const patch = action === 'bold'
+        ? { fontWeight: (current.fontWeight ?? textSelection.object.style.fontWeight) >= 600 ? 400 : 700 }
+        : { fontStyle: (current.fontStyle ?? textSelection.object.style.fontStyle) === 'italic' ? 'normal' : 'italic' }
+      applySelectedTextStyle(patch)
+      return
+    }
+    applySelectionChange(object => {
+      if (action === 'bold') object.style.fontWeight = object.style.fontWeight >= 600 ? 400 : 700
+      else if (action === 'italic') object.style.fontStyle = object.style.fontStyle === 'italic' ? 'normal' : 'italic'
+      else object.style.textAlign = action
+    })
   }
 
   function resetPosition() {
@@ -768,6 +1173,7 @@
     for (const button of elements.thumbnails.querySelectorAll('.page-thumbnail')) button.classList.toggle('is-active', Number(button.dataset.pageIndex) === pageIndex)
     const page = elements.canvas.querySelector(`.studio-page-shell[data-page-index="${pageIndex}"]`)
     page?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    renderSourcePreview()
     if (objectId) setTimeout(() => elements.canvas.querySelector(`[data-id="${CSS.escape(objectId)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' }), 200)
   }
 
@@ -785,7 +1191,11 @@
     const bindText = (control, field) => {
       control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
       control.addEventListener('input', () => {
-        for (const object of selectedObjects()) { object[field] = control.value; object.status = 'edited' }
+        for (const object of selectedObjects()) {
+          object[field] = control.value
+          object[field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'] = []
+          object.status = 'edited'
+        }
         renderSelectedText(field)
         scheduleSave()
       })
@@ -809,7 +1219,7 @@
     for (const object of selectedObjects()) {
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
       if (!node) continue
-      node.querySelector('.scene-object__content').textContent = objectOutput(object)
+      renderTextContent(node.querySelector('.scene-object__content'), object)
       node.classList.toggle('is-untranslated', !object.translation && object.type === 'text')
     }
   }
@@ -832,35 +1242,50 @@
       event.preventDefault()
       setZoom(state.zoom + (event.deltaY < 0 ? .1 : -.1), event)
     }, { passive: false })
-    elements.canvasScroll.addEventListener('scroll', () => state.pointerAction?.updateFromScroll?.(), { passive: true })
-    elements.overlayToggle.addEventListener('change', () => { state.overlayVisible = elements.overlayToggle.checked; updateOverlay() })
-    elements.overlayOpacity.addEventListener('input', () => { state.overlayOpacity = Number(elements.overlayOpacity.value) / 100; updateOverlay() })
+    elements.canvasScroll.addEventListener('scroll', () => {
+      state.pointerAction?.updateFromScroll?.()
+      const viewport = elements.canvasScroll.getBoundingClientRect()
+      const shells = [...elements.canvas.querySelectorAll('.studio-page-shell')]
+      const nearest = shells.sort((left, right) => Math.abs(left.getBoundingClientRect().top - viewport.top - 18) - Math.abs(right.getBoundingClientRect().top - viewport.top - 18))[0]
+      const pageIndex = Number(nearest?.dataset.pageIndex)
+      if (Number.isInteger(pageIndex) && pageIndex !== state.activePage) {
+        state.activePage = pageIndex
+        renderThumbnails()
+        renderSourcePreview()
+      }
+    }, { passive: true })
+    elements.sourceZoomOut.addEventListener('click', () => setSourceZoom(state.sourceZoom - .1))
+    elements.sourceZoomIn.addEventListener('click', () => setSourceZoom(state.sourceZoom + .1))
+    elements.sourceZoomFit.addEventListener('click', fitSourceWidth)
+    elements.sourcePreviewScroll.addEventListener('wheel', event => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      event.preventDefault()
+      setSourceZoom(state.sourceZoom + (event.deltaY < 0 ? .1 : -.1), event)
+    }, { passive: false })
     elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
     elements.analyze.addEventListener('click', () => runAgent('analyze', 'Проверяем порядок чтения и типы объектов…'))
+    elements.ocrReview.addEventListener('click', runOcrReview)
     elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
     elements.translate.addEventListener('click', translateSelection)
     elements.qa.addEventListener('click', runQa)
     elements.qaClose.addEventListener('click', () => { elements.qaPanel.hidden = true })
-    elements.addObject.addEventListener('click', addObject)
+    elements.addObject.addEventListener('click', () => addObject())
     elements.memorySearch.addEventListener('click', findMemory)
     elements.approve.addEventListener('click', approveTranslation)
     elements.merge.addEventListener('click', mergeSelected)
+    elements.split.addEventListener('click', splitSelectedText)
     elements.resetPosition.addEventListener('click', resetPosition)
     elements.exclude.addEventListener('click', excludeSelected)
     elements.exportDocx.addEventListener('click', () => exportDocument('docx'))
     elements.exportPdf.addEventListener('click', () => exportDocument('pdf'))
     elements.undo.addEventListener('click', undo)
     elements.redo.addEventListener('click', redo)
-    elements.toolbarFontSize.addEventListener('change', () => applySelectionChange(object => { object.style.fontSizePx = Number(elements.toolbarFontSize.value) }))
-    document.querySelectorAll('.format-button').forEach(button => button.addEventListener('click', () => {
-      const action = button.dataset.format
-      applySelectionChange(object => {
-        if (action === 'bold') object.style.fontWeight = object.style.fontWeight >= 600 ? 400 : 700
-        else if (action === 'italic') object.style.fontStyle = object.style.fontStyle === 'italic' ? 'normal' : 'italic'
-        else object.style.textAlign = action
-      })
-    }))
+    elements.toolbarFontSize.addEventListener('change', () => {
+      const value = Number(elements.toolbarFontSize.value)
+      if (!applySelectedTextStyle({ fontSizePx: value })) applySelectionChange(object => { object.style.fontSizePx = value })
+    })
+    document.querySelectorAll('.format-button').forEach(button => button.addEventListener('click', () => applyFormatting(button.dataset.format)))
     document.querySelectorAll('.workflow__step').forEach(button => button.addEventListener('click', () => {
       document.querySelectorAll('.workflow__step').forEach(item => item.classList.toggle('is-active', item === button))
       if (button.dataset.stage === 'qa' && state.scene) runQa()
@@ -872,6 +1297,7 @@
       }
       if (event.key === 'Escape') {
         state.selected.clear()
+        state.lastTextSelection = null
         elements.qaPanel.hidden = true
         refreshSelection()
         document.activeElement?.blur?.()
@@ -884,11 +1310,6 @@
       }).catch(() => {})
     })
     bindInspector()
-  }
-
-  function updateOverlay() {
-    elements.overlayOutput.value = `${Math.round(state.overlayOpacity * 100)}%`
-    for (const image of elements.canvas.querySelectorAll('.source-page')) image.style.opacity = state.overlayVisible ? String(state.overlayOpacity) : '0'
   }
 
   async function loadServiceStatus() {

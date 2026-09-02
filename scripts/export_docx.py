@@ -166,10 +166,14 @@ def create_text_box_paragraph(segment: dict) -> etree._Element:
     spacing = element("w", "spacing")
     word_attr(spacing, "before", 0)
     word_attr(spacing, "after", 0)
+    largest_font_size = max(
+        [float(segment["fontSizePx"])]
+        + [float(run.get("fontSizePx", segment["fontSizePx"])) for run in segment.get("runs", [])]
+    )
     word_attr(
         spacing,
         "line",
-        max(1, round(float(segment["fontSizePx"]) * PX_TO_TWIPS * float(segment.get("lineHeight", 1.2)))),
+        max(1, round(largest_font_size * PX_TO_TWIPS * float(segment.get("lineHeight", 1.2)))),
     )
     word_attr(spacing, "lineRule", "exact")
     paragraph_properties.append(spacing)

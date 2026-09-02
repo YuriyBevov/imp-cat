@@ -12,10 +12,10 @@ const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
 
 test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
-    'file-input', 'page-thumbnails', 'document-canvas', 'overlay-toggle', 'overlay-opacity',
+    'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
     'source-text', 'translation-text', 'object-type', 'analyze-button', 'translate-button',
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
-    'memory-search-button', 'approve-button', 'merge-button',
+    'memory-search-button', 'approve-button', 'merge-button', 'split-button', 'ocr-review-button',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
@@ -31,8 +31,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /exportDocument\('pdf'\)/)
 })
 
-test('studio keeps the source overlay behind editable page objects', () => {
-  assert.match(styles, /\.source-page[\s\S]*pointer-events: none/)
+test('studio keeps an independently zoomable source beside editable page objects', () => {
+  assert.match(styles, /\.source-preview-panel[\s\S]*border-right/)
+  assert.match(styles, /\.source-preview-page img[\s\S]*pointer-events: none/)
   assert.match(styles, /\.scene-object[\s\S]*position: absolute/)
   assert.match(styles, /\.studio-page[\s\S]*overflow: hidden/)
   assert.match(styles, /\.content-boundary/)
@@ -78,6 +79,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
       sourceText: 'Source', translation: 'Перевод', confidence: .98,
       x: 50, y: 60, width: 200, height: 32, rotation: 0, excluded: false,
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], ocrAlternatives: [],
       originalBounds: { x: 50, y: 60, width: 200, height: 32 },
     }],
   }
@@ -116,6 +118,31 @@ test('studio restores a saved scene and renders editable page objects', async ()
   resizeHandle.dispatchEvent(pointer('pointermove', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointerup', 30, 20))
   assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth + 10 / zoom}px`)
+
+  const content = dom.window.document.querySelector('.scene-object__content')
+  content.dispatchEvent(pointer('pointerdown', 0, 0))
+  content.focus()
+  const range = dom.window.document.createRange()
+  range.setStart(content.firstChild, 0)
+  range.setEnd(content.firstChild, 3)
+  dom.window.getSelection().removeAllRanges()
+  dom.window.getSelection().addRange(range)
+  content.dispatchEvent(pointer('pointerup', 0, 0))
+  const fontSize = dom.window.document.querySelector('#toolbar-font-size')
+  fontSize.value = '20'
+  fontSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('.scene-object__content span').style.fontSize, '20px')
+
+  const styledContent = dom.window.document.querySelector('.scene-object__content')
+  const styledText = styledContent.querySelector('span').firstChild
+  const splitRange = dom.window.document.createRange()
+  splitRange.setStart(styledText, 0)
+  splitRange.setEnd(styledText, 2)
+  dom.window.getSelection().removeAllRanges()
+  dom.window.getSelection().addRange(splitRange)
+  styledContent.dispatchEvent(pointer('pointerup', 0, 0))
+  dom.window.document.querySelector('#split-button').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object').length, 2)
   assert.deepEqual(errors, [])
   dom.window.close()
 })

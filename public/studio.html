@@ -41,7 +41,7 @@
         <h1>Загрузите документ на перевод</h1>
         <p>PDF, скан или изображение. Файл будет разобран и распознан локально на этом компьютере.</p>
         <label class="button button--primary button--large" for="file-input">Выбрать документ</label>
-        <small>Исходный файл и изображения страниц не отправляются провайдеру перевода.</small>
+        <small>Исходник обрабатывается локально. Передача страниц агенту проверки включается только настройкой сервера.</small>
       </section>
       <section class="pipeline-card">
         <div><span>01</span><strong>Распознавание</strong><small>страницы, текст, координаты</small></div>
@@ -67,6 +67,22 @@
         <div id="page-thumbnails" class="page-thumbnails"></div>
       </aside>
 
+      <section class="source-preview-panel" aria-label="Оригинал документа">
+        <div class="source-preview-toolbar">
+          <strong>Оригинал</strong>
+          <div>
+            <button id="source-zoom-out" class="icon-button" type="button" title="Уменьшить оригинал">−</button>
+            <output id="source-zoom-output">50%</output>
+            <button id="source-zoom-in" class="icon-button" type="button" title="Увеличить оригинал">+</button>
+            <button id="source-zoom-fit" class="compact-button" type="button">Вписать</button>
+          </div>
+        </div>
+        <div id="source-preview-scroll" class="source-preview-scroll">
+          <div id="source-preview-canvas" class="source-preview-canvas"></div>
+        </div>
+        <small class="source-preview-hint">Оригинал выбранной страницы · Cmd/Ctrl + колесо — зум</small>
+      </section>
+
       <section class="workbench">
         <div class="workbench-toolbar">
           <div class="toolbar-group">
@@ -74,11 +90,6 @@
             <output id="zoom-output">80%</output>
             <button id="zoom-in" class="icon-button" type="button" title="Увеличить">+</button>
             <button id="zoom-fit" class="compact-button" type="button">По ширине</button>
-          </div>
-          <div class="toolbar-group overlay-controls">
-            <label><input id="overlay-toggle" type="checkbox" checked /> Исходник</label>
-            <input id="overlay-opacity" type="range" min="0" max="100" value="35" aria-label="Прозрачность исходника" />
-            <output id="overlay-output">35%</output>
           </div>
           <div class="toolbar-group formatting" aria-label="Форматирование сегмента">
             <button class="format-button" data-format="bold" type="button" title="Полужирный"><strong>B</strong></button>
@@ -106,6 +117,7 @@
           <p id="agent-status">Документ распознан. Запустите анализ структуры.</p>
           <div class="agent-actions">
             <button id="analyze-button" class="button button--primary" type="button">Проверить структуру</button>
+            <button id="ocr-review-button" class="button" type="button">Проверить OCR агентом</button>
             <button id="translate-button" class="button" type="button">Перевести выбранное</button>
             <button id="auto-layout-button" class="button" type="button">Исправить наложения</button>
             <button id="qa-button" class="button" type="button">Финальная проверка</button>
@@ -126,7 +138,7 @@
           <div>⌁</div>
           <h2>Выберите сегмент</h2>
           <p>Кликните по текстовому блоку на странице. Cmd/Ctrl + клик добавляет блоки к выделению.</p>
-          <button id="add-object-button" class="button" type="button">Добавить служебный объект</button>
+          <button id="add-object-button" class="button" type="button">Добавить пустой сегмент</button>
         </section>
 
         <section id="object-inspector" class="object-inspector" hidden>
@@ -162,13 +174,15 @@
           <div class="object-actions">
             <button id="approve-button" class="button button--primary" type="button">Подтвердить и добавить в БЗ</button>
             <button id="merge-button" class="button" type="button" disabled>Объединить выбранные</button>
+            <button id="split-button" class="button" type="button">Разделить по курсору / выделению</button>
             <button id="reset-position-button" class="button" type="button">Вернуть исходное положение</button>
             <button id="exclude-button" class="button button--danger" type="button">Исключить из сборки</button>
           </div>
         </section>
 
         <section id="qa-panel" class="qa-panel" hidden>
-          <div class="qa-panel__header"><strong>Проверка документа</strong><button id="qa-close" type="button">×</button></div>
+          <div class="qa-panel__header"><strong id="qa-title">Проверка документа</strong><button id="qa-close" type="button">×</button></div>
+          <div id="qa-actions" class="qa-actions"></div>
           <div id="qa-summary" class="qa-summary"></div>
           <div id="qa-list" class="qa-list"></div>
         </section>

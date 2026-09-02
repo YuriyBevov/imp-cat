@@ -37,7 +37,39 @@ def register_fonts() -> None:
 
 
 def output_text(item: dict) -> str:
-    return str(item.get("translation") or item.get("sourceText") or "").strip()
+    return str(item.get("translation") or item.get("sourceText") or "")
+
+
+def text_runs(item: dict, text: str) -> list[dict]:
+    field = "translation" if item.get("translation") else "sourceText"
+    ranges = item.get("translationTextStyles" if field == "translation" else "sourceTextStyles") or []
+    points = {0, len(text)}
+    valid_ranges = []
+    for candidate in ranges:
+        start = max(0, min(len(text), int(candidate.get("start", 0))))
+        end = max(start, min(len(text), int(candidate.get("end", start))))
+        if end <= start:
+            continue
+        valid_ranges.append({**candidate, "start": start, "end": end})
+        points.update((start, end))
+    sorted_points = sorted(points)
+    runs: list[dict] = []
+    for index in range(len(sorted_points) - 1):
+        start, end = sorted_points[index], sorted_points[index + 1]
+        if end <= start:
+            continue
+        run = {"text": text[start:end]}
+        for candidate in valid_ranges:
+            if candidate["start"] <= start < candidate["end"]:
+                for key in ("fontSizePx", "fontWeight", "fontStyle", "color"):
+                    if key in candidate:
+                        run[key] = candidate[key]
+        comparable = {key: value for key, value in run.items() if key != "text"}
+        if runs and {key: value for key, value in runs[-1].items() if key != "text"} == comparable:
+            runs[-1]["text"] += run["text"]
+        else:
+            runs.append(run)
+    return runs
 
 
 def normalize_scene(scene: dict) -> dict:
@@ -53,7 +85,7 @@ def normalize_scene(scene: dict) -> dict:
     segments = []
     for index, item in enumerate(scene.get("objects", [])):
         text = output_text(item)
-        if item.get("excluded") or not text:
+        if item.get("excluded") or not text.strip():
             continue
         style = item.get("style") or {}
         segments.append(
@@ -74,7 +106,7 @@ def normalize_scene(scene: dict) -> dict:
                 "lineHeight": float(style.get("lineHeight", 1.2)),
                 "color": str(style.get("color") or "#111827"),
                 "alignment": str(style.get("textAlign") or "left"),
-                "runs": [],
+                "runs": text_runs(item, text),
             }
         )
     return {
@@ -132,6 +164,56 @@ def parse_color(value: str) -> tuple[float, float, float]:
     return tuple(int(value[index:index + 2], 16) / 255 for index in (1, 3, 5))
 
 
+def run_font(segment: dict, run: dict) -> tuple[str, float]:
+    bold = float(run.get("fontWeight", segment["fontWeight"])) >= 600
+    italic = run.get("fontStyle", segment["fontStyle"]) == "italic"
+    name = FONT_NAMES[(bold, italic)] if FONT_NAMES[(bold, italic)] in pdfmetrics.getRegisteredFontNames() else "Helvetica"
+    return name, max(4.5, float(run.get("fontSizePx", segment["fontSizePx"])) * 0.75)
+
+
+def wrap_styled_runs(segment: dict, available_width: float) -> list[list[tuple[str, dict]]]:
+    lines: list[list[tuple[str, dict]]] = [[]]
+    line_width = 0.0
+    for run in segment.get("runs") or [{"text": segment["text"]}]:
+        font_name, font_size = run_font(segment, run)
+        for token in re.split(r"(\n|\s+)", str(run.get("text", ""))):
+            if not token:
+                continue
+            if token == "\n":
+                lines.append([])
+                line_width = 0.0
+                continue
+            token_width = pdfmetrics.stringWidth(token, font_name, font_size)
+            if token.isspace() and not lines[-1]:
+                continue
+            if line_width + token_width <= available_width:
+                lines[-1].append((token, run))
+                line_width += token_width
+                continue
+            if lines[-1]:
+                lines.append([])
+                line_width = 0.0
+                if token.isspace():
+                    continue
+            if token_width <= available_width:
+                lines[-1].append((token, run))
+                line_width = token_width
+                continue
+            current = ""
+            for character in token:
+                candidate = current + character
+                if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > available_width:
+                    lines[-1].append((current, run))
+                    lines.append([])
+                    current = character
+                else:
+                    current = candidate
+            if current:
+                lines[-1].append((current, run))
+                line_width = pdfmetrics.stringWidth(current, font_name, font_size)
+    return lines
+
+
 def export_pdf(payload: dict, output_path: Path) -> None:
     register_fonts()
     first_page = payload["pages"][0]
@@ -149,24 +231,18 @@ def export_pdf(payload: dict, output_path: Path) -> None:
             (item for item in payload["segments"] if item["pageIndex"] == page["index"]),
             key=lambda item: (item["zIndex"], item["y"], item["x"]),
         ):
-            bold = segment["fontWeight"] >= 600
-            italic = segment["fontStyle"] == "italic"
-            font_name = FONT_NAMES[(bold, italic)] if FONT_NAMES[(bold, italic)] in pdfmetrics.getRegisteredFontNames() else "Helvetica"
-            font_size = max(4.5, segment["fontSizePx"] * 0.75)
-            line_height = font_size * max(0.9, segment["lineHeight"])
             available_width = max(8, segment["width"] * 0.75)
-            lines = wrap_text(segment["text"], font_name, font_size, available_width)
-            red, green, blue = parse_color(segment["color"])
+            lines = wrap_styled_runs(segment, available_width)
             canvas.saveState()
-            canvas.setFillColorRGB(red, green, blue)
-            canvas.setFont(font_name, font_size)
             origin_x = segment["x"] * 0.75
-            origin_y = page_height - segment["y"] * 0.75 - font_size
-            for line_index, line in enumerate(lines):
-                y = origin_y - line_index * line_height
+            y = page_height - segment["y"] * 0.75
+            for line in lines:
+                metrics = [run_font(segment, run) for _, run in line]
+                maximum_size = max((size for _, size in metrics), default=max(4.5, segment["fontSizePx"] * 0.75))
+                y -= maximum_size
                 if y < 0:
                     break
-                line_width = pdfmetrics.stringWidth(line, font_name, font_size)
+                line_width = sum(pdfmetrics.stringWidth(text, *run_font(segment, run)) for text, run in line)
                 alignment = segment["alignment"]
                 if alignment == "center":
                     x = origin_x + max(0, (available_width - line_width) / 2)
@@ -174,7 +250,14 @@ def export_pdf(payload: dict, output_path: Path) -> None:
                     x = origin_x + max(0, available_width - line_width)
                 else:
                     x = origin_x
-                canvas.drawString(x, y, line)
+                for text, run in line:
+                    font_name, font_size = run_font(segment, run)
+                    red, green, blue = parse_color(str(run.get("color", segment["color"])))
+                    canvas.setFillColorRGB(red, green, blue)
+                    canvas.setFont(font_name, font_size)
+                    canvas.drawString(x, y, text)
+                    x += pdfmetrics.stringWidth(text, font_name, font_size)
+                y -= maximum_size * max(0.9, segment["lineHeight"]) - maximum_size
             canvas.restoreState()
         canvas.showPage()
     canvas.save()

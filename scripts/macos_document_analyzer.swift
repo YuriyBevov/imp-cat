@@ -8,6 +8,7 @@ import Vision
 struct RecognizedLine: Codable {
     let text: String
     let confidence: Float
+    let alternatives: [String]
     let x: Double
     let y: Double
     let width: Double
@@ -20,6 +21,8 @@ struct AnalyzedPage: Codable {
     let height: Double
     let image: String
     let lines: [RecognizedLine]
+    let primaryLineCount: Int
+    let secondaryLineCount: Int
 }
 
 struct AnalysisResult: Codable {
@@ -110,11 +113,11 @@ func writePNG(_ image: CGImage, to url: URL, pageIndex: Int) throws {
     try data.write(to: url, options: .atomic)
 }
 
-func recognize(_ image: CGImage) throws -> [RecognizedLine] {
+func recognizePass(_ image: CGImage, languageCorrection: Bool, minimumTextHeight: Float) throws -> [RecognizedLine] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = true
-    request.minimumTextHeight = 0.005
+    request.usesLanguageCorrection = languageCorrection
+    request.minimumTextHeight = minimumTextHeight
     if #available(macOS 13.0, *) {
         request.automaticallyDetectsLanguage = true
     }
@@ -123,17 +126,58 @@ func recognize(_ image: CGImage) throws -> [RecognizedLine] {
     let imageWidth = Double(image.width)
     let imageHeight = Double(image.height)
     return (request.results ?? []).compactMap { observation in
-        guard let candidate = observation.topCandidates(1).first else { return nil }
+        let candidates = observation.topCandidates(3)
+        guard let candidate = candidates.first else { return nil }
         let box = observation.boundingBox
         return RecognizedLine(
             text: candidate.string,
             confidence: candidate.confidence,
+            alternatives: candidates.dropFirst().map(\.string).filter { $0 != candidate.string },
             x: Double(box.minX) * imageWidth,
             y: (1 - Double(box.maxY)) * imageHeight,
             width: Double(box.width) * imageWidth,
             height: Double(box.height) * imageHeight
         )
     }.sorted { left, right in
+        if abs(left.y - right.y) > max(4, min(left.height, right.height) * 0.45) {
+            return left.y < right.y
+        }
+        return left.x < right.x
+    }
+}
+
+func intersectionRatio(_ left: RecognizedLine, _ right: RecognizedLine) -> Double {
+    let intersectionWidth = max(0, min(left.x + left.width, right.x + right.width) - max(left.x, right.x))
+    let intersectionHeight = max(0, min(left.y + left.height, right.y + right.height) - max(left.y, right.y))
+    let smallerArea = min(left.width * left.height, right.width * right.height)
+    return smallerArea > 0 ? intersectionWidth * intersectionHeight / smallerArea : 0
+}
+
+func mergeRecognitionPasses(primary: [RecognizedLine], secondary: [RecognizedLine]) -> [RecognizedLine] {
+    var merged = primary
+    for candidate in secondary {
+        if let index = merged.indices.max(by: {
+            intersectionRatio(merged[$0], candidate) < intersectionRatio(merged[$1], candidate)
+        }), intersectionRatio(merged[index], candidate) >= 0.42 {
+            let current = merged[index]
+            let alternativeTexts = ([current.text] + current.alternatives + [candidate.text] + candidate.alternatives)
+                .reduce(into: [String]()) { result, text in
+                    if !result.contains(text) { result.append(text) }
+                }
+            merged[index] = RecognizedLine(
+                text: current.text,
+                confidence: max(current.confidence, candidate.confidence),
+                alternatives: Array(alternativeTexts.dropFirst().prefix(4)),
+                x: current.x,
+                y: current.y,
+                width: current.width,
+                height: current.height
+            )
+        } else {
+            merged.append(candidate)
+        }
+    }
+    return merged.sorted { left, right in
         if abs(left.y - right.y) > max(4, min(left.height, right.height) * 0.45) {
             return left.y < right.y
         }
@@ -163,12 +207,16 @@ func analyze(inputURL: URL, outputDirectory: URL) throws -> [AnalyzedPage] {
     return try images.enumerated().map { index, image in
         let filename = String(format: "page-%03d.png", index + 1)
         try writePNG(image, to: outputDirectory.appendingPathComponent(filename), pageIndex: index)
+        let primary = try recognizePass(image, languageCorrection: true, minimumTextHeight: 0.005)
+        let secondary = try recognizePass(image, languageCorrection: false, minimumTextHeight: 0.0025)
         return AnalyzedPage(
             index: index,
             width: Double(image.width),
             height: Double(image.height),
             image: filename,
-            lines: try recognize(image)
+            lines: mergeRecognitionPasses(primary: primary, secondary: secondary),
+            primaryLineCount: primary.count,
+            secondaryLineCount: secondary.count
         )
     }
 }
@@ -180,7 +228,7 @@ do {
     let outputJSON = URL(fileURLWithPath: CommandLine.arguments[3])
     let pages = try analyze(inputURL: inputURL, outputDirectory: outputDirectory)
     let formatter = ISO8601DateFormatter()
-    let result = AnalysisResult(engine: "macOS Vision", generatedAt: formatter.string(from: Date()), pages: pages)
+    let result = AnalysisResult(engine: "macOS Vision (2-pass)", generatedAt: formatter.string(from: Date()), pages: pages)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(result).write(to: outputJSON, options: .atomic)

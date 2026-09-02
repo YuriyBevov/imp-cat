@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 
 const {
   buildScene,
+  buildOcrReview,
   classifyText,
   findMemoryMatches,
   validateScene,
@@ -88,6 +89,39 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
   assert.equal(normalized.objects[0].style.color, '#111827')
+})
+
+test('OCR review flags low-confidence alternatives, joined words, and sparse pages', () => {
+  const scene = buildScene(analysisFixture(), { documentId: 'f'.repeat(32) })
+  scene.objects[0].sourceText = 'PowerOf attorney'
+  scene.objects[0].confidence = .7
+  scene.objects[0].ocrAlternatives = ['Power of attorney']
+  scene.pages.push({ index: 1, widthPx: 794, heightPx: 1123 })
+  const report = buildOcrReview(scene)
+  const kinds = new Set(report.suggestions.map(item => item.kind))
+  assert.ok(kinds.has('ocr-alternative'))
+  assert.ok(kinds.has('joined-words'))
+  assert.ok(kinds.has('page-completeness'))
+  assert.ok(report.counts.applicable >= 2)
+})
+
+test('OCR review catches contextual university and law misrecognitions', () => {
+  const scene = buildScene(analysisFixture(), { documentId: '7'.repeat(32) })
+  scene.objects[0].sourceText = 'Hatersity uf New Hampshire'
+  scene.objects[1].sourceText = 'Franklin Pierce School of tau'
+  const report = buildOcrReview(scene)
+  const proposed = report.suggestions.map(item => item.suggestedText)
+  assert.ok(proposed.includes('University of New Hampshire'))
+  assert.ok(proposed.includes('Franklin Pierce School of Law'))
+})
+
+test('normalizeScene preserves safe inline text styles and OCR alternatives', () => {
+  const input = buildScene(analysisFixture(), { documentId: '9'.repeat(32) })
+  input.objects[0].sourceTextStyles = [{ start: 0, end: 5, fontSizePx: 22, fontWeight: 700 }]
+  input.objects[0].ocrAlternatives = ['POWER 0F ATTORNEY']
+  const normalized = normalizeScene(input, '8'.repeat(32), 'Title')
+  assert.deepEqual(normalized.objects[0].sourceTextStyles[0], { start: 0, end: 5, fontSizePx: 22, fontWeight: 700 })
+  assert.deepEqual(normalized.objects[0].ocrAlternatives, ['POWER 0F ATTORNEY'])
 })
 
 test('parseJsonArray accepts plain and fenced provider responses', () => {
