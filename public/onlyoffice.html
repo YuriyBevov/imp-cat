@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ICAT × ONLYOFFICE POC</title>
+    <link rel="stylesheet" href="/onlyoffice.css" />
+  </head>
+  <body>
+    <header class="poc-header">
+      <div>
+        <p class="eyebrow">Экспериментальная ветка</p>
+        <h1>ICAT × ONLYOFFICE</h1>
+      </div>
+      <div class="poc-header__actions">
+        <span id="server-state" class="server-state">Проверяем Document Server…</span>
+        <a class="button button--ghost" href="/">Вернуться в ICAT Grid</a>
+      </div>
+    </header>
+
+    <main class="poc-main">
+      <section id="upload-panel" class="upload-panel">
+        <div class="upload-panel__copy">
+          <p class="eyebrow">Проверка точности DOCX</p>
+          <h2>Откройте документ в полноценном офисном движке</h2>
+          <p>Файл сохраняется локально в ICAT и передаётся собственному контейнеру ONLYOFFICE. Google Docs и внешнее облако не используются.</p>
+        </div>
+        <input id="document-input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+        <label id="upload-button" class="button button--primary" for="document-input">Выбрать DOCX</label>
+        <p id="upload-error" class="error" hidden></p>
+      </section>
+
+      <section id="editor-panel" class="editor-panel" hidden>
+        <div class="document-bar">
+          <div>
+            <strong id="document-title">Документ</strong>
+            <span id="document-state">Подготавливаем редактор…</span>
+          </div>
+          <div class="document-bar__actions">
+            <button id="replace-button" class="button button--ghost" type="button">Другой документ</button>
+            <a id="download-button" class="button button--primary" href="#" download>Скачать сохранённый DOCX</a>
+          </div>
+        </div>
+        <div class="editor-note">
+          Для принудительного сохранения нажмите значок дискеты внутри ONLYOFFICE. ICAT получит обновлённый DOCX через callback.
+        </div>
+        <div id="onlyoffice-editor" class="onlyoffice-editor"></div>
+      </section>
+    </main>
+
+    <script src="/onlyoffice.js"></script>
+  </body>
+</html>

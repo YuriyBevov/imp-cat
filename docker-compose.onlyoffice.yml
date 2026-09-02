@@ -1,0 +1,23 @@
+name: icat-onlyoffice-poc
+
+services:
+  document-server:
+    image: onlyoffice/documentserver:latest
+    container_name: icat-onlyoffice-document-server
+    restart: unless-stopped
+    ports:
+      - "${ONLYOFFICE_PORT:-8080}:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: "${ONLYOFFICE_JWT_SECRET:-icat-onlyoffice-local-secret-change-me}"
+      JWT_HEADER: AuthorizationJwt
+      JWT_IN_BODY: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+
+volumes:
+  onlyoffice_data:
+  onlyoffice_logs:
