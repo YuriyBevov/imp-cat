@@ -91,6 +91,16 @@
             <button id="zoom-in" class="icon-button" type="button" title="Увеличить">+</button>
             <button id="zoom-fit" class="compact-button" type="button">По ширине</button>
           </div>
+          <div class="toolbar-group grid-controls" aria-label="Настройки сетки">
+            <label><input id="grid-snap" type="checkbox" checked /> Привязка</label>
+            <label>Сетка
+              <select id="grid-size" title="Размер ячейки сетки">
+                <option value="4">4 px</option><option value="8" selected>8 px</option><option value="12">12 px</option>
+                <option value="16">16 px</option><option value="24">24 px</option><option value="32">32 px</option>
+                <option value="48">48 px</option><option value="64">64 px</option><option value="96">96 px</option>
+              </select>
+            </label>
+          </div>
           <div class="toolbar-group formatting" aria-label="Форматирование сегмента">
             <button class="format-button" data-format="bold" type="button" title="Полужирный"><strong>B</strong></button>
             <button class="format-button" data-format="italic" type="button" title="Курсив"><em>I</em></button>
@@ -166,6 +176,38 @@
             <label>Y<input id="object-y" type="number" step="1" /></label>
             <label>Ширина<input id="object-width" type="number" min="12" step="1" /></label>
             <label>Высота<input id="object-height" type="number" min="12" step="1" /></label>
+          </div>
+          <div class="layout-card">
+            <div class="layout-card__heading">
+              <strong>Расположение</strong>
+              <small>для выбранных на одной странице</small>
+            </div>
+            <span class="layout-card__label">Выровнять друг относительно друга</span>
+            <div class="layout-button-grid" aria-label="Выравнивание выбранных сегментов">
+              <button id="align-left-button" data-align-selection="left" type="button" title="По левому краю">Лево</button>
+              <button data-align-selection="center-x" type="button" title="По горизонтальному центру">Центр X</button>
+              <button data-align-selection="right" type="button" title="По правому краю">Право</button>
+              <button data-align-selection="top" type="button" title="По верхнему краю">Верх</button>
+              <button data-align-selection="center-y" type="button" title="По вертикальному центру">Центр Y</button>
+              <button data-align-selection="bottom" type="button" title="По нижнему краю">Низ</button>
+              <button class="layout-button-grid__wide" data-align-selection="distribute-x" type="button" title="Равные интервалы по горизонтали">↔ Равные интервалы</button>
+              <button class="layout-button-grid__wide" data-align-selection="distribute-y" type="button" title="Равные интервалы по вертикали">↕ Равные интервалы</button>
+            </div>
+            <div class="layout-card__scope">
+              <span class="layout-card__label">Расположить относительно</span>
+              <select id="alignment-scope">
+                <option value="content">области содержимого</option>
+                <option value="page">всей страницы</option>
+              </select>
+            </div>
+            <div class="layout-button-grid" aria-label="Выравнивание относительно документа">
+              <button data-align-document="left" type="button">Лево</button>
+              <button data-align-document="center-x" type="button">Центр X</button>
+              <button data-align-document="right" type="button">Право</button>
+              <button data-align-document="top" type="button">Верх</button>
+              <button data-align-document="center-y" type="button">Центр Y</button>
+              <button data-align-document="bottom" type="button">Низ</button>
+            </div>
           </div>
           <div class="memory-card">
             <div><strong>База переводов</strong><button id="memory-search-button" type="button">Найти похожие</button></div>

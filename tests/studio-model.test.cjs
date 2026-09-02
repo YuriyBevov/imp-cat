@@ -28,6 +28,8 @@ function analysisFixture() {
 
 test('buildScene preserves page ratio, groups body lines, and classifies service labels', () => {
   const scene = buildScene(analysisFixture(), { documentId: 'a'.repeat(32), title: 'Fixture' })
+  assert.equal(scene.gridSize, 8)
+  assert.equal(scene.snapToGrid, true)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
   assert.ok(Math.abs(scene.pages[0].heightPx - 1121.53) < .1)
@@ -89,6 +91,8 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
   assert.equal(normalized.objects[0].style.color, '#111827')
+  assert.equal(normalized.gridSize, 8)
+  assert.equal(normalized.snapToGrid, true)
 })
 
 test('OCR review flags low-confidence alternatives, joined words, and sparse pages', () => {

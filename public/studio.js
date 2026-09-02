@@ -7,6 +7,7 @@
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), pageCount: $('#page-count'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomOutput: $('#zoom-output'),
+    gridSnap: $('#grid-snap'), gridSize: $('#grid-size'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
@@ -16,6 +17,7 @@
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
     objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
+    alignmentScope: $('#alignment-scope'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
@@ -38,6 +40,8 @@
     toastTimer: null,
     serviceStatus: null,
     lastTextSelection: null,
+    pendingWorkbenchZoom: null,
+    pendingSourceZoom: null,
   }
 
   function showToast(message, isError = false) {
@@ -99,6 +103,8 @@
     elements.pageCount.textContent = state.scene.pages.length
     elements.sourceLanguage.value = state.scene.sourceLanguage
     elements.targetLanguage.value = state.scene.targetLanguage
+    elements.gridSize.value = String(currentGridSize())
+    elements.gridSnap.checked = gridSnapEnabled()
     elements.agentStatus.textContent = state.serviceStatus?.translationProviderConfigured
       ? `Документ распознан. Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.`
       : 'Документ распознан. API перевода не настроен: доступны ручной перевод и локальная БЗ.'
@@ -113,6 +119,8 @@
 
   function renderDocument() {
     renderThumbnails()
+    elements.gridSize.value = String(currentGridSize())
+    elements.gridSnap.checked = gridSnapEnabled()
     elements.canvas.replaceChildren()
     for (const page of state.scene.pages) {
       const shell = document.createElement('div')
@@ -123,6 +131,7 @@
       surface.dataset.pageIndex = page.index
       surface.style.width = `${page.widthPx}px`
       surface.style.height = `${page.heightPx}px`
+      applyGridToSurface(surface)
       surface.addEventListener('pointerdown', beginMarquee)
 
       const boundary = document.createElement('div')
@@ -190,17 +199,13 @@
   }
 
   function setSourceZoom(nextZoom, anchorEvent) {
-    const next = Math.min(3, Math.max(.15, Math.round(nextZoom * 20) / 20))
+    const next = Math.min(3, Math.max(.15, nextZoom))
     if (next === state.sourceZoom) return
-    const scroller = elements.sourcePreviewScroll
-    const before = anchorEvent ? { x: anchorEvent.clientX - scroller.getBoundingClientRect().left + scroller.scrollLeft, y: anchorEvent.clientY - scroller.getBoundingClientRect().top + scroller.scrollTop } : null
-    const ratio = next / state.sourceZoom
+    const surface = elements.sourcePreviewCanvas.querySelector('.source-preview-page')
+    const anchor = captureZoomAnchor(elements.sourcePreviewScroll, surface, anchorEvent, state.sourceZoom)
     state.sourceZoom = next
     applySourceZoom()
-    if (before) requestAnimationFrame(() => {
-      scroller.scrollLeft = before.x * ratio - (anchorEvent.clientX - scroller.getBoundingClientRect().left)
-      scroller.scrollTop = before.y * ratio - (anchorEvent.clientY - scroller.getBoundingClientRect().top)
-    })
+    restoreZoomAnchor(elements.sourcePreviewScroll, anchor, state.sourceZoom)
   }
 
   function fitSourceWidth() {
@@ -397,6 +402,46 @@
     })
   }
 
+  function currentGridSize() {
+    const value = Number(state.scene?.gridSize)
+    return Number.isFinite(value) ? Math.min(96, Math.max(4, value)) : 8
+  }
+
+  function gridSnapEnabled() {
+    return state.scene?.snapToGrid !== false
+  }
+
+  function snapCoordinate(value) {
+    if (!gridSnapEnabled()) return value
+    const size = currentGridSize()
+    return Math.round(value / size) * size
+  }
+
+  function applyGridToSurface(surface) {
+    const size = currentGridSize()
+    surface.style.setProperty('--grid-size', `${size}px`)
+    surface.style.setProperty('--grid-major-size', `${size * 4}px`)
+  }
+
+  function captureZoomAnchor(scroller, surface, anchorEvent, zoom) {
+    if (!anchorEvent || !surface) return null
+    const rect = surface.getBoundingClientRect()
+    return {
+      surface,
+      x: (anchorEvent.clientX - rect.left) / zoom,
+      y: (anchorEvent.clientY - rect.top) / zoom,
+      clientX: anchorEvent.clientX,
+      clientY: anchorEvent.clientY,
+    }
+  }
+
+  function restoreZoomAnchor(scroller, anchor, zoom) {
+    if (!anchor) return
+    const rect = anchor.surface.getBoundingClientRect()
+    scroller.scrollLeft += rect.left + anchor.x * zoom - anchor.clientX
+    scroller.scrollTop += rect.top + anchor.y * zoom - anchor.clientY
+  }
+
   function applyZoom() {
     for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
       const page = state.scene.pages[Number(shell.dataset.pageIndex)]
@@ -409,30 +454,35 @@
   }
 
   function setZoom(nextZoom, anchorEvent) {
-    const next = Math.min(2.5, Math.max(.25, Math.round(nextZoom * 20) / 20))
+    const next = Math.min(2.5, Math.max(.25, nextZoom))
     if (next === state.zoom) return
-    let anchor = null
-    if (anchorEvent) {
-      const surface = document.elementFromPoint(anchorEvent.clientX, anchorEvent.clientY)?.closest('.studio-page')
-      if (surface) {
-        const rect = surface.getBoundingClientRect()
-        anchor = {
-          surface,
-          x: (anchorEvent.clientX - rect.left) / state.zoom,
-          y: (anchorEvent.clientY - rect.top) / state.zoom,
-          clientX: anchorEvent.clientX,
-          clientY: anchorEvent.clientY,
-        }
-      }
-    }
+    const hit = anchorEvent && document.elementFromPoint?.(anchorEvent.clientX, anchorEvent.clientY)
+    const surface = hit?.closest?.('.studio-page') || null
+    const anchor = captureZoomAnchor(elements.canvasScroll, surface, anchorEvent, state.zoom)
     state.zoom = next
     applyZoom()
-    if (anchor) requestAnimationFrame(() => {
-      const rect = anchor.surface.getBoundingClientRect()
-      elements.canvasScroll.scrollBy({
-        left: rect.left + anchor.x * state.zoom - anchor.clientX,
-        top: rect.top + anchor.y * state.zoom - anchor.clientY,
-      })
+    restoreZoomAnchor(elements.canvasScroll, anchor, state.zoom)
+  }
+
+  function normalizedWheelDelta(event) {
+    const modeMultiplier = event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? 80 : 1
+    return event.deltaY * modeMultiplier
+  }
+
+  function queueWheelZoom(event, source = false) {
+    const key = source ? 'pendingSourceZoom' : 'pendingWorkbenchZoom'
+    const pending = state[key] || { delta: 0, frame: null, clientX: event.clientX, clientY: event.clientY }
+    pending.delta = Math.min(80, Math.max(-80, pending.delta + normalizedWheelDelta(event)))
+    pending.clientX = event.clientX
+    pending.clientY = event.clientY
+    state[key] = pending
+    if (pending.frame != null) return
+    pending.frame = requestAnimationFrame(() => {
+      state[key] = null
+      const factor = Math.exp(-pending.delta * .0015)
+      const anchor = { clientX: pending.clientX, clientY: pending.clientY }
+      if (source) setSourceZoom(state.sourceZoom * factor, anchor)
+      else setZoom(state.zoom * factor, anchor)
     })
   }
 
@@ -472,6 +522,12 @@
     elements.emptyInspector.hidden = selection.length > 0
     elements.objectInspector.hidden = selection.length === 0
     elements.merge.disabled = selection.length < 2 || new Set(selection.map(item => item.pageIndex)).size !== 1
+    const onePage = selection.length > 0 && new Set(selection.map(item => item.pageIndex)).size === 1
+    document.querySelectorAll('[data-align-selection]').forEach(button => {
+      const minimum = button.dataset.alignSelection.startsWith('distribute') ? 3 : 2
+      button.disabled = !onePage || selection.length < minimum
+    })
+    document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     if (!selection.length) return
     const first = selection[0]
     elements.selectionTitle.textContent = selection.length === 1 ? `${typeLabel(first.type)} · стр. ${first.pageIndex + 1}` : `${selection.length} сегмента`
@@ -500,6 +556,118 @@
     const first = values[0]
     control.value = values.every(value => String(value) === String(first)) ? first : ''
     control.placeholder = values.length > 1 && control.value === '' ? 'разные значения' : ''
+  }
+
+  function boundsOf(objects) {
+    const left = Math.min(...objects.map(object => object.x))
+    const top = Math.min(...objects.map(object => object.y))
+    const right = Math.max(...objects.map(object => object.x + object.width))
+    const bottom = Math.max(...objects.map(object => object.y + object.height))
+    return { left, top, right, bottom, width: right - left, height: bottom - top }
+  }
+
+  function groupedByPage(objects) {
+    const groups = new Map()
+    for (const object of objects) {
+      if (!groups.has(object.pageIndex)) groups.set(object.pageIndex, [])
+      groups.get(object.pageIndex).push(object)
+    }
+    return groups
+  }
+
+  function clampGroupShift(objects, dx, dy) {
+    const page = state.scene.pages[objects[0].pageIndex]
+    const bounds = boundsOf(objects)
+    const minimumX = -bounds.left
+    const maximumX = page.widthPx - bounds.right
+    const minimumY = -bounds.top
+    const maximumY = page.heightPx - bounds.bottom
+    return {
+      x: minimumX <= maximumX ? Math.min(maximumX, Math.max(minimumX, dx)) : minimumX,
+      y: minimumY <= maximumY ? Math.min(maximumY, Math.max(minimumY, dy)) : minimumY,
+    }
+  }
+
+  function snapObjectGroups(objects) {
+    if (!gridSnapEnabled()) return
+    for (const group of groupedByPage(objects).values()) {
+      const bounds = boundsOf(group)
+      const shift = clampGroupShift(group, snapCoordinate(bounds.left) - bounds.left, snapCoordinate(bounds.top) - bounds.top)
+      for (const object of group) {
+        object.x += shift.x
+        object.y += shift.y
+      }
+    }
+  }
+
+  function selectionOnOnePage(minimum = 1) {
+    const objects = selectedObjects()
+    if (objects.length < minimum) {
+      showToast(minimum > 2 ? 'Выберите минимум три сегмента' : minimum > 1 ? 'Выберите несколько сегментов' : 'Выберите сегмент', true)
+      return null
+    }
+    if (new Set(objects.map(object => object.pageIndex)).size !== 1) {
+      showToast('Выравнивать можно сегменты одной страницы', true)
+      return null
+    }
+    return objects
+  }
+
+  function alignSelection(action) {
+    const minimum = action.startsWith('distribute') ? 3 : 2
+    const objects = selectionOnOnePage(minimum)
+    if (!objects) return
+    checkpoint()
+    const bounds = boundsOf(objects)
+    const centerX = (bounds.left + bounds.right) / 2
+    const centerY = (bounds.top + bounds.bottom) / 2
+    if (action === 'left') for (const object of objects) object.x = bounds.left
+    else if (action === 'center-x') for (const object of objects) object.x = centerX - object.width / 2
+    else if (action === 'right') for (const object of objects) object.x = bounds.right - object.width
+    else if (action === 'top') for (const object of objects) object.y = bounds.top
+    else if (action === 'center-y') for (const object of objects) object.y = centerY - object.height / 2
+    else if (action === 'bottom') for (const object of objects) object.y = bounds.bottom - object.height
+    else if (action === 'distribute-x') {
+      const sorted = [...objects].sort((left, right) => left.x - right.x)
+      const gap = (bounds.width - sorted.reduce((sum, object) => sum + object.width, 0)) / (sorted.length - 1)
+      let cursor = bounds.left
+      for (const object of sorted) { object.x = cursor; cursor += object.width + gap }
+    } else if (action === 'distribute-y') {
+      const sorted = [...objects].sort((top, bottom) => top.y - bottom.y)
+      const gap = (bounds.height - sorted.reduce((sum, object) => sum + object.height, 0)) / (sorted.length - 1)
+      let cursor = bounds.top
+      for (const object of sorted) { object.y = cursor; cursor += object.height + gap }
+    }
+    snapObjectGroups(objects)
+    renderDocument()
+    scheduleSave()
+  }
+
+  function alignToDocument(action) {
+    const objects = selectionOnOnePage(1)
+    if (!objects) return
+    const page = state.scene.pages[objects[0].pageIndex]
+    const area = elements.alignmentScope.value === 'page'
+      ? { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+      : page.contentBounds
+    const bounds = boundsOf(objects)
+    let dx = 0
+    let dy = 0
+    if (action === 'left') dx = area.x - bounds.left
+    else if (action === 'center-x') dx = area.x + (area.width - bounds.width) / 2 - bounds.left
+    else if (action === 'right') dx = area.x + area.width - bounds.right
+    else if (action === 'top') dy = area.y - bounds.top
+    else if (action === 'center-y') dy = area.y + (area.height - bounds.height) / 2 - bounds.top
+    else if (action === 'bottom') dy = area.y + area.height - bounds.bottom
+    checkpoint()
+    for (const object of objects) {
+      object.x += dx
+      object.y += dy
+    }
+    const shift = clampGroupShift(objects, 0, 0)
+    for (const object of objects) { object.x += shift.x; object.y += shift.y }
+    renderDocument()
+    scheduleSave()
   }
 
   function beginMarquee(event) {
@@ -558,13 +726,18 @@
       action.lastY = current.clientY
       const deltaX = (current.clientX - start.x + elements.canvasScroll.scrollLeft - start.scrollLeft) / state.zoom
       const deltaY = (current.clientY - start.y + elements.canvasScroll.scrollTop - start.scrollTop) / state.zoom
-      for (const object of objects) {
-        const page = state.scene.pages[object.pageIndex]
-        const origin = origins.get(object.id)
-        object.x = Math.min(Math.max(0, origin.x + deltaX), Math.max(0, page.widthPx - object.width))
-        object.y = Math.min(Math.max(0, origin.y + deltaY), Math.max(0, page.heightPx - object.height))
-        const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
-        if (node) positionObjectNode(node, object)
+      for (const group of groupedByPage(objects).values()) {
+        const originBounds = boundsOf(group.map(object => ({ ...object, ...origins.get(object.id) })))
+        const page = state.scene.pages[group[0].pageIndex]
+        const boundedX = originBounds.width > page.widthPx ? -originBounds.left : Math.min(page.widthPx - originBounds.right, Math.max(-originBounds.left, deltaX))
+        const boundedY = originBounds.height > page.heightPx ? -originBounds.top : Math.min(page.heightPx - originBounds.bottom, Math.max(-originBounds.top, deltaY))
+        for (const object of group) {
+          const origin = origins.get(object.id)
+          object.x = origin.x + boundedX
+          object.y = origin.y + boundedY
+          const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
+          if (node) positionObjectNode(node, object)
+        }
       }
       refreshInspectorCoordinates()
     }
@@ -575,6 +748,7 @@
         const destinationIndex = Number(destination.dataset.pageIndex)
         if (destinationIndex !== objects[0].pageIndex) moveSelectionToPage(destinationIndex, current.clientX, current.clientY, objects)
       }
+      snapObjectGroups(objects)
       state.pointerAction = null
       handle.removeEventListener('pointermove', update)
       handle.removeEventListener('pointerup', finish)
@@ -601,9 +775,11 @@
       const offsetX = object.x - left
       const offsetY = object.y - top
       object.pageIndex = pageIndex
-      object.x = Math.max(0, anchorX + offsetX)
-      object.y = Math.max(0, anchorY + offsetY)
+      object.x = anchorX + offsetX
+      object.y = anchorY + offsetY
     }
+    const shift = clampGroupShift(objects, 0, 0)
+    for (const object of objects) { object.x += shift.x; object.y += shift.y }
     state.activePage = pageIndex
   }
 
@@ -628,6 +804,13 @@
     }
     const finish = current => {
       update(current)
+      if (gridSnapEnabled()) {
+        object.width = Math.min(state.scene.pages[object.pageIndex].widthPx - object.x, Math.max(12, snapCoordinate(object.width)))
+        object.height = Math.min(state.scene.pages[object.pageIndex].heightPx - object.y, Math.max(12, snapCoordinate(object.height)))
+        const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
+        if (node) positionObjectNode(node, object)
+        refreshInspectorCoordinates()
+      }
       handle.removeEventListener('pointermove', update)
       handle.removeEventListener('pointerup', finish)
       handle.removeEventListener('pointercancel', finish)
@@ -1206,8 +1389,10 @@
     const numeric = [
       [elements.fontSize, (object, value) => { object.style.fontSizePx = value }],
       [elements.lineHeight, (object, value) => { object.style.lineHeight = value }],
-      [elements.objectX, (object, value) => { object.x = value }], [elements.objectY, (object, value) => { object.y = value }],
-      [elements.objectWidth, (object, value) => { object.width = Math.max(12, value) }], [elements.objectHeight, (object, value) => { object.height = Math.max(12, value) }],
+      [elements.objectX, (object, value) => { object.x = Math.min(state.scene.pages[object.pageIndex].widthPx - object.width, Math.max(0, snapCoordinate(value))) }],
+      [elements.objectY, (object, value) => { object.y = Math.min(state.scene.pages[object.pageIndex].heightPx - object.height, Math.max(0, snapCoordinate(value))) }],
+      [elements.objectWidth, (object, value) => { object.width = Math.min(state.scene.pages[object.pageIndex].widthPx - object.x, Math.max(12, snapCoordinate(value))) }],
+      [elements.objectHeight, (object, value) => { object.height = Math.min(state.scene.pages[object.pageIndex].heightPx - object.y, Math.max(12, snapCoordinate(value))) }],
     ]
     for (const [control, apply] of numeric) control.addEventListener('change', () => {
       const value = Number(control.value)
@@ -1240,7 +1425,7 @@
     elements.canvasScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
-      setZoom(state.zoom + (event.deltaY < 0 ? .1 : -.1), event)
+      queueWheelZoom(event)
     }, { passive: false })
     elements.canvasScroll.addEventListener('scroll', () => {
       state.pointerAction?.updateFromScroll?.()
@@ -1260,8 +1445,24 @@
     elements.sourcePreviewScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
-      setSourceZoom(state.sourceZoom + (event.deltaY < 0 ? .1 : -.1), event)
+      queueWheelZoom(event, true)
     }, { passive: false })
+    elements.gridSize.addEventListener('change', () => {
+      const size = Number(elements.gridSize.value)
+      if (!Number.isFinite(size) || size === currentGridSize()) return
+      checkpoint()
+      state.scene.gridSize = size
+      for (const surface of elements.canvas.querySelectorAll('.studio-page')) applyGridToSurface(surface)
+      scheduleSave()
+      showToast(`Размер ячейки: ${size} px`)
+    })
+    elements.gridSnap.addEventListener('change', () => {
+      if (elements.gridSnap.checked === gridSnapEnabled()) return
+      checkpoint()
+      state.scene.snapToGrid = elements.gridSnap.checked
+      scheduleSave()
+      showToast(elements.gridSnap.checked ? 'Привязка к сетке включена' : 'Привязка к сетке выключена')
+    })
     elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
     elements.analyze.addEventListener('click', () => runAgent('analyze', 'Проверяем порядок чтения и типы объектов…'))
@@ -1281,6 +1482,8 @@
     elements.exportPdf.addEventListener('click', () => exportDocument('pdf'))
     elements.undo.addEventListener('click', undo)
     elements.redo.addEventListener('click', redo)
+    document.querySelectorAll('[data-align-selection]').forEach(button => button.addEventListener('click', () => alignSelection(button.dataset.alignSelection)))
+    document.querySelectorAll('[data-align-document]').forEach(button => button.addEventListener('click', () => alignToDocument(button.dataset.alignDocument)))
     elements.toolbarFontSize.addEventListener('change', () => {
       const value = Number(elements.toolbarFontSize.value)
       if (!applySelectedTextStyle({ fontSizePx: value })) applySelectionChange(object => { object.style.fontSizePx = value })

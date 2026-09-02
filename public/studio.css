@@ -129,8 +129,9 @@ button { color: inherit; }
 .toolbar-group { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-right: 1px solid #e5e7eb; }
 .toolbar-group:last-of-type { border-right: 0; }
 .toolbar-group output { min-width: 42px; color: var(--muted); font-size: 11px; text-align: center; }
-.overlay-controls label { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 650; }
-.overlay-controls input[type="range"] { width: 76px; accent-color: var(--blue); }
+.grid-controls label { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.grid-controls input { accent-color: var(--blue); }
+.grid-controls select { height: 28px; padding: 3px 5px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--ink); font-size: 10px; }
 .formatting { gap: 3px; }
 .format-button { width: 28px; height: 28px; padding: 0; border-radius: 6px; }
 .format-button.is-active { color: var(--blue); border-color: var(--blue); background: #eef2ff; }
@@ -140,12 +141,22 @@ button { color: inherit; }
 .document-canvas { width: max-content; min-width: 100%; padding: 38px 70px 110px; }
 .studio-page-shell { margin: 0 auto 34px; position: relative; }
 .studio-page {
+  --grid-size: 8px;
+  --grid-major-size: 32px;
   position: absolute;
   inset: 0 auto auto 0;
   transform-origin: top left;
   background-color: #fff;
-  background-image: linear-gradient(rgba(75,121,231,.085) 1px, transparent 1px), linear-gradient(90deg, rgba(75,121,231,.085) 1px, transparent 1px);
-  background-size: 8px 8px;
+  background-image:
+    linear-gradient(rgba(49,94,231,.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(49,94,231,.13) 1px, transparent 1px),
+    linear-gradient(rgba(75,121,231,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(75,121,231,.055) 1px, transparent 1px);
+  background-size:
+    var(--grid-major-size) var(--grid-major-size),
+    var(--grid-major-size) var(--grid-major-size),
+    var(--grid-size) var(--grid-size),
+    var(--grid-size) var(--grid-size);
   box-shadow: 0 7px 22px rgba(40,52,74,.18);
   border: 1px solid #c8d0db;
   overflow: hidden;
@@ -212,6 +223,16 @@ button { color: inherit; }
 .object-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
 .object-grid label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 700; }
 .object-grid input { min-width: 0; height: 30px; padding: 4px 6px; }
+.layout-card { display: grid; gap: 7px; padding: 9px; border: 1px solid #e1e6ee; border-radius: 9px; background: #f8fafc; }
+.layout-card__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
+.layout-card__heading small, .layout-card__label { color: var(--muted); font-size: 9px; }
+.layout-card__scope { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 2px; border-top: 1px solid #e5e7eb; }
+.layout-card__scope select { width: auto; min-height: 28px; padding: 3px 6px; font-size: 9px; }
+.layout-button-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.layout-button-grid button { min-width: 0; height: 27px; padding: 3px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: pointer; color: #344054; font-size: 8px; font-weight: 750; }
+.layout-button-grid button:hover { border-color: var(--blue); color: var(--blue); background: #eef2ff; }
+.layout-button-grid button:disabled { opacity: .38; cursor: not-allowed; }
+.layout-button-grid__wide { grid-column: span 3; }
 .memory-card { padding: 9px; border-radius: 9px; background: #f5f7fb; }
 .memory-card > div:first-child { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
 .memory-card button { border: 0; background: transparent; color: var(--blue); cursor: pointer; font-size: 10px; font-weight: 700; }

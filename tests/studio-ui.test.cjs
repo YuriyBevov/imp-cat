@@ -16,6 +16,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-text', 'translation-text', 'object-type', 'analyze-button', 'translate-button',
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'approve-button', 'merge-button', 'split-button', 'ocr-review-button',
+    'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
@@ -27,6 +28,10 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /moveSelectionToPage/)
   assert.match(client, /function undo/)
   assert.match(client, /function redo/)
+  assert.match(client, /queueWheelZoom/)
+  assert.match(client, /snapObjectGroups/)
+  assert.match(client, /alignSelection/)
+  assert.match(client, /alignToDocument/)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)
 })
@@ -37,6 +42,7 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.match(styles, /\.scene-object[\s\S]*position: absolute/)
   assert.match(styles, /\.studio-page[\s\S]*overflow: hidden/)
   assert.match(styles, /\.content-boundary/)
+  assert.match(styles, /--grid-size/)
 })
 
 test('studio client boots on the upload screen without runtime errors', async () => {
@@ -97,9 +103,11 @@ test('studio restores a saved scene and renders editable page objects', async ()
   }
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '8px')
 
   const resizeHandle = dom.window.document.querySelector('.scene-object__resize')
   const pointer = (type, x, y) => {
@@ -112,12 +120,13 @@ test('studio restores a saved scene and renders editable page objects', async ()
   resizeHandle.dispatchEvent(pointer('pointerup', 20, 10))
   assert.equal(resizeHandle.style.width, '')
   const zoom = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10) / 100
-  const firstWidth = 200 + 20 / zoom
+  const firstWidth = Math.round((200 + 20 / zoom) / 8) * 8
   assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth}px`)
   resizeHandle.dispatchEvent(pointer('pointerdown', 20, 10))
   resizeHandle.dispatchEvent(pointer('pointermove', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointerup', 30, 20))
-  assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth + 10 / zoom}px`)
+  const secondWidth = Math.round((firstWidth + 10 / zoom) / 8) * 8
+  assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${secondWidth}px`)
 
   const content = dom.window.document.querySelector('.scene-object__content')
   content.dispatchEvent(pointer('pointerdown', 0, 0))
@@ -143,6 +152,26 @@ test('studio restores a saved scene and renders editable page objects', async ()
   styledContent.dispatchEvent(pointer('pointerup', 0, 0))
   dom.window.document.querySelector('#split-button').click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object').length, 2)
+
+  const firstObject = dom.window.document.querySelector('[data-id="object-1"]')
+  firstObject.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: true }))
+  dom.window.document.querySelector('#align-left-button').click()
+  const alignedLefts = [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.left)
+  assert.equal(new Set(alignedLefts).size, 1)
+
+  const gridSize = dom.window.document.querySelector('#grid-size')
+  gridSize.value = '16'
+  gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '16px')
+
+  const zoomBeforeWheel = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10)
+  dom.window.document.querySelector('#canvas-scroll').dispatchEvent(new dom.window.WheelEvent('wheel', {
+    bubbles: true, cancelable: true, ctrlKey: true, deltaY: -5, clientX: 100, clientY: 100,
+  }))
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  const zoomAfterWheel = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10)
+  assert.ok(zoomAfterWheel >= zoomBeforeWheel, `${zoomBeforeWheel} -> ${zoomAfterWheel}`)
+  assert.ok(zoomAfterWheel - zoomBeforeWheel <= 2)
   assert.deepEqual(errors, [])
   dom.window.close()
 })
