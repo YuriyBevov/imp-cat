@@ -23,6 +23,7 @@ const onlyofficeBrowserUrl = process.env.ONLYOFFICE_SERVER_URL || 'http://127.0.
 const onlyofficeDownloadUrl = process.env.ONLYOFFICE_DOWNLOAD_URL || onlyofficeBrowserUrl
 const onlyofficeAppInternalUrl = process.env.ONLYOFFICE_INTERNAL_APP_URL || 'http://host.docker.internal:3100'
 const onlyofficeJwtSecret = process.env.ONLYOFFICE_JWT_SECRET || 'icat-onlyoffice-local-secret-change-me'
+const segmentIndexVersion = 2
 
 fs.mkdirSync(onlyofficeDir, { recursive: true })
 
@@ -103,6 +104,16 @@ app.get('/api/onlyoffice/documents/:id/config', async (request, response, next) 
       jwtSecret: onlyofficeJwtSecret,
     })
     response.set('Cache-Control', 'no-store').json(config)
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/onlyoffice/documents/:id/segments', async (request, response, next) => {
+  try {
+    const metadata = await readOnlyOfficeMetadata(request.params.id)
+    const segmentIndex = await readOnlyOfficeSegmentIndex(metadata)
+    response.set('Cache-Control', 'no-store').json(segmentIndex)
   } catch (error) {
     next(error)
   }
@@ -240,6 +251,15 @@ function onlyofficeMetadataPath(id) {
   return path.join(onlyofficeDir, `${id}.json`)
 }
 
+function onlyofficeSegmentsPath(id) {
+  if (!isValidDocumentId(id)) {
+    const error = new Error('Документ не найден')
+    error.status = 404
+    throw error
+  }
+  return path.join(onlyofficeDir, `${id}.segments.json`)
+}
+
 async function readOnlyOfficeMetadata(id) {
   try {
     return JSON.parse(await fs.promises.readFile(onlyofficeMetadataPath(id), 'utf8'))
@@ -261,11 +281,56 @@ async function writeOnlyOfficeMetadata(metadata) {
   await fs.promises.rename(temp, target)
 }
 
+async function readOnlyOfficeSegmentIndex(metadata) {
+  const cachePath = onlyofficeSegmentsPath(metadata.id)
+  try {
+    const cached = JSON.parse(await fs.promises.readFile(cachePath, 'utf8'))
+    if (
+      cached.version === segmentIndexVersion
+      && cached.documentRevision === metadata.revision
+      && Array.isArray(cached.segments)
+    ) return cached
+  } catch (error) {
+    if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+  }
+
+  const result = await runProcess(
+    pythonBin,
+    [path.join(rootDir, 'scripts', 'extract_docx_segments.py'), onlyofficeDocumentPath(metadata.id)],
+    30_000
+  )
+  if (result.code !== 0) {
+    const error = new Error(result.stderr.trim() || 'Не удалось извлечь сегменты из DOCX')
+    error.status = 500
+    throw error
+  }
+
+  let extracted
+  try {
+    extracted = JSON.parse(result.stdout)
+  } catch {
+    const error = new Error('Модуль сегментации вернул некорректный результат')
+    error.status = 500
+    throw error
+  }
+  const index = {
+    ...extracted,
+    documentId: metadata.id,
+    documentRevision: metadata.revision,
+    generatedAt: new Date().toISOString(),
+  }
+  const tempPath = `${cachePath}.writing`
+  await fs.promises.writeFile(tempPath, JSON.stringify(index), 'utf8')
+  await fs.promises.rename(tempPath, cachePath)
+  return index
+}
+
 function serializeOnlyOfficeMetadata(metadata) {
   return {
     ...metadata,
     configUrl: `/api/onlyoffice/documents/${metadata.id}/config`,
     downloadUrl: `/api/onlyoffice/documents/${metadata.id}/download`,
+    segmentsUrl: `/api/onlyoffice/documents/${metadata.id}/segments`,
   }
 }
 

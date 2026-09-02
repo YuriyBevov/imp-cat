@@ -8,7 +8,7 @@
 
 body {
   margin: 0;
-  min-width: 760px;
+  min-width: 960px;
 }
 
 button, input { font: inherit; }
@@ -147,9 +147,21 @@ button, input { font: inherit; }
   font-size: 12px;
 }
 
+.editor-workspace {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-workspace.is-segment-panel-hidden .segment-panel {
+  display: none;
+}
+
 .editor-shell {
   position: relative;
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 620px;
   overflow: hidden;
   background: #fff;
@@ -161,6 +173,198 @@ button, input { font: inherit; }
   width: 100% !important;
   height: 100% !important;
   border: 0;
+}
+
+.segment-panel {
+  display: flex;
+  width: clamp(340px, 27vw, 430px);
+  min-width: 340px;
+  min-height: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  border-left: 1px solid #dbe2ec;
+  background: #f7f9fc;
+}
+
+.segment-panel__header {
+  display: flex;
+  padding: 16px 16px 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.segment-panel__header h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 18px;
+}
+
+.segment-panel__header .eyebrow { margin-bottom: 5px; }
+
+.segment-panel__header h2 span {
+  color: #758298;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.segment-progress {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #3154a5;
+  background: #e8efff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.segment-panel__note {
+  margin: 0 16px 12px;
+  padding: 10px 11px;
+  border: 1px solid #dbe5fb;
+  border-radius: 9px;
+  color: #526176;
+  background: #f0f5ff;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.segment-search {
+  display: grid;
+  margin: 0 16px 10px;
+  gap: 5px;
+  color: #6b778a;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.segment-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e2;
+  border-radius: 8px;
+  outline: none;
+  color: #172033;
+  background: #fff;
+}
+
+.segment-search input:focus {
+  border-color: #3267e3;
+  box-shadow: 0 0 0 3px rgba(50, 103, 227, .12);
+}
+
+.segment-summary {
+  padding: 0 16px 10px;
+  color: #778397;
+  font-size: 11px;
+}
+
+.segment-list {
+  min-height: 0;
+  padding: 0 10px 16px;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.segment-card {
+  margin: 0 0 8px;
+  padding: 11px;
+  border: 1px solid #d7dfea;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(28, 39, 59, .04);
+}
+
+.segment-card:focus-within {
+  border-color: #6f96ef;
+  box-shadow: 0 0 0 3px rgba(50, 103, 227, .09);
+}
+
+.segment-card__meta,
+.segment-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.segment-card__meta {
+  margin-bottom: 7px;
+  color: #738096;
+  font-size: 10px;
+}
+
+.segment-card__id {
+  color: #345dc0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 800;
+}
+
+.segment-card__source {
+  margin: 0 0 9px;
+  color: #1d293b;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.segment-card textarea {
+  display: block;
+  width: 100%;
+  min-height: 60px;
+  margin-bottom: 8px;
+  padding: 8px 9px;
+  resize: vertical;
+  border: 1px solid #d1dae7;
+  border-radius: 7px;
+  outline: none;
+  color: #172033;
+  background: #fbfcfe;
+  line-height: 1.35;
+}
+
+.segment-card textarea:focus {
+  border-color: #3267e3;
+  background: #fff;
+}
+
+.segment-card__status {
+  color: #8994a5;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.segment-card.has-translation .segment-card__status { color: #168363; }
+
+.segment-copy {
+  padding: 3px 0;
+  border: 0;
+  color: #4265b7;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.segment-empty {
+  padding: 28px 14px;
+  color: #778397;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.segments-more {
+  min-height: 38px;
+  margin: 0 10px 10px;
+  border: 1px solid #cbd5e2;
+  border-radius: 8px;
+  color: #3e506c;
+  background: #fff;
+  font-weight: 750;
+  cursor: pointer;
 }
 
 [hidden] { display: none !important; }

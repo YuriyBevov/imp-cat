@@ -37,6 +37,7 @@
             <span id="document-state">Подготавливаем редактор…</span>
           </div>
           <div class="document-bar__actions">
+            <button id="segments-toggle" class="button button--ghost" type="button" aria-expanded="true">Скрыть сегменты</button>
             <button id="replace-button" class="button button--ghost" type="button">Другой документ</button>
             <a id="download-button" class="button button--primary" href="#" download>Скачать сохранённый DOCX</a>
           </div>
@@ -44,8 +45,29 @@
         <div class="editor-note">
           Для принудительного сохранения нажмите значок дискеты внутри ONLYOFFICE. ICAT получит обновлённый DOCX через callback.
         </div>
-        <div class="editor-shell">
-          <div id="onlyoffice-editor" class="onlyoffice-editor"></div>
+        <div id="editor-workspace" class="editor-workspace">
+          <div class="editor-shell">
+            <div id="onlyoffice-editor" class="onlyoffice-editor"></div>
+          </div>
+          <aside id="segment-panel" class="segment-panel" aria-label="Переводческие сегменты">
+            <div class="segment-panel__header">
+              <div>
+                <p class="eyebrow">CAT-слой</p>
+                <h2>Сегменты <span id="segment-count">0</span></h2>
+              </div>
+              <span id="segment-progress" class="segment-progress">0 / 0</span>
+            </div>
+            <p class="segment-panel__note">
+              Сегменты привязаны к структуре DOCX, а не к координатам экрана. Переводы пока сохраняются как локальные черновики и не изменяют документ.
+            </p>
+            <label class="segment-search">
+              <span>Поиск</span>
+              <input id="segment-search" type="search" placeholder="Текст или ID сегмента" autocomplete="off" />
+            </label>
+            <div id="segment-summary" class="segment-summary">Извлекаем текст из DOCX…</div>
+            <div id="segment-list" class="segment-list" aria-live="polite"></div>
+            <button id="segments-more" class="segments-more" type="button" hidden>Показать ещё</button>
+          </aside>
         </div>
       </section>
     </main>
