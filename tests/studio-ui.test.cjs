@@ -87,11 +87,35 @@ test('studio restores a saved scene and renders editable page objects', async ()
       ? { translationProviderConfigured: false, translationModel: null }
       : { metadata: { id, revision: 1 }, scene },
   })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.Element.prototype.setPointerCapture = function setPointerCapture(pointerId) { this.__pointerId = pointerId }
+  dom.window.Element.prototype.hasPointerCapture = function hasPointerCapture(pointerId) { return this.__pointerId === pointerId }
+  dom.window.Element.prototype.releasePointerCapture = function releasePointerCapture(pointerId) {
+    if (this.__pointerId === pointerId) this.__pointerId = null
+  }
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
+
+  const resizeHandle = dom.window.document.querySelector('.scene-object__resize')
+  const pointer = (type, x, y) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
+    Object.defineProperty(event, 'pointerId', { value: 7 })
+    return event
+  }
+  resizeHandle.dispatchEvent(pointer('pointerdown', 0, 0))
+  resizeHandle.dispatchEvent(pointer('pointermove', 20, 10))
+  resizeHandle.dispatchEvent(pointer('pointerup', 20, 10))
+  assert.equal(resizeHandle.style.width, '')
+  const zoom = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10) / 100
+  const firstWidth = 200 + 20 / zoom
+  assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth}px`)
+  resizeHandle.dispatchEvent(pointer('pointerdown', 20, 10))
+  resizeHandle.dispatchEvent(pointer('pointermove', 30, 20))
+  resizeHandle.dispatchEvent(pointer('pointerup', 30, 20))
+  assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth + 10 / zoom}px`)
   assert.deepEqual(errors, [])
   dom.window.close()
 })

@@ -388,11 +388,13 @@
     checkpoint()
     refreshSelection()
     const objects = selectedObjects()
+    const handle = event.currentTarget
+    const pointerId = event.pointerId
     const origins = new Map(objects.map(object => [object.id, { x: object.x, y: object.y, pageIndex: object.pageIndex }]))
     const start = { x: event.clientX, y: event.clientY, scrollLeft: elements.canvasScroll.scrollLeft, scrollTop: elements.canvasScroll.scrollTop }
     const action = { kind: 'drag', pointerId: event.pointerId, objects, origins, start, lastX: event.clientX, lastY: event.clientY }
     state.pointerAction = action
-    event.currentTarget.setPointerCapture(event.pointerId)
+    handle.setPointerCapture(pointerId)
     const update = current => {
       action.lastX = current.clientX
       action.lastY = current.clientY
@@ -416,15 +418,16 @@
         if (destinationIndex !== objects[0].pageIndex) moveSelectionToPage(destinationIndex, current.clientX, current.clientY, objects)
       }
       state.pointerAction = null
-      event.currentTarget.removeEventListener('pointermove', update)
-      event.currentTarget.removeEventListener('pointerup', finish)
-      event.currentTarget.removeEventListener('pointercancel', finish)
+      handle.removeEventListener('pointermove', update)
+      handle.removeEventListener('pointerup', finish)
+      handle.removeEventListener('pointercancel', finish)
+      if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
       renderDocument()
       scheduleSave()
     }
-    event.currentTarget.addEventListener('pointermove', update)
-    event.currentTarget.addEventListener('pointerup', finish)
-    event.currentTarget.addEventListener('pointercancel', finish)
+    handle.addEventListener('pointermove', update)
+    handle.addEventListener('pointerup', finish)
+    handle.addEventListener('pointercancel', finish)
     action.updateFromScroll = () => update({ clientX: action.lastX, clientY: action.lastY })
   }
 
@@ -452,9 +455,11 @@
     event.stopPropagation()
     const object = state.scene.objects.find(item => item.id === id)
     if (!object) return
+    const handle = event.currentTarget
+    const pointerId = event.pointerId
     checkpoint()
     const start = { x: event.clientX, y: event.clientY, width: object.width, height: object.height }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    handle.setPointerCapture(pointerId)
     const update = current => {
       const page = state.scene.pages[object.pageIndex]
       object.width = Math.min(page.widthPx - object.x, Math.max(12, start.width + (current.clientX - start.x) / state.zoom))
@@ -465,14 +470,15 @@
     }
     const finish = current => {
       update(current)
-      event.currentTarget.removeEventListener('pointermove', update)
-      event.currentTarget.removeEventListener('pointerup', finish)
-      event.currentTarget.removeEventListener('pointercancel', finish)
+      handle.removeEventListener('pointermove', update)
+      handle.removeEventListener('pointerup', finish)
+      handle.removeEventListener('pointercancel', finish)
+      if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
       scheduleSave()
     }
-    event.currentTarget.addEventListener('pointermove', update)
-    event.currentTarget.addEventListener('pointerup', finish)
-    event.currentTarget.addEventListener('pointercancel', finish)
+    handle.addEventListener('pointermove', update)
+    handle.addEventListener('pointerup', finish)
+    handle.addEventListener('pointercancel', finish)
   }
 
   function refreshInspectorCoordinates() {
