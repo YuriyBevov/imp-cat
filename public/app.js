@@ -18,6 +18,8 @@ const state = {
   gridSize: DEFAULT_GRID_SIZE,
   viewScale: 1,
   viewMode: "fit",
+  sourceOverlayVisible: false,
+  sourceOpacity: 0.45,
   parkingElement: null,
   parkingOverlay: null,
   parkingHeight: 0,
@@ -45,6 +47,9 @@ const elements = {
   zoomIn: document.querySelector("#zoom-in"),
   fitWidth: document.querySelector("#fit-width"),
   viewScaleHint: document.querySelector("#view-scale-hint"),
+  showSource: document.querySelector("#show-source"),
+  sourceOpacity: document.querySelector("#source-opacity"),
+  sourceOpacityValue: document.querySelector("#source-opacity-value"),
   workspace: document.querySelector("#workspace"),
   dropZone: document.querySelector("#drop-zone"),
   loading: document.querySelector("#loading"),
@@ -88,6 +93,12 @@ elements.viewScale.addEventListener("input", () => setViewScale(Number(elements.
 elements.zoomOut.addEventListener("click", () => setViewScale(state.viewScale * 100 - 10));
 elements.zoomIn.addEventListener("click", () => setViewScale(state.viewScale * 100 + 10));
 elements.fitWidth.addEventListener("click", fitDocumentWidth);
+elements.showSource.addEventListener("change", () => {
+  setSourceOverlayVisible(elements.showSource.checked);
+});
+elements.sourceOpacity.addEventListener("input", () => {
+  setSourceOpacity(Number(elements.sourceOpacity.value) / 100);
+});
 elements.resolveOverlaps.addEventListener("click", resolveSegmentOverlaps);
 elements.workspace.addEventListener("wheel", handleWorkspaceZoom, { passive: false });
 for (const button of elements.editorActionButtons) {
@@ -147,6 +158,7 @@ document.addEventListener("pointerdown", handleDocumentPointerDown);
 document.addEventListener("keydown", handleUndoShortcut);
 document.addEventListener("keydown", handleFocusShortcut);
 updateEditorToolbarState(null);
+updateSourceOverlayControls();
 
 async function loadSample() {
   try {
@@ -201,6 +213,7 @@ async function loadDocument(blob, fileName) {
     await nextPaint();
     await nextPaint();
     extractDocumentModel();
+    updateSourceOverlayControls();
     elements.documentStage.classList.remove("is-measuring");
     elements.documentStage.removeAttribute("aria-hidden");
     setLoading(false);
@@ -227,6 +240,8 @@ function clearDocument() {
   state.selectedId = null;
   state.selectedIds = new Set();
   state.viewMode = "fit";
+  state.sourceOverlayVisible = false;
+  state.sourceOpacity = 0.45;
   state.parkingElement = null;
   state.parkingOverlay = null;
   state.parkingHeight = 0;
@@ -238,6 +253,9 @@ function clearDocument() {
   elements.documentStage.hidden = true;
   elements.dropZone.hidden = false;
   elements.uploadButton.hidden = false;
+  elements.docxHost.classList.remove("is-source-overlay-visible");
+  elements.docxHost.style.setProperty("--source-opacity", String(state.sourceOpacity));
+  updateSourceOverlayControls();
   updateEditorToolbarState(null);
   updateSummary();
 }
@@ -383,7 +401,6 @@ function extractDocumentModel() {
       if (isDuplicateCandidate(text, rect, accepted)) return;
       accepted.push({ text, rect });
 
-      const stretchToContentWidth = isFlow && !sourceElement.closest("td, th");
       const placement = flowPlacement || (isFlow
         ? window.ICATLayout.getFlowPagePlacement(
           rawY,
@@ -399,14 +416,18 @@ function extractDocumentModel() {
         sourcePage.pageRect.left,
         page.width,
         page.contentBounds,
-        stretchToContentWidth,
+        false,
         MIN_SEGMENT_WIDTH,
       );
       const x = horizontalGeometry.x;
       const y = placement.y;
-      const width = horizontalGeometry.width;
+      const width = clamp(
+        Math.ceil(horizontalGeometry.width + 1),
+        MIN_SEGMENT_WIDTH,
+        page.width - x,
+      );
       const height = clamp(
-        measuredHeight,
+        Math.ceil(measuredHeight + 1),
         MIN_SEGMENT_HEIGHT,
         page.height - y,
       );
@@ -425,6 +446,9 @@ function extractDocumentModel() {
         deleted: false,
         parked: false,
         lastPageIndex: page.pageIndex,
+        sourceKind: candidate.kind,
+        isFloating: candidate.kind.startsWith("shape") || !isFlow,
+        autoFitWidth: true,
         sourceElement,
         sourceElements: candidate.sourceElements,
         element: null,
@@ -837,6 +861,7 @@ function normalizeRichTextRuns(rawRuns) {
       color: style.color ? colorToHex(style.color) : "#111827",
       backgroundColor: style.backgroundColor || null,
       ...(style.tabWidthPx > 0 ? { tabWidthPx: style.tabWidthPx } : {}),
+      ...(style.tabStopPx > 0 ? { tabStopPx: style.tabStopPx } : {}),
     };
     const previous = result.at(-1);
     if (previous && richRunStylesEqual(previous, normalizedStyle)) {
@@ -884,7 +909,8 @@ function richRunStylesEqual(first, second) {
     && first.fontStyle === second.fontStyle
     && first.color === second.color
     && first.backgroundColor === second.backgroundColor
-    && Number(first.tabWidthPx || 0) === Number(second.tabWidthPx || 0);
+    && Number(first.tabWidthPx || 0) === Number(second.tabWidthPx || 0)
+    && Number(first.tabStopPx || 0) === Number(second.tabStopPx || 0);
 }
 
 function hideCandidateSource(candidate) {
@@ -898,6 +924,34 @@ function hideCandidateSource(candidate) {
     textNode.parentNode.insertBefore(wrapper, textNode);
     wrapper.append(textNode);
   }
+}
+
+function setSourceOverlayVisible(visible) {
+  if (!state.pages.length) return;
+  state.sourceOverlayVisible = Boolean(visible);
+  const sourceClass = state.sourceOverlayVisible ? "icat-source-hidden" : "icat-source-reference";
+  const targetClass = state.sourceOverlayVisible ? "icat-source-reference" : "icat-source-hidden";
+  for (const element of elements.docxHost.querySelectorAll(`.${sourceClass}`)) {
+    element.classList.remove(sourceClass);
+    element.classList.add(targetClass);
+  }
+  elements.docxHost.classList.toggle("is-source-overlay-visible", state.sourceOverlayVisible);
+  updateSourceOverlayControls();
+}
+
+function setSourceOpacity(opacity) {
+  state.sourceOpacity = clamp(Number(opacity) || 0.45, 0.1, 1);
+  elements.docxHost.style.setProperty("--source-opacity", String(state.sourceOpacity));
+  updateSourceOverlayControls();
+}
+
+function updateSourceOverlayControls() {
+  const hasDocument = state.pages.length > 0;
+  elements.showSource.disabled = !hasDocument;
+  elements.showSource.checked = hasDocument && state.sourceOverlayVisible;
+  elements.sourceOpacity.disabled = !hasDocument || !state.sourceOverlayVisible;
+  elements.sourceOpacity.value = String(Math.round(state.sourceOpacity * 100));
+  elements.sourceOpacityValue.textContent = `${Math.round(state.sourceOpacity * 100)}%`;
 }
 
 function getCandidateRect(element) {
@@ -996,7 +1050,14 @@ function createSegmentElement(segment) {
   segment.element = segmentElement;
   renderSegmentPosition(segment);
 
-  segmentElement.addEventListener("pointerdown", () => {
+  segmentElement.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSegmentSelection(segment.id);
+      return;
+    }
     if (!state.selectedIds.has(segment.id)) selectSegment(segment.id);
   });
   content.addEventListener("focus", () => {
@@ -1231,6 +1292,8 @@ function createSegmentMenu(segment) {
   menu.setAttribute("role", "menu");
 
   const actions = [
+    ["merge", "Объединить выбранные сегменты"],
+    ["fit-content", "Подогнать размер по содержимому"],
     ["reset", "Вернуть в исходное положение в документе"],
     ["delete", "Удалить сегмент"],
   ];
@@ -1261,6 +1324,38 @@ function runSegmentAction(segment, action) {
     state.selectedIds,
     segment.id,
   );
+  if (action === "merge") {
+    const mergePlan = window.ICATLayout.createSegmentMergePlan(targets);
+    if (!mergePlan.valid) {
+      showToast(
+        mergePlan.reason === "different-surfaces"
+          ? "Объединять можно только сегменты с одной страницы или из одного блока «Вне документа»."
+          : "Для объединения выберите минимум два сегмента.",
+        "error",
+      );
+      return;
+    }
+    mergeSegments(segment, mergePlan);
+    updateSummary();
+    commitHistory(before, "объединение сегментов");
+    showToast(`Объединено сегментов: ${targets.length}`);
+    return;
+  }
+  if (action === "fit-content") {
+    for (const target of targets) {
+      target.autoFitWidth = true;
+      const content = target.element?.querySelector(".icat-segment__content");
+      if (content) growSegmentToFit(target, content);
+    }
+    updateSummary();
+    commitHistory(before, targets.length > 1
+      ? "групповая подгонка размеров"
+      : "подгонка размера по содержимому");
+    showToast(targets.length > 1
+      ? `Размер подогнан у сегментов: ${targets.length}`
+      : "Размер сегмента подогнан по содержимому");
+    return;
+  }
   if (action === "reset") {
     const restoredIds = [];
     for (const target of targets) {
@@ -1302,6 +1397,67 @@ function runSegmentAction(segment, action) {
     ? action === "reset" ? "групповой возврат в исходное положение" : "групповое удаление сегментов"
     : describeSegmentAction(action);
   commitHistory(before, label);
+}
+
+function mergeSegments(primarySegment, mergePlan) {
+  const ordered = mergePlan.ordered;
+  const mergedRuns = [];
+  ordered.forEach((current, index) => {
+    if (index > 0) {
+      const previous = ordered[index - 1];
+      const separator = window.ICATLayout.getMergeSeparator(previous, current);
+      const separatorStyle = previous.runs?.at(-1) || {
+        fontFamily: previous.style.fontFamily,
+        fontSizePx: previous.style.fontSizePx,
+        fontWeight: previous.style.fontWeight,
+        fontStyle: previous.style.fontStyle,
+        color: previous.style.color,
+        backgroundColor: null,
+      };
+      mergedRuns.push({
+        ...separatorStyle,
+        text: separator.text,
+        ...(separator.tabWidthPx > 0 ? { tabWidthPx: separator.tabWidthPx } : {}),
+        ...(separator.text === "\t" ? {
+          tabStopPx: Math.max(0, current.x - mergePlan.bounds.x),
+        } : {}),
+      });
+    }
+    const currentRuns = current.runs?.length ? current.runs : [{
+      text: current.text,
+      fontFamily: current.style.fontFamily,
+      fontSizePx: current.style.fontSizePx,
+      fontWeight: current.style.fontWeight,
+      fontStyle: current.style.fontStyle,
+      color: current.style.color,
+      backgroundColor: null,
+    }];
+    mergedRuns.push(...currentRuns.map((run) => ({ ...run })));
+  });
+
+  const first = ordered[0];
+  Object.assign(primarySegment, {
+    ...mergePlan.bounds,
+    text: mergedRuns.map((run) => run.text).join(""),
+    runs: normalizeRichTextRuns(mergedRuns),
+    style: { ...first.style },
+    sourceKind: "merged",
+    isFloating: ordered.every((segment) => segment.isFloating),
+    autoFitWidth: true,
+    zIndex: Math.max(...ordered.map((segment) => segment.zIndex)),
+  });
+
+  for (const target of ordered) {
+    if (target === primarySegment) continue;
+    target.deleted = true;
+    target.element?.remove();
+  }
+  const content = primarySegment.element.querySelector(".icat-segment__content");
+  applyTypography(content, primarySegment.style);
+  renderSegmentText(content, primarySegment);
+  renderSegmentPosition(primarySegment);
+  growSegmentToFit(primarySegment, content);
+  selectSegment(primarySegment.id);
 }
 
 function getSegmentSurface(segment) {
@@ -1535,6 +1691,7 @@ function attachResizeBehavior(segment, handle) {
     selectSegment(segment.id);
     commitActiveTextEdit();
     const before = createHistorySnapshot();
+    segment.autoFitWidth = false;
 
     const surface = getSegmentSurface(segment);
     if (!surface) return;
@@ -1585,14 +1742,63 @@ function attachResizeBehavior(segment, handle) {
   });
 }
 
+function measureEditableContent(content) {
+  const rectangles = [];
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode();
+  while (textNode) {
+    if (textNode.textContent) {
+      const range = document.createRange();
+      range.selectNodeContents(textNode);
+      rectangles.push(...Array.from(range.getClientRects()).filter(
+        (rectangle) => rectangle.width > 0 || rectangle.height > 0,
+      ));
+      range.detach?.();
+    }
+    textNode = walker.nextNode();
+  }
+  for (const tab of content.querySelectorAll(".icat-segment__tab")) {
+    const rectangle = tab.getBoundingClientRect();
+    if (rectangle.width > 0 || rectangle.height > 0) rectangles.push(rectangle);
+  }
+  if (!rectangles.length) {
+    return null;
+  }
+  const left = Math.min(...rectangles.map((rectangle) => rectangle.left));
+  const top = Math.min(...rectangles.map((rectangle) => rectangle.top));
+  const right = Math.max(...rectangles.map((rectangle) => rectangle.right));
+  const bottom = Math.max(...rectangles.map((rectangle) => rectangle.bottom));
+  return { left, top, width: right - left, height: bottom - top };
+}
+
 function growSegmentToFit(segment, content) {
   const surface = getSegmentSurface(segment);
   if (!surface) return;
-  const desiredHeight = snapUp(content.scrollHeight);
-  if (desiredHeight > segment.height) {
-    segment.height = clamp(desiredHeight, MIN_SEGMENT_HEIGHT, surface.height - segment.y);
+  const bounds = measureEditableContent(content);
+  if (!bounds) {
+    if (segment.autoFitWidth !== false) segment.width = MIN_SEGMENT_WIDTH;
+    segment.height = MIN_SEGMENT_HEIGHT;
     renderSegmentPosition(segment);
+    return;
   }
+  const contentRectangle = content.getBoundingClientRect();
+  const scale = clamp(state.viewScale, 0.25, 2.5);
+  if (segment.autoFitWidth !== false) {
+    const offsetX = (bounds.left - contentRectangle.left) / scale;
+    segment.x = clamp(segment.x + offsetX, 0, surface.width - MIN_SEGMENT_WIDTH);
+    segment.width = clamp(
+      Math.ceil(bounds.width / scale + 2),
+      MIN_SEGMENT_WIDTH,
+      surface.width - segment.x,
+    );
+  }
+  const minimumLineHeight = segment.style.fontSizePx * segment.style.lineHeight;
+  segment.height = clamp(
+    Math.ceil(Math.max(bounds.height / scale + 2, minimumLineHeight)),
+    MIN_SEGMENT_HEIGHT,
+    surface.height - segment.y,
+  );
+  renderSegmentPosition(segment);
 }
 
 function renderSegmentCoordinates(segment) {
@@ -1617,13 +1823,25 @@ function renderSegmentPosition(segment) {
   segment.element.querySelector(".icat-segment__tools")
     ?.classList.toggle("is-inside", segment.y < 34);
   segment.element.classList.toggle("is-parked", segment.parked);
-  segment.element.classList.toggle("is-in-page-margin", !segment.parked && !isInsideWordTextArea(segment));
+  segment.element.classList.toggle("is-floating-source", Boolean(segment.isFloating));
+  segment.element.classList.toggle(
+    "is-in-page-margin",
+    !segment.parked && !segment.isFloating && !isInsideWordTextArea(segment),
+  );
   const cell = getCellReference(segment);
   segment.element.querySelector(".icat-segment__cell").textContent = cell.id;
 }
 
 function selectSegment(segmentId) {
   selectSegments([segmentId], segmentId);
+}
+
+function toggleSegmentSelection(segmentId) {
+  const nextIds = new Set(state.selectedIds);
+  if (nextIds.has(segmentId)) nextIds.delete(segmentId);
+  else nextIds.add(segmentId);
+  const primaryId = nextIds.has(segmentId) ? segmentId : nextIds.values().next().value || null;
+  selectSegments([...nextIds], primaryId);
 }
 
 function selectSegments(segmentIds, primaryId = null) {
@@ -1711,10 +1929,11 @@ function isInsideWordTextArea(segment) {
   if (segment.parked) return false;
   const bounds = state.pages[segment.pageIndex]?.contentBounds;
   if (!bounds) return false;
-  return segment.x >= bounds.x
-    && segment.y >= bounds.y
-    && segment.x + segment.width <= bounds.x + bounds.width
-    && segment.y + segment.height <= bounds.y + bounds.height;
+  const tolerance = 2;
+  return segment.x >= bounds.x - tolerance
+    && segment.y >= bounds.y - tolerance
+    && segment.x + segment.width <= bounds.x + bounds.width + tolerance
+    && segment.y + segment.height <= bounds.y + bounds.height + tolerance;
 }
 
 function updateSelectedDetails() {
@@ -1741,7 +1960,9 @@ function updateSelectedDetails() {
   elements.selectionSize.textContent = `${formatGeometry(segment.width)} × ${formatGeometry(segment.height)} px`;
   elements.selectionArea.textContent = segment.parked
     ? "Вне документа — не экспортируется"
-    : isInsideWordTextArea(segment) ? "Текстовая область" : "Поле страницы";
+    : isInsideWordTextArea(segment)
+      ? "Текстовая область"
+      : segment.isFloating ? "Плавающий объект в поле страницы" : "За текстовой областью";
 }
 
 function updateSummary() {
@@ -1960,6 +2181,9 @@ function snapshotSegment(segment) {
     y: segment.y,
     width: segment.width,
     height: segment.height,
+    autoFitWidth: segment.autoFitWidth !== false,
+    sourceKind: segment.sourceKind,
+    isFloating: Boolean(segment.isFloating),
     deleted: segment.deleted,
     parked: segment.parked,
     lastPageIndex: segment.lastPageIndex,
@@ -2123,6 +2347,8 @@ function restoreHistorySnapshot(snapshot) {
 
 function describeSegmentAction(action) {
   return {
+    merge: "объединение сегментов",
+    "fit-content": "подгонка размера по содержимому",
     reset: "возврат сегмента в исходное положение",
     delete: "удаление сегмента",
   }[action] || "изменение сегмента";

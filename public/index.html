@@ -67,6 +67,19 @@
           <button id="fit-width" class="button button--panel" type="button">По ширине поля</button>
           <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Cmd/Ctrl + колесо меняет зум под курсором и не влияет на экспорт.</p>
 
+          <div class="source-compare">
+            <label class="source-compare__toggle" for="show-source">
+              <input id="show-source" type="checkbox" disabled />
+              <span>Наложить исходный текст</span>
+            </label>
+            <label class="source-compare__opacity" for="source-opacity">
+              <span>Прозрачность исходника</span>
+              <output id="source-opacity-value" for="source-opacity">45%</output>
+              <input id="source-opacity" type="range" min="10" max="100" step="5" value="45" disabled />
+            </label>
+          </div>
+          <p class="hint">Эталонный слой показывает текст в координатах исходного DOCX и не участвует в редактировании или экспорте.</p>
+
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
           <p class="hint">Команда сдвигает пересекающиеся сегменты вниз в пределах исходной страницы. Исходное положение можно вернуть через меню сегмента.</p>
           <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите ⠿ у любого выбранного сегмента.</p>
@@ -76,7 +89,7 @@
 
         <section class="inspector__section">
           <p class="eyebrow">Выделение</p>
-          <div id="selection-empty" class="empty-selection">Нажмите сегмент или протяните рамку по свободной области.</div>
+          <div id="selection-empty" class="empty-selection">Нажмите сегмент, используйте Cmd/Ctrl + клик или протяните рамку по свободной области.</div>
           <dl id="selection-details" class="selection-details" hidden>
             <div><dt>Выбрано</dt><dd id="selection-count">—</dd></div>
             <div><dt>ID</dt><dd id="selection-id">—</dd></div>

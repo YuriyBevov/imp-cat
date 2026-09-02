@@ -174,6 +174,20 @@ def create_text_box_paragraph(segment: dict) -> etree._Element:
     word_attr(spacing, "lineRule", "exact")
     paragraph_properties.append(spacing)
 
+    tab_positions = sorted({
+        round(float(run.get("tabStopPx", 0)) * PX_TO_TWIPS)
+        for run in segment.get("runs", [])
+        if float(run.get("tabStopPx", 0)) > 0
+    })
+    if tab_positions:
+        tabs = element("w", "tabs")
+        for position in tab_positions:
+            tab = element("w", "tab")
+            word_attr(tab, "val", "left")
+            word_attr(tab, "pos", position)
+            tabs.append(tab)
+        paragraph_properties.append(tabs)
+
     alignment = element("w", "jc")
     word_attr(alignment, "val", normalize_alignment(segment.get("alignment")))
     paragraph_properties.append(alignment)

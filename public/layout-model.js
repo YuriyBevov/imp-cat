@@ -192,6 +192,65 @@
     );
   }
 
+  function createSegmentMergePlan(segments) {
+    const active = (segments || []).filter((segment) => segment && !segment.deleted);
+    if (active.length < 2) {
+      return { valid: false, reason: "select-at-least-two", ordered: [] };
+    }
+    const first = active[0];
+    const sameSurface = active.every((segment) => (
+      Boolean(segment.parked) === Boolean(first.parked)
+      && (first.parked || segment.pageIndex === first.pageIndex)
+    ));
+    if (!sameSurface) {
+      return { valid: false, reason: "different-surfaces", ordered: [] };
+    }
+
+    const byTop = [...active].sort((left, right) => (
+      left.y - right.y || left.x - right.x || left.zIndex - right.zIndex
+    ));
+    const rows = [];
+    for (const segment of byTop) {
+      const centerY = segment.y + segment.height / 2;
+      let row = rows.find((candidate) => (
+        centerY >= candidate.top - 2 && centerY <= candidate.bottom + 2
+      ));
+      if (!row) {
+        row = { top: segment.y, bottom: segment.y + segment.height, segments: [] };
+        rows.push(row);
+      }
+      row.top = Math.min(row.top, segment.y);
+      row.bottom = Math.max(row.bottom, segment.y + segment.height);
+      row.segments.push(segment);
+    }
+    rows.sort((left, right) => left.top - right.top);
+    const ordered = rows.flatMap((row) => row.segments.sort((left, right) => (
+      left.x - right.x || left.y - right.y || left.zIndex - right.zIndex
+    )));
+    const left = Math.min(...active.map((segment) => segment.x));
+    const top = Math.min(...active.map((segment) => segment.y));
+    const right = Math.max(...active.map((segment) => segment.x + segment.width));
+    const bottom = Math.max(...active.map((segment) => segment.y + segment.height));
+    return {
+      valid: true,
+      reason: null,
+      ordered,
+      bounds: { x: left, y: top, width: right - left, height: bottom - top },
+    };
+  }
+
+  function getMergeSeparator(previous, current) {
+    const previousCenter = previous.y + previous.height / 2;
+    const currentCenter = current.y + current.height / 2;
+    const sameRow = Math.abs(previousCenter - currentCenter)
+      <= Math.max(4, Math.min(previous.height, current.height) / 2);
+    if (!sameRow) return { text: "\n", tabWidthPx: 0 };
+    return {
+      text: "\t",
+      tabWidthPx: Math.max(8, current.x - (previous.x + previous.width)),
+    };
+  }
+
   function remapPageIndexAfterRemoval(pageIndex, removedPageIndex, remainingPageCount) {
     if (!Number.isInteger(pageIndex)) return pageIndex;
     const safeRemainingCount = Math.max(1, Math.round(Number(remainingPageCount) || 1));
@@ -332,9 +391,11 @@
   return {
     captureZoomAnchor,
     clampGroupDelta,
+    createSegmentMergePlan,
     findSegmentOverlaps,
     getFlowPageCount,
     getFlowPagePlacement,
+    getMergeSeparator,
     layoutSequentialFlowBoxes,
     getPhysicalPageSize,
     getSegmentActionTargets,

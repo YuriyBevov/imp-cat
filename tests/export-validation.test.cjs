@@ -56,7 +56,7 @@ test('preserves validated rich text runs and falls back when their text diverges
       id: 'rich', pageIndex: 0, text: 'Обычный\tжирный',
       style: { fontWeight: 400, fontStyle: 'normal' },
       runs: [
-        { text: 'Обычный\t', fontWeight: 400 },
+        { text: 'Обычный\t', fontWeight: 400, tabWidthPx: 48, tabStopPx: 180 },
         {
           text: 'жирный', fontFamily: 'Times New Roman', fontSizePx: 20,
           fontWeight: 700, fontStyle: 'italic', color: '#334455', backgroundColor: '#ffff00',
@@ -69,6 +69,8 @@ test('preserves validated rich text runs and falls back when their text diverges
   })
 
   assert.equal(payload.segments[0].runs.length, 2)
+  assert.equal(payload.segments[0].runs[0].tabWidthPx, 48)
+  assert.equal(payload.segments[0].runs[0].tabStopPx, 180)
   assert.equal(payload.segments[0].runs[1].fontWeight, 700)
   assert.equal(payload.segments[0].runs[1].fontStyle, 'italic')
   assert.equal(payload.segments[0].runs[1].fontFamily, 'Times New Roman')

@@ -3,9 +3,11 @@ const assert = require('node:assert/strict')
 const {
   captureZoomAnchor,
   clampGroupDelta,
+  createSegmentMergePlan,
   findSegmentOverlaps,
   getFlowPageCount,
   getFlowPagePlacement,
+  getMergeSeparator,
   getPhysicalPageSize,
   getSegmentActionTargets,
   getSegmentHorizontalGeometry,
@@ -207,4 +209,27 @@ test('applies a menu action to the selected group when its member opens the menu
       .map((segment) => segment.id),
     ['third'],
   )
+})
+
+test('orders same-page segments for merging and returns their shared bounds', () => {
+  const segments = [
+    { id: 'right', pageIndex: 0, parked: false, x: 220, y: 40, width: 80, height: 24, zIndex: 2 },
+    { id: 'next-line', pageIndex: 0, parked: false, x: 40, y: 100, width: 180, height: 30, zIndex: 3 },
+    { id: 'left', pageIndex: 0, parked: false, x: 40, y: 42, width: 120, height: 24, zIndex: 1 },
+  ]
+  const plan = createSegmentMergePlan(segments)
+
+  assert.equal(plan.valid, true)
+  assert.deepEqual(plan.ordered.map(segment => segment.id), ['left', 'right', 'next-line'])
+  assert.deepEqual(plan.bounds, { x: 40, y: 40, width: 260, height: 90 })
+  assert.deepEqual(getMergeSeparator(segments[2], segments[0]), { text: '\t', tabWidthPx: 60 })
+  assert.deepEqual(getMergeSeparator(segments[0], segments[1]), { text: '\n', tabWidthPx: 0 })
+})
+
+test('rejects merging segments from different pages', () => {
+  const plan = createSegmentMergePlan([
+    { id: 'one', pageIndex: 0, parked: false, x: 0, y: 0, width: 20, height: 20 },
+    { id: 'two', pageIndex: 1, parked: false, x: 0, y: 0, width: 20, height: 20 },
+  ])
+  assert.deepEqual(plan, { valid: false, reason: 'different-surfaces', ordered: [] })
 })

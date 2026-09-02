@@ -95,3 +95,20 @@ test('preserves semantic Word tabs and run-level boldness', () => {
   assert.equal(runs.find(run => run.text === '\t').tabWidthPx, 84)
   assert.equal(runs.at(-1).fontWeight, 700)
 })
+
+test('uses painted text rectangles instead of the full paragraph container', () => {
+  const dom = new JSDOM(`
+    <section id="page"><article>
+      <p id="signature"><span id="first">/Подпись/</span><span id="second">/Печать/</span></p>
+    </article></section>
+  `)
+  const document = dom.window.document
+  document.querySelector('#first').getBoundingClientRect = () => rectangle(120, 80, 70, 18)
+  document.querySelector('#second').getBoundingClientRect = () => rectangle(260, 80, 60, 18)
+
+  const candidate = segmentation.collectTextCandidates(
+    document.querySelector('#page'), normalizeText,
+  ).find(item => item.kind === 'paragraph')
+
+  assert.deepEqual(candidate.rect, rectangle(120, 80, 200, 18))
+})

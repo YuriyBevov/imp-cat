@@ -19,7 +19,8 @@ class ExportDocxTests(unittest.TestCase):
                 "fontWeight": 400, "fontStyle": "normal", "lineHeight": 1.2, "color": "#111827",
                 "alignment": "left", "zIndex": 1,
                 "runs": [
-                    {"text": "/Подпись/\t", "fontWeight": 400, "fontStyle": "italic"},
+                    {"text": "/Подпись/\t", "fontWeight": 400, "fontStyle": "italic",
+                     "tabStopPx": 180},
                     {"text": "/Печать/", "fontFamily": "Arial", "fontSizePx": 20,
                      "fontWeight": 700, "fontStyle": "italic", "color": "#224466",
                      "backgroundColor": "#FFFF00"},
@@ -33,7 +34,13 @@ class ExportDocxTests(unittest.TestCase):
             document = Document(output)
 
         text_box = document.element.body.xpath(".//w:txbxContent")[0]
-        self.assertEqual(len(text_box.xpath(".//*[local-name()='tab']")), 1)
+        self.assertEqual(len(text_box.xpath(
+            ".//*[local-name()='r']/*[local-name()='tab']"
+        )), 1)
+        self.assertEqual(
+            text_box.xpath(".//*[local-name()='pPr']/*[local-name()='tabs']/*[local-name()='tab']/@*[local-name()='pos']"),
+            ["2700"],
+        )
         bold_text = "".join(
             node.text or "" for node in text_box.xpath(
                 ".//*[local-name()='r'][./*[local-name()='rPr']/*[local-name()='b']]/*[local-name()='t']"

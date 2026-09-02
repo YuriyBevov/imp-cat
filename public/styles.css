@@ -344,6 +344,45 @@ button {
   accent-color: var(--segment);
 }
 
+.source-compare {
+  margin-top: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dbe3f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.source-compare__toggle,
+.source-compare__opacity {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-compare__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-compare__toggle input,
+.source-compare__opacity input {
+  accent-color: var(--segment);
+}
+
+.source-compare__opacity {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 10px;
+}
+
+.source-compare__opacity input {
+  width: 100%;
+  grid-column: 1 / -1;
+}
+
 .button--panel {
   width: 100%;
   min-height: 34px;
@@ -549,6 +588,19 @@ button {
   text-shadow: none !important;
 }
 
+.icat-source-reference {
+  opacity: var(--source-opacity, 0.45);
+  pointer-events: none !important;
+}
+
+#docx-host.is-source-overlay-visible .icat-segment__content {
+  opacity: 0.72;
+}
+
+#docx-host.is-source-overlay-visible .icat-segment:not(.is-selected) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .icat-content-boundary {
   position: absolute;
   z-index: 44;
@@ -721,6 +773,11 @@ button {
 .icat-segment.is-selected.is-in-page-margin {
   outline-color: #d97706;
   box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.14), 0 7px 20px rgba(146, 64, 14, 0.12);
+}
+
+.icat-segment.is-floating-source.is-in-page-margin {
+  outline-color: rgba(37, 99, 235, 0.48);
+  box-shadow: none;
 }
 
 .icat-segment.is-parked {
