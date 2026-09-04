@@ -1,5 +1,7 @@
 # Чеклист прототипа ICAT Grid
 
+> **АРХИВ.** Документ описывает ранний Grid/ONLYOFFICE-прототип и не является актуальным планом. Текущее ТЗ: [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md). Состав архива: [ARCHIVE_INDEX.md](ARCHIVE_INDEX.md).
+
 ## ONLYOFFICE POC — экспериментальная ветка
 
 - [x] Текущее состояние `main` отправлено в GitHub перед началом эксперимента.

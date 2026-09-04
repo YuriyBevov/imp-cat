@@ -1,5 +1,7 @@
 # Чеклист базовой реализации Translation Studio
 
+> **АРХИВ.** Зафиксировано состояние RapidOCR-прототипа перед переходом к Codex Document Agent. Новая реализация ведётся по [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md).
+
 Дата: 2 сентября 2026 года  
 Ветка: `experiment/client-requirements-v2`
 

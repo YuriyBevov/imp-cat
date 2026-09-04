@@ -39,9 +39,9 @@
         <div class="upload-card__icon">PDF</div>
         <p class="eyebrow">Новый проект</p>
         <h1>Загрузите документ на перевод</h1>
-        <p>PDF, скан или изображение. Файл будет разобран и распознан локально на этом компьютере.</p>
+        <p>PDF, скан или изображение. Страницы будут подготовлены локально и разобраны агентом до открытия редактора.</p>
         <label class="button button--primary button--large" for="file-input">Выбрать документ</label>
-        <small>Исходник обрабатывается локально. Передача страниц агенту проверки включается только настройкой сервера.</small>
+        <small id="analysis-service-note">Проверяем готовность агента анализа…</small>
       </section>
       <section class="pipeline-card">
         <div><span>01</span><strong>Распознавание</strong><small>страницы, текст, координаты</small></div>
@@ -54,7 +54,7 @@
     <main id="loading-view" class="loading-view" hidden>
       <div class="loader"></div>
       <h1>Готовим документ к переводу</h1>
-      <p id="loading-message">Рендерим страницы и распознаём текст…</p>
+      <p id="loading-message">Рендерим страницы и выполняем полный анализ документа агентом…</p>
       <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
@@ -129,10 +129,11 @@
       <aside class="inspector-panel">
         <div class="agent-card">
           <div class="agent-card__title"><span class="agent-dot"></span><strong>Агент-переводчик</strong></div>
-          <p id="agent-status">Документ распознан. Запустите анализ структуры.</p>
+          <p id="agent-status">Документ распознан и структурирован агентом.</p>
           <div class="agent-actions">
             <button id="analyze-button" class="button button--primary" type="button">Проверить структуру</button>
-            <button id="ocr-review-button" class="button" type="button">Проверить OCR агентом</button>
+            <button id="reanalyze-button" class="button" type="button">Повторить анализ исходника</button>
+            <button id="ocr-review-button" class="button" type="button">Проверить распознавание</button>
             <button id="translate-button" class="button" type="button">Перевести выбранное</button>
             <button id="auto-layout-button" class="button" type="button">Исправить наложения</button>
             <button id="qa-button" class="button" type="button">Финальная проверка</button>
@@ -163,14 +164,16 @@
           </div>
           <label>Тип содержимого
             <select id="object-type">
-              <option value="text">Текст</option><option value="stamp">Штамп</option><option value="seal">Круглая печать</option>
-              <option value="signature">Подпись</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
+              <option value="text">Текст</option><option value="table">Таблица</option><option value="table_cell">Ячейка таблицы</option>
+              <option value="stamp">Штамп</option><option value="seal">Печать</option><option value="signature">Подпись</option>
+              <option value="handwriting">Рукописный текст</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
             </select>
           </label>
           <label>Распознанный исходник
             <textarea id="source-text" rows="6" spellcheck="true"></textarea>
           </label>
-          <div class="confidence-row"><span>Уверенность OCR</span><strong id="confidence-value">—</strong></div>
+          <div class="confidence-row"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
+          <p id="agent-notes" class="agent-notes" hidden></p>
           <label>Перевод / обозначение
             <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
           </label>

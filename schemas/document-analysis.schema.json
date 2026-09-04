@@ -1,0 +1,152 @@
+{
+  "$id": "https://icat.local/schemas/document-analysis.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ICAT document analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["documentTitle", "languages", "pages"],
+  "properties": {
+    "documentTitle": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "languages": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 80
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 400,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pageIndex", "languages", "segments"],
+        "properties": {
+          "pageIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 399
+          },
+          "languages": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "segments": {
+            "type": "array",
+            "maxItems": 12000,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "segmentId",
+                "type",
+                "sourceText",
+                "readingOrder",
+                "flowGroup",
+                "regions",
+                "style",
+                "confidence",
+                "needsReview",
+                "notes"
+              ],
+              "properties": {
+                "segmentId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "table",
+                    "table_cell",
+                    "stamp",
+                    "seal",
+                    "signature",
+                    "handwriting",
+                    "logo",
+                    "image",
+                    "unknown"
+                  ]
+                },
+                "sourceText": {
+                  "type": "string",
+                  "maxLength": 100000
+                },
+                "readingOrder": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 12000
+                },
+                "flowGroup": {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                "regions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["x", "y", "width", "height"],
+                    "properties": {
+                      "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                      "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+                    }
+                  }
+                },
+                "style": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "fontFamily",
+                    "fontSizePt",
+                    "fontWeight",
+                    "fontStyle",
+                    "textAlign",
+                    "lineHeight",
+                    "color"
+                  ],
+                  "properties": {
+                    "fontFamily": { "type": "string", "maxLength": 120 },
+                    "fontSizePt": { "type": "number", "minimum": 4, "maximum": 96 },
+                    "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
+                    "fontStyle": { "type": "string", "enum": ["normal", "italic"] },
+                    "textAlign": { "type": "string", "enum": ["left", "center", "right", "justify"] },
+                    "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 3 },
+                    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+                  }
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "needsReview": {
+                  "type": "boolean"
+                },
+                "notes": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

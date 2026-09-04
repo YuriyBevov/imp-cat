@@ -3,8 +3,10 @@ const assert = require('node:assert/strict')
 
 const {
   buildScene,
+  buildSceneFromAgent,
   buildOcrReview,
   classifyText,
+  fitAgentFontSizePx,
   findMemoryMatches,
   validateScene,
 } = require('../lib/studio-model.cjs')
@@ -47,6 +49,48 @@ test('buildScene fits standalone raster sources onto an undistorted A4 workspace
   assert.ok(page.sourceFrame.x >= 39)
   assert.ok(page.sourceFrame.y > 39)
   assert.ok(Math.abs(page.sourceFrame.width / page.sourceFrame.height - 1600 / 2260) < .001)
+})
+
+test('buildSceneFromAgent preserves normalized geometry and labels special objects without deleting readable text', () => {
+  const scene = buildSceneFromAgent({
+    engine: 'Codex Document Agent (gpt-5.6-sol)',
+    generatedAt: '2026-09-04T00:00:00.000Z',
+    languages: ['tr'],
+    pages: [{
+      index: 0, width: 1200, height: 1600, image: 'page-001.png', languages: ['tr'],
+      segments: [{
+        segmentId: 'stamp-1', type: 'stamp', sourceText: 'TÜRKİYE CUMHURİYETİ',
+        readingOrder: 3, flowGroup: 'page-1-stamps',
+        regions: [{ x: .6, y: .1, width: .25, height: .12 }],
+        style: { fontFamily: 'Times New Roman', fontSizePt: 9, fontWeight: 700, fontStyle: 'italic', textAlign: 'center', lineHeight: 1.1, color: '#112233' },
+        confidence: .91, needsReview: false, notes: 'Прямоугольный штамп',
+      }, {
+        segmentId: 'signature-1', type: 'signature', sourceText: '',
+        readingOrder: 4, flowGroup: 'page-1-signatures',
+        regions: [{ x: .2, y: .8, width: .18, height: .05 }],
+        style: { fontFamily: 'Arial', fontSizePt: 10, fontWeight: 400, fontStyle: 'italic', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+        confidence: .5, needsReview: true, notes: 'Текст неразборчив',
+      }],
+    }],
+  }, { documentId: '1'.repeat(32), title: 'Agent fixture' })
+  assert.equal(scene.pages[0].heightPx, 1058.67)
+  assert.ok(Math.abs(scene.objects[0].x - 476.4) < .01)
+  assert.ok(Math.abs(scene.objects[0].width - 198.5) < .01)
+  assert.equal(scene.objects[0].translation, '[Штамп]\nTÜRKİYE CUMHURİYETİ')
+  assert.equal(scene.objects[0].sourceText, 'TÜRKİYE CUMHURİYETİ')
+  assert.equal(scene.objects[0].style.fontWeight, 700)
+  assert.ok(scene.objects[0].style.fontSizePx <= 14)
+  assert.equal(scene.objects[1].translation, '[Подпись — текст неразборчив]')
+  assert.equal(scene.objects[1].status, 'needs-review')
+  assert.equal(scene.recognition.mode, 'codex')
+})
+
+test('agent font fitting caps oversized typography to the recognized rectangle', () => {
+  const fitted = fitAgentFontSizePx('University of New Hampshire', 78, { width: 535, height: 90 }, 1, true)
+  assert.ok(fitted < 45)
+  assert.ok(fitted >= 6)
+  const unchanged = fitAgentFontSizePx('Date', 12, { width: 120, height: 30 }, 1.2)
+  assert.ok(Math.abs(unchanged - 12) < .01)
 })
 
 test('service classification covers stamps, seals, and signatures', () => {

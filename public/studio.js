@@ -1,7 +1,7 @@
 (() => {
   const $ = selector => document.querySelector(selector)
   const elements = {
-    uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'),
+    uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingMessage: $('#loading-message'), studioView: $('#studio-view'),
     documentTitle: $('#document-title'), documentStatus: $('#document-status'), newDocument: $('#new-document-button'),
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
@@ -12,10 +12,10 @@
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
-    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), ocrReview: $('#ocr-review-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
+    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), ocrReview: $('#ocr-review-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
-    sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'),
+    sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
     objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
@@ -111,13 +111,17 @@
     elements.targetLanguage.value = state.scene.targetLanguage
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
+    const recognition = state.scene.recognition
+    const recognitionSummary = recognition?.mode === 'codex'
+      ? `Документ полностью разобран агентом${recognition.model ? ` ${recognition.model}` : ''}.`
+      : 'Документ распознан локальным анализатором.'
     const vision = state.metadata?.visionAugmentation
     const visionSummary = vision
       ? ` Vision-агент проверил ${vision.checkedPages ?? vision.pages ?? 0}/${vision.pages ?? 0} стр., добавил ${vision.added || 0}, исправил ${vision.corrected || 0} и убрал ${vision.removed || 0} ложных OCR-фрагментов.${vision.errors?.length ? ` Ошибок страниц: ${vision.errors.length}.` : ''}`
       : state.metadata?.visionError ? ` Vision-проверка не выполнена: ${state.metadata.visionError}.` : ''
     elements.agentStatus.textContent = state.serviceStatus?.translationProviderConfigured
-      ? `Документ распознан. Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.${visionSummary}`
-      : `Документ распознан. API перевода не настроен: доступны ручной перевод и локальная БЗ.${visionSummary}`
+      ? `${recognitionSummary} Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.${visionSummary}`
+      : `${recognitionSummary} API перевода пока не настроен: доступны ручной перевод и локальная БЗ.${visionSummary}`
     elements.newDocument.hidden = false
     elements.exportDocx.disabled = false
     elements.exportPdf.disabled = false
@@ -276,7 +280,22 @@
   }
 
   function typeLabel(type) {
-    return ({ text: 'Текст', stamp: 'Штамп', seal: 'Круглая печать', signature: 'Подпись', logo: 'Логотип', image: 'Изображение', unknown: 'Не определено' })[type] || type
+    return ({
+      text: 'Текст', table: 'Таблица', table_cell: 'Ячейка таблицы', stamp: 'Штамп',
+      seal: 'Печать', signature: 'Подпись', handwriting: 'Рукописный текст',
+      logo: 'Логотип', image: 'Изображение', unknown: 'Не определено',
+    })[type] || type
+  }
+
+  function isTranslatableType(type) {
+    return type === 'text' || type === 'table' || type === 'table_cell'
+  }
+
+  function servicePlaceholder(type) {
+    return ({
+      stamp: '[Штамп]', seal: '[Печать]', signature: '[Подпись]', handwriting: '[Рукописный текст]',
+      logo: '[Логотип]', image: '[Изображение]', unknown: '[Не определено]',
+    })[type] || ''
   }
 
   function objectOutput(object) {
@@ -387,7 +406,7 @@
   function createObjectElement(object) {
     const node = document.createElement('article')
     node.className = 'scene-object'
-    if (!object.translation && object.type === 'text') node.classList.add('is-untranslated')
+    if (!object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
     if (object.confidence < .76) node.classList.add('is-low-confidence')
     if (state.selected.has(object.id)) node.classList.add('is-selected')
     node.dataset.id = object.id
@@ -427,7 +446,7 @@
       object.translation = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
       object.translationTextStyles = extractInlineStyles(content, object.translation)
       object.status = 'edited'
-      node.classList.toggle('is-untranslated', !object.translation && object.type === 'text')
+      node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
       if (state.selected.size === 1) elements.translationText.value = object.translation
       scheduleSave()
       requestAnimationFrame(() => {
@@ -702,6 +721,7 @@
     })
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     elements.flexApply.disabled = !onePage || selection.length < 2
+    elements.agentNotes.hidden = true
     if (!selection.length) return
     const first = selection[0]
     elements.selectionTitle.textContent = selection.length === 1 ? `${typeLabel(first.type)} · стр. ${first.pageIndex + 1}` : `${selection.length} сегмента`
@@ -710,6 +730,10 @@
     setMixedControl(elements.sourceText, selection.map(item => item.sourceText))
     setMixedControl(elements.translationText, selection.map(item => item.translation))
     elements.confidence.textContent = selection.length === 1 ? `${Math.round(first.confidence * 100)}%` : 'несколько'
+    if (selection.length === 1 && first.agentNotes) {
+      elements.agentNotes.textContent = first.agentNotes
+      elements.agentNotes.hidden = false
+    }
     setMixedControl(elements.fontSize, selection.map(item => item.style.fontSizePx))
     setMixedControl(elements.lineHeight, selection.map(item => item.style.lineHeight))
     setMixedControl(elements.objectX, selection.map(item => Math.round(item.x)))
@@ -1172,6 +1196,22 @@
     }
   }
 
+  async function reanalyzeSource() {
+    if (!state.scene || !window.confirm('Повторный анализ заменит текущую сегментацию и ручные изменения. Продолжить?')) return
+    try {
+      await saveScene(true)
+      setView('loading')
+      elements.loadingMessage.textContent = 'Повторно анализируем сохранённые страницы агентом…'
+      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/reanalyze`, { method: 'POST' })
+      const documentData = await response.json()
+      openDocument(documentData)
+      showToast(`Повторный анализ завершён: ${documentData.scene.objects.length} сегментов`)
+    } catch (error) {
+      setView('studio')
+      showToast(error.message, true)
+    }
+  }
+
   async function translateSelection() {
     if (!state.scene) return
     elements.agentStatus.textContent = 'Ищем совпадения в БЗ и готовим перевод…'
@@ -1204,7 +1244,7 @@
 
   async function runOcrReview() {
     if (!state.scene) return
-    elements.agentStatus.textContent = 'Проверяем полноту OCR, склейки слов и смысл соседних сегментов…'
+    elements.agentStatus.textContent = 'Проверяем полноту распознавания, склейки слов и смысл соседних сегментов…'
     try {
       await saveScene(true)
       const response = await api(`/api/studio/documents/${state.metadata.id}/agent/review-ocr`, {
@@ -1213,9 +1253,9 @@
       const report = await response.json()
       showOcrReview(report)
       elements.agentStatus.textContent = report.message
-      showToast(`Проверка OCR: ${report.counts.total} рекомендаций`)
+      showToast(`Проверка распознавания: ${report.counts.total} рекомендаций`)
     } catch (error) {
-      elements.agentStatus.textContent = 'Проверка OCR не выполнена.'
+      elements.agentStatus.textContent = 'Проверка распознавания не выполнена.'
       showToast(error.message, true)
     }
   }
@@ -1270,12 +1310,12 @@
     }
     renderDocument()
     scheduleSave()
-    showToast(`Применено OCR-правок: ${applied}`)
+    showToast(`Применено правок распознавания: ${applied}`)
   }
 
   function showOcrReview(report) {
     elements.qaPanel.hidden = false
-    elements.qaTitle.textContent = 'Рекомендации по OCR'
+    elements.qaTitle.textContent = 'Рекомендации по распознаванию'
     elements.qaSummary.innerHTML = `
       <div><strong>${report.counts.total}</strong><span>всего</span></div>
       <div><strong>${report.counts.agent}</strong><span>от агента</span></div>
@@ -1294,7 +1334,7 @@
     if (!report.suggestions.length) {
       const item = document.createElement('div')
       item.className = 'qa-item'
-      item.textContent = 'Локальная проверка не нашла подозрительных фрагментов.'
+      item.textContent = 'Проверка не нашла подозрительных фрагментов.'
       elements.qaList.append(item)
       return
     }
@@ -1633,7 +1673,7 @@
   function bindInspector() {
     elements.objectType.addEventListener('change', () => applySelectionChange(object => {
       object.type = elements.objectType.value
-      if (object.type !== 'text' && !object.translation) object.translation = ({ stamp: '/Штамп/', seal: '/Круглая печать/', signature: '/Подпись/', logo: '/Логотип/', image: '/Изображение/' })[object.type] || ''
+      if (!isTranslatableType(object.type) && !object.translation) object.translation = servicePlaceholder(object.type)
     }))
     const bindText = (control, field) => {
       control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
@@ -1669,7 +1709,7 @@
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
       if (!node) continue
       renderTextContent(node.querySelector('.scene-object__content'), object)
-      node.classList.toggle('is-untranslated', !object.translation && object.type === 'text')
+      node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
     }
     if (state.viewMode === 'segments') requestAnimationFrame(refreshSegmentsViewHeights)
   }
@@ -1734,6 +1774,7 @@
     elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
     elements.analyze.addEventListener('click', () => runAgent('analyze', 'Проверяем порядок чтения и типы объектов…'))
+    elements.reanalyze.addEventListener('click', reanalyzeSource)
     elements.ocrReview.addEventListener('click', runOcrReview)
     elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
     elements.translate.addEventListener('click', translateSelection)
@@ -1791,8 +1832,18 @@
     try {
       const response = await api('/api/studio/status')
       state.serviceStatus = await response.json()
+      if (state.serviceStatus.documentAnalysisMode === 'codex') {
+        const ready = state.serviceStatus.codexAvailable && state.serviceStatus.codexAuthenticated
+        elements.analysisServiceNote.textContent = ready
+          ? `Агент ${state.serviceStatus.documentAgentModel || 'Codex'} готов. Изображения страниц будут переданы OpenAI; сторонние OCR-сервисы не используются.`
+          : `Агент не готов: ${state.serviceStatus.codexStatusError || 'выполните codex login'}.`
+        elements.fileInput.disabled = !ready
+      } else {
+        elements.analysisServiceNote.textContent = 'Включён архивный локальный OCR-режим.'
+      }
     } catch {
       state.serviceStatus = null
+      elements.analysisServiceNote.textContent = 'Не удалось проверить готовность агента.'
     }
   }
 

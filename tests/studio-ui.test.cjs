@@ -13,7 +13,7 @@ const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
 test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
     'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
-    'source-text', 'translation-text', 'object-type', 'analyze-button', 'translate-button',
+    'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'approve-button', 'merge-button', 'split-button', 'ocr-review-button',
     'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
@@ -39,6 +39,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /fitSelectionToContent/)
   assert.match(client, /setDocumentView/)
   assert.match(client, /toggleSourcePanel/)
+  assert.match(client, /agent\/reanalyze/)
   assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)

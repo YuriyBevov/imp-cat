@@ -1,5 +1,7 @@
 # Проверка ICAT Translation Studio на реальном документе
 
+> **LEGACY-ИНСТРУКЦИЯ.** Проверяет прежний локальный OCR-маршрут. Для новой AI-first реализации источником требований является [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md).
+
 ## 1. Запуск
 
 ```bash

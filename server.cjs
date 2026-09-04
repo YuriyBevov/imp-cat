@@ -223,7 +223,7 @@ function runProcess(command, args, timeoutMs) {
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       finish(() => {
-        const error = new Error('DOCX exporter timed out')
+        const error = new Error(`Процесс ${path.basename(command)} превысил допустимое время выполнения`)
         error.status = 504
         reject(error)
       })

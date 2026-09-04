@@ -1,5 +1,7 @@
 # План платформы перевода документов для бюро переводов
 
+> **АРХИВ.** Это первоначальная концепция до утверждения AI-first архитектуры. Актуальное ТЗ: [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md). Состав архива: [ARCHIVE_INDEX.md](ARCHIVE_INDEX.md).
+
 Дата анализа: 2 сентября 2026 года  
 Ветка: `experiment/client-requirements-v2`
 

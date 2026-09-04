@@ -1,5 +1,7 @@
 # Отчёт тестирования ICAT Grid
 
+> **АРХИВ.** Результаты относятся к предыдущим Grid/ONLYOFFICE/OCR-итерациям. Актуальные критерии приёмки находятся в [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md).
+
 ## ONLYOFFICE POC — 2 сентября 2026 года
 
 Эксперимент выполнен в отдельной ветке `experiment/onlyoffice-integration`; базовая версия сохранена тегом `before-onlyoffice-poc-20260902`.
