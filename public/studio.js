@@ -6,6 +6,7 @@
     documentTitle: $('#document-title'), documentStatus: $('#document-status'), newDocument: $('#new-document-button'),
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), pageCount: $('#page-count'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
+    viewLayout: $('#view-layout-button'), viewSegments: $('#view-segments-button'), sourcePanelToggle: $('#source-panel-toggle'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomOutput: $('#zoom-output'),
     gridSnap: $('#grid-snap'), gridSize: $('#grid-size'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
@@ -17,7 +18,10 @@
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
     objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
+    fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
     alignmentScope: $('#alignment-scope'),
+    flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
+    flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
@@ -40,6 +44,8 @@
     toastTimer: null,
     serviceStatus: null,
     lastTextSelection: null,
+    viewMode: 'layout',
+    sourceCollapsed: false,
     pendingWorkbenchZoom: null,
     pendingSourceZoom: null,
   }
@@ -105,9 +111,13 @@
     elements.targetLanguage.value = state.scene.targetLanguage
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
+    const vision = state.metadata?.visionAugmentation
+    const visionSummary = vision
+      ? ` Vision-агент проверил ${vision.checkedPages ?? vision.pages ?? 0}/${vision.pages ?? 0} стр., добавил ${vision.added || 0}, исправил ${vision.corrected || 0} и убрал ${vision.removed || 0} ложных OCR-фрагментов.${vision.errors?.length ? ` Ошибок страниц: ${vision.errors.length}.` : ''}`
+      : state.metadata?.visionError ? ` Vision-проверка не выполнена: ${state.metadata.visionError}.` : ''
     elements.agentStatus.textContent = state.serviceStatus?.translationProviderConfigured
-      ? `Документ распознан. Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.`
-      : 'Документ распознан. API перевода не настроен: доступны ручной перевод и локальная БЗ.'
+      ? `Документ распознан. Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.${visionSummary}`
+      : `Документ распознан. API перевода не настроен: доступны ручной перевод и локальная БЗ.${visionSummary}`
     elements.newDocument.hidden = false
     elements.exportDocx.disabled = false
     elements.exportPdf.disabled = false
@@ -121,6 +131,8 @@
     renderThumbnails()
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
+    elements.studioView.classList.toggle('is-segments-mode', state.viewMode === 'segments')
+    elements.canvas.classList.toggle('is-segments-view', state.viewMode === 'segments')
     elements.canvas.replaceChildren()
     for (const page of state.scene.pages) {
       const shell = document.createElement('div')
@@ -128,33 +140,64 @@
       shell.dataset.pageIndex = page.index
       const surface = document.createElement('section')
       surface.className = 'studio-page'
+      if (state.viewMode === 'segments') surface.classList.add('studio-page--segments')
       surface.dataset.pageIndex = page.index
       surface.style.width = `${page.widthPx}px`
-      surface.style.height = `${page.heightPx}px`
+      surface.style.height = state.viewMode === 'segments' ? 'auto' : `${page.heightPx}px`
       applyGridToSurface(surface)
       surface.addEventListener('pointerdown', beginMarquee)
 
-      const boundary = document.createElement('div')
-      boundary.className = 'content-boundary'
-      Object.assign(boundary.style, {
-        left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
-        width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
-      })
-      surface.append(boundary)
+      const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
+      if (state.viewMode === 'segments') {
+        const heading = document.createElement('div')
+        heading.className = 'segments-page-heading'
+        heading.innerHTML = `<span>Страница ${page.index + 1}</span><small>${pageObjects.length} сегм.</small>`
+        const list = document.createElement('div')
+        list.className = 'segments-list'
+        for (const object of visualReadingOrder(pageObjects)) {
+          list.append(createObjectElement(object))
+        }
+        surface.append(heading, list)
+      } else {
+        const boundary = document.createElement('div')
+        boundary.className = 'content-boundary'
+        Object.assign(boundary.style, {
+          left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
+          width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
+        })
+        surface.append(boundary)
 
-      for (const object of state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)) {
-        surface.append(createObjectElement(object))
+        for (const object of pageObjects) surface.append(createObjectElement(object))
+        const number = document.createElement('span')
+        number.className = 'page-number'
+        number.textContent = `${page.index + 1} / ${state.scene.pages.length}`
+        surface.append(number)
       }
-      const number = document.createElement('span')
-      number.className = 'page-number'
-      number.textContent = `${page.index + 1} / ${state.scene.pages.length}`
-      surface.append(number)
       shell.append(surface)
       elements.canvas.append(shell)
     }
+    if (state.viewMode === 'segments') refreshSegmentsViewHeights()
     applyZoom()
     renderSourcePreview()
     refreshSelection()
+    if (state.viewMode === 'layout') requestAnimationFrame(expandClippedObjects)
+  }
+
+  function visualReadingOrder(objects) {
+    const rows = []
+    const sorted = [...objects].sort((left, right) => left.y - right.y || left.x - right.x)
+    for (const object of sorted) {
+      const tolerance = Math.max(4, Math.min(24, (Number(object.style?.fontSizePx) || 14) * .65))
+      const row = rows[rows.length - 1]
+      if (!row || Math.abs(object.y - row.anchorY) > Math.max(tolerance, row.tolerance)) {
+        rows.push({ anchorY: object.y, tolerance, objects: [object] })
+        continue
+      }
+      row.objects.push(object)
+      row.anchorY = row.objects.reduce((sum, item) => sum + item.y, 0) / row.objects.length
+      row.tolerance = Math.max(row.tolerance, tolerance)
+    }
+    return rows.flatMap(row => row.objects.sort((left, right) => left.x - right.x || left.y - right.y))
   }
 
   function renderSourcePreview() {
@@ -387,6 +430,10 @@
       node.classList.toggle('is-untranslated', !object.translation && object.type === 'text')
       if (state.selected.size === 1) elements.translationText.value = object.translation
       scheduleSave()
+      requestAnimationFrame(() => {
+        if (state.viewMode === 'segments') refreshSegmentsViewHeights()
+        else growObjectToContent(node, object)
+      })
     })
     const resize = document.createElement('span')
     resize.className = 'scene-object__resize'
@@ -402,6 +449,28 @@
     })
   }
 
+  function growObjectToContent(node, object) {
+    if (!node || !object || state.viewMode !== 'layout') return false
+    const content = node.querySelector('.scene-object__content')
+    if (!content) return false
+    const requiredHeight = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height) + 2)
+    if (!Number.isFinite(requiredHeight) || requiredHeight <= object.height + 1) return false
+    const page = state.scene.pages[object.pageIndex]
+    object.height = Math.min(page.heightPx * 2, Math.max(12, requiredHeight))
+    node.style.height = `${object.height}px`
+    return true
+  }
+
+  function expandClippedObjects() {
+    if (!state.scene || state.viewMode !== 'layout') return
+    let changed = false
+    for (const node of elements.canvas.querySelectorAll('.scene-object')) {
+      const object = state.scene.objects.find(item => item.id === node.dataset.id)
+      if (object && growObjectToContent(node, object)) changed = true
+    }
+    if (changed) scheduleSave()
+  }
+
   function currentGridSize() {
     const value = Number(state.scene?.gridSize)
     return Number.isFinite(value) ? Math.min(96, Math.max(4, value)) : 8
@@ -415,6 +484,76 @@
     if (!gridSnapEnabled()) return value
     const size = currentGridSize()
     return Math.round(value / size) * size
+  }
+
+  function snapSizeUp(value) {
+    if (!gridSnapEnabled()) return Math.ceil(value)
+    return Math.ceil(value / currentGridSize()) * currentGridSize()
+  }
+
+  function estimatedContentSize(object, width) {
+    const text = objectOutput(object) || ' '
+    const fontSize = Math.max(6, Number(object.style?.fontSizePx) || 14)
+    const lineHeight = Math.max(.8, Number(object.style?.lineHeight) || 1.2)
+    const averageCharacterWidth = fontSize * .56
+    const sourceLines = text.split('\n')
+    const naturalWidth = Math.max(12, ...sourceLines.map(line => line.length * averageCharacterWidth + 10))
+    if (width == null) return { width: naturalWidth, height: Math.max(12, sourceLines.length * fontSize * lineHeight + 4) }
+    const innerWidth = Math.max(4, width - 8)
+    const visualLines = sourceLines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length * averageCharacterWidth / innerWidth)), 0)
+    return { width, height: Math.max(12, visualLines * fontSize * lineHeight + 4) }
+  }
+
+  function measureObjectContent(object, width = null) {
+    const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
+    if (!node) return estimatedContentSize(object, width)
+    const probe = node.cloneNode(true)
+    const content = probe.querySelector('.scene-object__content')
+    probe.classList.remove('is-selected')
+    Object.assign(probe.style, {
+      position: 'fixed', left: '-100000px', top: '0', width: width == null ? 'max-content' : `${width}px`,
+      height: 'auto', minWidth: '0', minHeight: '0', maxWidth: 'none', transform: 'none', visibility: 'hidden',
+      pointerEvents: 'none', overflow: 'visible', zIndex: '-1',
+    })
+    if (content) Object.assign(content.style, {
+      width: width == null ? 'max-content' : '100%', height: 'auto', overflow: 'visible',
+      whiteSpace: width == null ? 'pre' : 'pre-wrap',
+    })
+    document.body.append(probe)
+    const rectangle = probe.getBoundingClientRect()
+    const measured = {
+      width: width == null ? Math.max(rectangle.width, probe.scrollWidth) : width,
+      height: Math.max(rectangle.height, probe.scrollHeight, content?.scrollHeight || 0),
+    }
+    probe.remove()
+    const fallback = estimatedContentSize(object, width)
+    return {
+      width: measured.width > 0 ? measured.width : fallback.width,
+      height: measured.height > 0 ? measured.height : fallback.height,
+    }
+  }
+
+  function fitSelectionToContent(mode) {
+    const objects = selectedObjects()
+    if (!objects.length) return
+    checkpoint()
+    for (const object of objects) {
+      const page = state.scene.pages[object.pageIndex]
+      let width = object.width
+      if (mode === 'width' || mode === 'both') {
+        const natural = measureObjectContent(object)
+        width = Math.min(Math.max(12, page.widthPx - object.x), Math.max(12, snapSizeUp(natural.width + 1)))
+        object.width = width
+      }
+      if (mode === 'height' || mode === 'both') {
+        const wrapped = measureObjectContent(object, width)
+        object.height = Math.min(Math.max(12, page.heightPx - object.y), Math.max(12, snapSizeUp(wrapped.height + 1)))
+      }
+    }
+    renderDocument()
+    scheduleSave()
+    const label = mode === 'width' ? 'Ширина' : mode === 'height' ? 'Высота' : 'Ширина и высота'
+    showToast(`${label} по содержимому: ${objects.length} сегм.`)
   }
 
   function applyGridToSurface(surface) {
@@ -446,11 +585,45 @@
     for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
       const page = state.scene.pages[Number(shell.dataset.pageIndex)]
       shell.style.width = `${page.widthPx * state.zoom}px`
-      shell.style.height = `${page.heightPx * state.zoom}px`
       const surface = shell.querySelector('.studio-page')
+      const naturalHeight = state.viewMode === 'segments' ? Number(shell.dataset.naturalHeight || 120) : page.heightPx
+      shell.style.height = `${naturalHeight * state.zoom}px`
       surface.style.transform = `scale(${state.zoom})`
     }
     elements.zoomOutput.value = `${Math.round(state.zoom * 100)}%`
+  }
+
+  function refreshSegmentsViewHeights() {
+    if (state.viewMode !== 'segments') return
+    for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
+      const surface = shell.querySelector('.studio-page--segments')
+      if (!surface) continue
+      surface.style.height = 'auto'
+      const pageIndex = Number(shell.dataset.pageIndex)
+      const objects = state.scene.objects.filter(object => object.pageIndex === pageIndex && !object.excluded)
+      const fallback = 58 + objects.reduce((sum, object) => sum + Math.max(44, Math.min(240, object.height)) + 10, 0)
+      const naturalHeight = Math.max(120, surface.scrollHeight || fallback)
+      surface.style.height = `${naturalHeight}px`
+      shell.dataset.naturalHeight = String(naturalHeight)
+      shell.style.height = `${naturalHeight * state.zoom}px`
+    }
+  }
+
+  function setDocumentView(mode) {
+    if (!state.scene || mode === state.viewMode) return
+    state.viewMode = mode
+    elements.viewLayout.classList.toggle('is-active', mode === 'layout')
+    elements.viewSegments.classList.toggle('is-active', mode === 'segments')
+    elements.viewLayout.setAttribute('aria-pressed', String(mode === 'layout'))
+    elements.viewSegments.setAttribute('aria-pressed', String(mode === 'segments'))
+    renderDocument()
+  }
+
+  function toggleSourcePanel() {
+    state.sourceCollapsed = !state.sourceCollapsed
+    elements.studioView.classList.toggle('is-source-collapsed', state.sourceCollapsed)
+    elements.sourcePanelToggle.textContent = state.sourceCollapsed ? 'Показать оригинал' : 'Скрыть оригинал'
+    elements.sourcePanelToggle.setAttribute('aria-expanded', String(!state.sourceCollapsed))
   }
 
   function setZoom(nextZoom, anchorEvent) {
@@ -528,6 +701,7 @@
       button.disabled = !onePage || selection.length < minimum
     })
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
+    elements.flexApply.disabled = !onePage || selection.length < 2
     if (!selection.length) return
     const first = selection[0]
     elements.selectionTitle.textContent = selection.length === 1 ? `${typeLabel(first.type)} · стр. ${first.pageIndex + 1}` : `${selection.length} сегмента`
@@ -668,6 +842,96 @@
     for (const object of objects) { object.x += shift.x; object.y += shift.y }
     renderDocument()
     scheduleSave()
+  }
+
+  function flexContainerArea(page, objects, scope) {
+    if (scope === 'page') return { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+    if (scope === 'content') return { ...page.contentBounds }
+    const bounds = boundsOf(objects)
+    return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height }
+  }
+
+  function applyFlexLayout() {
+    const objects = selectionOnOnePage(2)
+    if (!objects) return
+    const page = state.scene.pages[objects[0].pageIndex]
+    const direction = elements.flexDirection.value
+    const horizontal = direction === 'row'
+    const scope = elements.flexContainer.value
+    const justify = elements.flexJustify.value
+    const align = elements.flexAlign.value
+    const requestedGap = Math.min(200, Math.max(0, Number(elements.flexGap.value) || 0))
+    const ordered = [...objects].sort(horizontal
+      ? (left, right) => left.x - right.x || left.y - right.y
+      : (top, bottom) => top.y - bottom.y || top.x - bottom.x)
+    const area = flexContainerArea(page, objects, scope)
+    let mainStart = horizontal ? area.x : area.y
+    let mainLength = horizontal ? area.width : area.height
+    const pageMainLength = horizontal ? page.widthPx : page.heightPx
+    const totalItemLength = ordered.reduce((sum, object) => sum + (horizontal ? object.width : object.height), 0)
+    const requestedLength = totalItemLength + requestedGap * (ordered.length - 1)
+
+    if (scope === 'selection' && requestedLength > mainLength) {
+      const growth = requestedLength - mainLength
+      if (justify === 'end') mainStart -= growth
+      else if (justify !== 'start' && justify !== 'space-between') mainStart -= growth / 2
+      mainLength = requestedLength
+    }
+    if (totalItemLength > mainLength || (scope === 'selection' && requestedLength > pageMainLength)) {
+      showToast('Сегменты не помещаются вдоль выбранной оси. Уменьшите их или выберите большую область.', true)
+      return
+    }
+
+    const gap = ordered.length > 1
+      ? Math.min(requestedGap, Math.max(0, (mainLength - totalItemLength) / (ordered.length - 1)))
+      : 0
+    const occupiedLength = totalItemLength + gap * (ordered.length - 1)
+    const freeSpace = Math.max(0, mainLength - occupiedLength)
+    let offset = 0
+    let distributedGap = gap
+    if (justify === 'center') offset = freeSpace / 2
+    else if (justify === 'end') offset = freeSpace
+    else if (justify === 'space-between' && ordered.length > 1) distributedGap += freeSpace / (ordered.length - 1)
+    else if (justify === 'space-around') {
+      distributedGap += freeSpace / ordered.length
+      offset = freeSpace / (ordered.length * 2)
+    } else if (justify === 'space-evenly') {
+      distributedGap += freeSpace / (ordered.length + 1)
+      offset = freeSpace / (ordered.length + 1)
+    }
+
+    checkpoint()
+    let cursor = mainStart + offset
+    for (const object of ordered) {
+      if (horizontal) object.x = cursor
+      else object.y = cursor
+      cursor += (horizontal ? object.width : object.height) + distributedGap
+    }
+
+    const crossStart = horizontal ? area.y : area.x
+    const crossLength = horizontal ? area.height : area.width
+    const baseline = crossStart + Math.max(...objects.map(object => Math.max(6, Number(object.style?.fontSizePx) || 14) * .82))
+    for (const object of objects) {
+      const objectCrossLength = horizontal ? object.height : object.width
+      let position = crossStart
+      if (align === 'center') position += (crossLength - objectCrossLength) / 2
+      else if (align === 'end') position += crossLength - objectCrossLength
+      else if (align === 'baseline' && horizontal) position = baseline - Math.max(6, Number(object.style?.fontSizePx) || 14) * .82
+      if (horizontal) {
+        object.y = position
+        if (align === 'stretch') { object.y = crossStart; object.height = Math.max(12, crossLength) }
+      } else {
+        object.x = position
+        if (align === 'stretch') { object.x = crossStart; object.width = Math.max(12, crossLength) }
+      }
+    }
+
+    const shift = clampGroupShift(objects, 0, 0)
+    for (const object of objects) { object.x += shift.x; object.y += shift.y }
+    if (scope === 'selection') snapObjectGroups(objects)
+    renderDocument()
+    scheduleSave()
+    showToast(`${horizontal ? 'Горизонтальная' : 'Вертикальная'} расстановка применена`)
   }
 
   function beginMarquee(event) {
@@ -1407,6 +1671,7 @@
       renderTextContent(node.querySelector('.scene-object__content'), object)
       node.classList.toggle('is-untranslated', !object.translation && object.type === 'text')
     }
+    if (state.viewMode === 'segments') requestAnimationFrame(refreshSegmentsViewHeights)
   }
 
   function bindEvents() {
@@ -1422,6 +1687,9 @@
     elements.zoomOut.addEventListener('click', () => setZoom(state.zoom - .1))
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
+    elements.viewLayout.addEventListener('click', () => setDocumentView('layout'))
+    elements.viewSegments.addEventListener('click', () => setDocumentView('segments'))
+    elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
     elements.canvasScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
@@ -1482,8 +1750,12 @@
     elements.exportPdf.addEventListener('click', () => exportDocument('pdf'))
     elements.undo.addEventListener('click', undo)
     elements.redo.addEventListener('click', redo)
+    elements.fitContentWidth.addEventListener('click', () => fitSelectionToContent('width'))
+    elements.fitContentHeight.addEventListener('click', () => fitSelectionToContent('height'))
+    elements.fitContentBoth.addEventListener('click', () => fitSelectionToContent('both'))
     document.querySelectorAll('[data-align-selection]').forEach(button => button.addEventListener('click', () => alignSelection(button.dataset.alignSelection)))
     document.querySelectorAll('[data-align-document]').forEach(button => button.addEventListener('click', () => alignToDocument(button.dataset.alignDocument)))
+    elements.flexApply.addEventListener('click', applyFlexLayout)
     elements.toolbarFontSize.addEventListener('change', () => {
       const value = Number(elements.toolbarFontSize.value)
       if (!applySelectedTextStyle({ fontSizePx: value })) applySelectionChange(object => { object.style.fontSizePx = value })

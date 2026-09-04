@@ -85,6 +85,11 @@
 
       <section class="workbench">
         <div class="workbench-toolbar">
+          <div class="toolbar-group view-controls" aria-label="Режим отображения документа">
+            <button id="view-layout-button" class="compact-button is-active" type="button" aria-pressed="true">Макет</button>
+            <button id="view-segments-button" class="compact-button" type="button" aria-pressed="false">Сегменты</button>
+            <button id="source-panel-toggle" class="compact-button" type="button" aria-expanded="true">Скрыть оригинал</button>
+          </div>
           <div class="toolbar-group">
             <button id="zoom-out" class="icon-button" type="button" title="Уменьшить">−</button>
             <output id="zoom-output">80%</output>
@@ -177,6 +182,11 @@
             <label>Ширина<input id="object-width" type="number" min="12" step="1" /></label>
             <label>Высота<input id="object-height" type="number" min="12" step="1" /></label>
           </div>
+          <div class="fit-size-actions" aria-label="Подгонка размера сегмента">
+            <button id="fit-content-width-button" type="button">Ширина по тексту</button>
+            <button id="fit-content-height-button" type="button">Высота по тексту</button>
+            <button id="fit-content-both-button" type="button">Оба размера</button>
+          </div>
           <div class="layout-card">
             <div class="layout-card__heading">
               <strong>Расположение</strong>
@@ -207,6 +217,50 @@
               <button data-align-document="top" type="button">Верх</button>
               <button data-align-document="center-y" type="button">Центр Y</button>
               <button data-align-document="bottom" type="button">Низ</button>
+            </div>
+            <div class="flex-layout">
+              <div class="flex-layout__heading">
+                <strong>Расстановка</strong>
+                <small>расположить сегменты вдоль одной оси</small>
+              </div>
+              <div class="flex-layout__grid">
+                <label>Направление
+                  <select id="flex-direction">
+                    <option value="row">Горизонтальный ряд</option>
+                    <option value="column">Вертикальная колонка</option>
+                  </select>
+                </label>
+                <label>Контейнер
+                  <select id="flex-container">
+                    <option value="selection">Границы выделения</option>
+                    <option value="content">Область содержимого</option>
+                    <option value="page">Вся страница</option>
+                  </select>
+                </label>
+                <label>Главная ось
+                  <select id="flex-justify">
+                    <option value="start">В начало</option>
+                    <option value="center">По центру</option>
+                    <option value="end">В конец</option>
+                    <option value="space-between">Space between</option>
+                    <option value="space-around">Space around</option>
+                    <option value="space-evenly">Space evenly</option>
+                  </select>
+                </label>
+                <label>Поперечная ось
+                  <select id="flex-align">
+                    <option value="start">В начало</option>
+                    <option value="center">По центру</option>
+                    <option value="end">В конец</option>
+                    <option value="stretch">Растянуть</option>
+                    <option value="baseline">По базовой линии</option>
+                  </select>
+                </label>
+                <label>Интервал, px
+                  <input id="flex-gap" type="number" min="0" max="200" step="1" value="8" />
+                </label>
+              </div>
+              <button id="flex-apply-button" class="button" type="button">Применить расстановку</button>
             </div>
           </div>
           <div class="memory-card">

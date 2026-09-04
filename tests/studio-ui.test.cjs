@@ -17,6 +17,9 @@ test('studio exposes the complete source-to-export workflow', () => {
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'approve-button', 'merge-button', 'split-button', 'ocr-review-button',
     'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
+    'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
+    'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
+    'view-layout-button', 'view-segments-button', 'source-panel-toggle',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
@@ -32,6 +35,11 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /snapObjectGroups/)
   assert.match(client, /alignSelection/)
   assert.match(client, /alignToDocument/)
+  assert.match(client, /applyFlexLayout/)
+  assert.match(client, /fitSelectionToContent/)
+  assert.match(client, /setDocumentView/)
+  assert.match(client, /toggleSourcePanel/)
+  assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)
 })
@@ -43,6 +51,10 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.match(styles, /\.studio-page[\s\S]*overflow: hidden/)
   assert.match(styles, /\.content-boundary/)
   assert.match(styles, /--grid-size/)
+  assert.match(styles, /\.studio\.is-source-collapsed/)
+  assert.match(styles, /\.studio-page--segments/)
+  assert.match(styles, /\.scene-object__content[^}]*overflow:\s*visible/)
+  assert.match(client, /function expandClippedObjects/)
 })
 
 test('studio client boots on the upload screen without runtime errors', async () => {
@@ -63,6 +75,43 @@ test('studio client boots on the upload screen without runtime errors', async ()
   assert.equal(dom.window.document.querySelector('#upload-view').hidden, false)
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, true)
   assert.deepEqual(errors, [])
+  dom.window.close()
+})
+
+test('segments view follows visual page order from top-left instead of stale readingOrder', async () => {
+  const id = '2'.repeat(32)
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  const makeObject = (idValue, text, x, y, readingOrder) => ({
+    id: idValue, pageIndex: 0, type: 'text', readingOrder, sourceText: text, translation: '', confidence: .98,
+    x, y, width: 180, height: 32, rotation: 0, excluded: false,
+    style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+    sourceTextStyles: [], translationTextStyles: [], ocrAlternatives: [], originalBounds: { x, y, width: 180, height: 32 },
+  })
+  const scene = {
+    title: 'Reading order', sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [
+      makeObject('top-right', 'Top right', 430, 43, 1),
+      makeObject('second-left', 'Second left', 40, 100, 2),
+      makeObject('top-left', 'Top left', 40, 40, 99),
+      makeObject('second-right', 'Second right', 430, 104, 3),
+    ],
+  }
+  dom.window.fetch = async url => ({
+    ok: true,
+    json: async () => String(url).endsWith('/status')
+      ? { translationProviderConfigured: false, translationModel: null }
+      : { metadata: { id, revision: 1 }, scene },
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  dom.window.document.querySelector('#view-segments-button').click()
+
+  const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object')].map(node => node.dataset.id)
+  assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right'])
   dom.window.close()
 })
 
@@ -108,6 +157,19 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
   assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '8px')
+
+  dom.window.document.querySelector('#source-panel-toggle').click()
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), true)
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').textContent, 'Показать оригинал')
+  dom.window.document.querySelector('#source-panel-toggle').click()
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), false)
+
+  dom.window.document.querySelector('#view-segments-button').click()
+  assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), true)
+  assert.equal(dom.window.document.querySelectorAll('.studio-page--segments .scene-object').length, 1)
+  assert.match(dom.window.document.querySelector('.segments-page-heading').textContent, /Страница 1/)
+  dom.window.document.querySelector('#view-layout-button').click()
+  assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), false)
 
   const resizeHandle = dom.window.document.querySelector('.scene-object__resize')
   const pointer = (type, x, y) => {
@@ -158,6 +220,26 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.document.querySelector('#align-left-button').click()
   const alignedLefts = [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.left)
   assert.equal(new Set(alignedLefts).size, 1)
+
+  dom.window.document.querySelector('#flex-direction').value = 'row'
+  dom.window.document.querySelector('#flex-container').value = 'content'
+  dom.window.document.querySelector('#flex-justify').value = 'space-between'
+  dom.window.document.querySelector('#flex-align').value = 'center'
+  dom.window.document.querySelector('#flex-apply-button').click()
+  const flexObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+  const flexLefts = flexObjects.map(node => Number.parseFloat(node.style.left)).sort((left, right) => left - right)
+  assert.equal(flexLefts[0], 40)
+  assert.equal(Math.max(...flexObjects.map(node => Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width))), 754)
+  assert.equal(new Set(flexObjects.map(node => Number.parseFloat(node.style.top) + Number.parseFloat(node.style.height) / 2)).size, 1)
+
+  const translationInput = dom.window.document.querySelector('#translation-text')
+  translationInput.value = '/Подпись/'
+  translationInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  dom.window.document.querySelector('#fit-content-both-button').click()
+  const fittedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+  assert.equal(new Set(fittedObjects.map(node => node.style.width)).size, 1)
+  assert.equal(new Set(fittedObjects.map(node => node.style.height)).size, 1)
+  assert.ok(Number.parseFloat(fittedObjects[0].style.width) < secondWidth)
 
   const gridSize = dom.window.document.querySelector('#grid-size')
   gridSize.value = '16'
