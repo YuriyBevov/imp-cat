@@ -1,5 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const analysisSchema = require('../schemas/document-analysis.schema.json')
 
 const {
   buildCodexArguments,
@@ -24,6 +25,15 @@ function style(overrides = {}) {
   }
 }
 
+test('analysis schema requests only supported typography and layout properties', () => {
+  const styleSchema = analysisSchema.properties.pages.items.properties.segments.items.properties.style
+  assert.deepEqual(styleSchema.required, ['fontSizePt', 'fontWeight', 'fontStyle', 'textAlign'])
+  assert.deepEqual(styleSchema.properties.fontWeight.enum, [400, 700])
+  assert.equal(styleSchema.properties.fontFamily, undefined)
+  assert.equal(styleSchema.properties.color, undefined)
+  assert.equal(styleSchema.properties.lineHeight, undefined)
+})
+
 test('Codex prompt requires complete text and readable service-object content', () => {
   const prompt = buildDocumentPrompt('document.pdf', manifest())
   assert.match(prompt, /всего видимого читаемого текста/)
@@ -31,6 +41,9 @@ test('Codex prompt requires complete text and readable service-object content', 
   assert.match(prompt, /весь уверенно читаемый текст/)
   assert.match(prompt, /page-001\.png/)
   assert.match(prompt, /Не переводи/)
+  assert.match(prompt, /Arial/)
+  assert.match(prompt, /fontWeight строго 400 или 700/)
+  assert.match(prompt, /Не определяй семейство шрифта, цвет/)
 })
 
 test('Codex arguments attach every page and enforce structured output', () => {
@@ -67,6 +80,9 @@ test('normalizes all pages, regions, styles and duplicate agent IDs', () => {
   assert.equal(normalized.pages.length, 2)
   assert.equal(normalized.pages[0].segments[0].sourceText, 'VEKALETNAME')
   assert.equal(normalized.pages[0].segments[0].style.fontWeight, 700)
+  assert.equal(normalized.pages[0].segments[0].style.fontFamily, 'Arial')
+  assert.equal(normalized.pages[0].segments[0].style.color, '#000000')
+  assert.equal(normalized.pages[0].segments[0].style.lineHeight, 1.2)
   assert.equal(normalized.pages[1].segments[0].type, 'signature')
   assert.equal(normalized.pages[1].segments[0].needsReview, true)
   assert.notEqual(normalized.pages[0].segments[0].segmentId, normalized.pages[1].segments[0].segmentId)

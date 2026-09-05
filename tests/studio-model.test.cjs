@@ -7,6 +7,7 @@ const {
   classifyText,
   fitAgentFontSizePx,
   findMemoryMatches,
+  formatServiceTranslation,
   validateScene,
 } = require('../lib/studio-model.cjs')
 const { createTranslationBatches, normalizeScene, parseJsonArray } = require('../lib/studio.cjs')
@@ -75,11 +76,14 @@ test('buildSceneFromAgent preserves normalized geometry and labels special objec
   assert.equal(scene.pages[0].heightPx, 1058.67)
   assert.ok(Math.abs(scene.objects[0].x - 476.4) < .01)
   assert.ok(Math.abs(scene.objects[0].width - 198.5) < .01)
-  assert.equal(scene.objects[0].translation, '[Штамп]\nTÜRKİYE CUMHURİYETİ')
+  assert.equal(scene.objects[0].translation, '')
   assert.equal(scene.objects[0].sourceText, 'TÜRKİYE CUMHURİYETİ')
+  assert.equal(scene.objects[0].style.fontFamily, 'Arial')
+  assert.equal(scene.objects[0].style.color, '#000000')
+  assert.equal(scene.objects[0].style.lineHeight, 1.2)
   assert.equal(scene.objects[0].style.fontWeight, 700)
   assert.ok(scene.objects[0].style.fontSizePx <= 14)
-  assert.equal(scene.objects[1].translation, '[Подпись — текст неразборчив]')
+  assert.equal(scene.objects[1].translation, '/Подпись/')
   assert.equal(scene.objects[1].status, 'needs-review')
   assert.equal(scene.recognition.mode, 'codex')
 })
@@ -97,6 +101,9 @@ test('service classification covers stamps, seals, and signatures', () => {
   assert.equal(classifyText('/Круглая печать/'), 'seal')
   assert.equal(classifyText('İmza'), 'signature')
   assert.equal(classifyText('Обычный абзац'), 'text')
+  assert.equal(formatServiceTranslation('stamp', '№ 18871'), '/Штамп: № 18871/')
+  assert.equal(formatServiceTranslation('seal', '/Печать: Турецкая Республика/'), '/Печать: Турецкая Республика/')
+  assert.equal(formatServiceTranslation('signature', 'графический росчерк'), '/Подпись/')
 })
 
 test('translation memory prioritizes exact matches and supports fuzzy matches', () => {
@@ -130,17 +137,19 @@ test('QA reports untranslated, low-confidence, outside, overflow, and overlap is
 test('normalizeScene constrains data and restores server-owned image URLs', () => {
   const input = buildScene(analysisFixture(), { documentId: 'c'.repeat(32) })
   input.pages[0].imageUrl = 'https://invalid.example/source.png'
+  input.objects[0].style.fontFamily = 'Times New Roman'
   input.objects[0].style.color = 'javascript:red'
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
-  assert.equal(normalized.objects[0].style.color, '#111827')
+  assert.equal(normalized.objects[0].style.color, '#000000')
+  assert.equal(normalized.objects[0].style.fontFamily, 'Arial')
   assert.equal(normalized.gridSize, 8)
   assert.equal(normalized.snapToGrid, true)
 })
 
 test('normalizeScene preserves safe inline text styles', () => {
   const input = buildScene(analysisFixture(), { documentId: '9'.repeat(32) })
-  input.objects[0].sourceTextStyles = [{ start: 0, end: 5, fontSizePx: 22, fontWeight: 700 }]
+  input.objects[0].sourceTextStyles = [{ start: 0, end: 5, fontSizePx: 22, fontWeight: 700, color: '#ff0000' }]
   const normalized = normalizeScene(input, '8'.repeat(32), 'Title')
   assert.deepEqual(normalized.objects[0].sourceTextStyles[0], { start: 0, end: 5, fontSizePx: 22, fontWeight: 700 })
 })

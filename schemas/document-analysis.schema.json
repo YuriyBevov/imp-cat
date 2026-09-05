@@ -112,22 +112,16 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "fontFamily",
                     "fontSizePt",
                     "fontWeight",
                     "fontStyle",
-                    "textAlign",
-                    "lineHeight",
-                    "color"
+                    "textAlign"
                   ],
                   "properties": {
-                    "fontFamily": { "type": "string", "maxLength": 120 },
                     "fontSizePt": { "type": "number", "minimum": 4, "maximum": 96 },
-                    "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
+                    "fontWeight": { "type": "integer", "enum": [400, 700] },
                     "fontStyle": { "type": "string", "enum": ["normal", "italic"] },
-                    "textAlign": { "type": "string", "enum": ["left", "center", "right", "justify"] },
-                    "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 3 },
-                    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+                    "textAlign": { "type": "string", "enum": ["left", "center", "right", "justify"] }
                   }
                 },
                 "confidence": {

@@ -11,7 +11,7 @@ function modelResult() {
       pageIndex: 0, languages: ['en'], segments: [{
         segmentId: 'segment-1', type: 'text', sourceText: 'Hello', readingOrder: 0,
         flowGroup: 'page-1-body', regions: [{ x: .1, y: .2, width: .3, height: .04 }],
-        style: { fontFamily: 'Arial', fontSizePt: 11, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+        style: { fontSizePt: 11, fontWeight: 400, fontStyle: 'normal', textAlign: 'left' },
         confidence: .99, needsReview: false, notes: '',
       }],
     }],

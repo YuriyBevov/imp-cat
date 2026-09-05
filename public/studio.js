@@ -713,7 +713,7 @@
         for (const object of visualReadingOrder(pageObjects)) {
           const row = document.createElement('div')
           row.className = 'segment-translation-row'
-          const selectable = isTranslatableType(object.type) && String(object.sourceText || '').trim()
+          const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
           if (selectable) {
             const selector = document.createElement('label')
             selector.className = 'segment-translation-selector'
@@ -866,11 +866,17 @@
 
   function isTranslatableType(type) {
     return type === 'text' || type === 'table' || type === 'table_cell'
+      || type === 'stamp' || type === 'seal' || type === 'signature'
+  }
+
+  function hasTranslationSource(object) {
+    return String(object?.sourceText || '').trim()
+      || object?.type === 'signature' || object?.type === 'stamp' || object?.type === 'seal'
   }
 
   function translationCandidates() {
     return state.scene?.objects.filter(object => (
-      !object.excluded && isTranslatableType(object.type) && String(object.sourceText || '').trim()
+      !object.excluded && isTranslatableType(object.type) && hasTranslationSource(object)
     )) || []
   }
 
@@ -913,9 +919,11 @@
     refreshTranslationSelectionControls()
   }
 
-  function servicePlaceholder(type) {
+  function servicePlaceholder(type, sourceText = '') {
     return ({
-      stamp: '[Штамп]', seal: '[Печать]', signature: '[Подпись]', handwriting: '[Рукописный текст]',
+      stamp: String(sourceText || '').trim() ? '' : '/Штамп/',
+      seal: String(sourceText || '').trim() ? '' : '/Печать/',
+      signature: '/Подпись/', handwriting: '[Рукописный текст]',
       logo: '[Логотип]', image: '[Изображение]', unknown: '[Не определено]',
     })[type] || ''
   }
@@ -1075,7 +1083,7 @@
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
       object[stylesField] = extractInlineStyles(content, object[editField])
       if (editField === 'sourceText') {
-        object.translation = ''
+        object.translation = servicePlaceholder(object.type, object.sourceText)
         object.translationTextStyles = []
         object.translationUnits = []
         ensureObjectTranslationUnits(object)
@@ -1356,6 +1364,10 @@
 
   function ensureObjectTranslationUnits(object) {
     if (!translationUnits) return []
+    if (object?.type === 'signature') {
+      object.translationUnits = []
+      return []
+    }
     return translationUnits.ensureTranslationUnits(object)
   }
 
@@ -1417,7 +1429,12 @@
   }
 
   function renderTranslationUnits(selection) {
-    const object = selection.length === 1 && isTranslatableType(selection[0].type) ? selection[0] : null
+    const object = selection.length === 1
+      && isTranslatableType(selection[0].type)
+      && selection[0].type !== 'signature'
+      && String(selection[0].sourceText || '').trim()
+      ? selection[0]
+      : null
     elements.translationUnitsCard.hidden = !object
     elements.translationUnitsList.replaceChildren()
     if (!object) return
@@ -2262,7 +2279,7 @@
       sourceTextStyles: [], translationTextStyles: [],
       x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42, rotation: 0,
       excluded: false, status: 'manual', sourceLineIds: [],
-      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
       originalBounds: { x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42 },
     })
     state.activePage = page.index
@@ -2452,7 +2469,10 @@
   function bindInspector() {
     elements.objectType.addEventListener('change', () => applySelectionChange(object => {
       object.type = elements.objectType.value
-      if (!isTranslatableType(object.type) && !object.translation) object.translation = servicePlaceholder(object.type)
+      if (object.type === 'signature') {
+        object.translation = servicePlaceholder(object.type, object.sourceText)
+        object.translationUnits = []
+      } else if (!object.translation) object.translation = servicePlaceholder(object.type, object.sourceText)
     }))
     const bindText = (control, field) => {
       control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
@@ -2461,7 +2481,7 @@
           object[field] = control.value
           object[field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'] = []
           if (field === 'sourceText') {
-            object.translation = ''
+            object.translation = servicePlaceholder(object.type, object.sourceText)
             object.translationTextStyles = []
             object.translationUnits = []
             ensureObjectTranslationUnits(object)

@@ -252,3 +252,62 @@ test('multiple selected segments are translated, persisted, and leave unselected
   assert.equal(persisted.scene.objects[1].translation, 'Перевод 2.')
   assert.equal(persisted.scene.objects[2].translation, '')
 })
+
+test('stamps, seals and signatures use the required translated service labels', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-service-translation-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = 'e'.repeat(32)
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Service translation test', filename: 'services.pdf', revision: 1, pageCount: 1, objectCount: 3,
+  }))
+  const object = (objectId, type, sourceText, y) => ({
+    id: objectId, pageIndex: 0, type, readingOrder: y, sourceText, translation: '', confidence: 1,
+    x: 40, y, width: 300, height: 40,
+    style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+    originalBounds: { x: 40, y, width: 300, height: 40 },
+  })
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Service translation test', sourceLanguage: 'tr', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [
+      object('stamp-service', 'stamp', '18871 25 Ağustos 2023', 40),
+      object('seal-service', 'seal', 'TÜRKİYE CUMHURİYETİ', 90),
+      object('signature-service', 'signature', '', 140),
+    ],
+  }))
+  const runProcess = async (command, args) => {
+    if (args[0] === 'login') return { code: 0, stdout: 'Logged in', stderr: '' }
+    if (args[0] === 'exec') {
+      const outputPath = args[args.indexOf('--output-last-message') + 1]
+      const prompt = args.at(-1)
+      const unitIds = [...prompt.matchAll(/"id":"([^"]+)"/g)].map(match => match[1])
+      assert.match(prompt, /"type":"stamp"/)
+      assert.match(prompt, /"type":"seal"/)
+      await fs.promises.writeFile(outputPath, JSON.stringify({ translations: [
+        { id: unitIds[0], translatedText: '№ 18871, 25 августа 2023 года' },
+        { id: unitIds[1], translatedText: '/Печать: Турецкая Республика/' },
+      ] }))
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 1, stdout: '', stderr: 'unexpected command' }
+  }
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  const response = await fetch(`${base}/documents/${id}/translate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectIds: ['stamp-service', 'seal-service', 'signature-service'] }),
+  })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.equal(result.translated.length, 3)
+  assert.equal(result.scene.objects[0].translation, '/Штамп: № 18871, 25 августа 2023 года/')
+  assert.equal(result.scene.objects[1].translation, '/Печать: Турецкая Республика/')
+  assert.equal(result.scene.objects[2].translation, '/Подпись/')
+  assert.equal(result.scene.objects[2].translationUnits.length, 0)
+})

@@ -312,6 +312,7 @@ test('segments view follows visual order and supports partial or full batch tran
       makeObject('second-left', 'Second left', 40, 100, 2),
       makeObject('top-left', 'Top left', 40, 40, 99),
       makeObject('second-right', 'Second right', 430, 104, 3),
+      { ...makeObject('signature', '', 40, 170, 4), type: 'signature', translation: '/Подпись/' },
     ],
   }
   const translationRequests = []
@@ -334,14 +335,14 @@ test('segments view follows visual order and supports partial or full batch tran
   dom.window.document.querySelector('#view-segments-button').click()
 
   const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object--source')].map(node => node.dataset.id)
-  assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right'])
-  assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 4)
+  assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right', 'signature'])
+  assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 5)
   const checkboxes = [...dom.window.document.querySelectorAll('[data-translation-select]')]
   const selectAll = dom.window.document.querySelector('#translation-select-all')
   const translate = dom.window.document.querySelector('#translate-button')
-  assert.equal(checkboxes.length, 4)
+  assert.equal(checkboxes.length, 5)
   assert.equal(translate.disabled, true)
-  assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 4')
+  assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 5')
 
   checkboxes[0].checked = true
   checkboxes[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }))
@@ -352,11 +353,11 @@ test('segments view follows visual order and supports partial or full batch tran
   selectAll.checked = true
   selectAll.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   assert.equal(checkboxes.every(checkbox => checkbox.checked), true)
-  assert.equal(translate.textContent, 'Перевести весь документ (4)')
+  assert.equal(translate.textContent, 'Перевести весь документ (5)')
   translate.click()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(translationRequests.length, 1)
-  assert.deepEqual(new Set(translationRequests[0].objectIds), new Set(['top-left', 'top-right', 'second-left', 'second-right']))
+  assert.deepEqual(new Set(translationRequests[0].objectIds), new Set(['top-left', 'top-right', 'second-left', 'second-right', 'signature']))
 
   const refreshedCheckboxes = [...dom.window.document.querySelectorAll('[data-translation-select]')]
   refreshedCheckboxes[0].checked = false
@@ -364,7 +365,7 @@ test('segments view follows visual order and supports partial or full batch tran
   dom.window.document.querySelector('#translate-button').click()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(translationRequests.length, 2)
-  assert.equal(translationRequests[1].objectIds.length, 3)
+  assert.equal(translationRequests[1].objectIds.length, 4)
   assert.equal(translationRequests[1].objectIds.includes(refreshedCheckboxes[0].dataset.translationSelect), false)
   dom.window.close()
 })
