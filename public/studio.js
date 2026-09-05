@@ -15,7 +15,7 @@
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
-    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), ocrReview: $('#ocr-review-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
+    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
@@ -656,13 +656,9 @@
     const recognitionSummary = recognition?.mode === 'codex'
       ? `Документ полностью разобран агентом${recognition.model ? ` ${recognition.model}` : ''}.`
       : 'Документ распознан локальным анализатором.'
-    const vision = state.metadata?.visionAugmentation
-    const visionSummary = vision
-      ? ` Vision-агент проверил ${vision.checkedPages ?? vision.pages ?? 0}/${vision.pages ?? 0} стр., добавил ${vision.added || 0}, исправил ${vision.corrected || 0} и убрал ${vision.removed || 0} ложных OCR-фрагментов.${vision.errors?.length ? ` Ошибок страниц: ${vision.errors.length}.` : ''}`
-      : state.metadata?.visionError ? ` Vision-проверка не выполнена: ${state.metadata.visionError}.` : ''
     elements.agentStatus.textContent = state.serviceStatus?.translationProviderConfigured
-      ? `${recognitionSummary} Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.${visionSummary}`
-      : `${recognitionSummary} API перевода пока не настроен: доступны ручной перевод и локальная БЗ.${visionSummary}`
+      ? `${recognitionSummary} Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.`
+      : `${recognitionSummary} API перевода пока не настроен: доступны ручной перевод и локальная БЗ.`
     elements.newDocument.hidden = false
     elements.exportDocx.disabled = false
     elements.exportPdf.disabled = false
@@ -1799,24 +1795,6 @@
     } catch (error) { showToast(error.message, true) }
   }
 
-  async function runOcrReview() {
-    if (!state.scene) return
-    elements.agentStatus.textContent = 'Проверяем полноту распознавания, склейки слов и смысл соседних сегментов…'
-    try {
-      await saveScene(true)
-      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/review-ocr`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: [...state.selected] }),
-      })
-      const report = await response.json()
-      showOcrReview(report)
-      elements.agentStatus.textContent = report.message
-      showToast(`Проверка распознавания: ${report.counts.total} рекомендаций`)
-    } catch (error) {
-      elements.agentStatus.textContent = 'Проверка распознавания не выполнена.'
-      showToast(error.message, true)
-    }
-  }
-
   function showQa(report) {
     elements.qaPanel.hidden = false
     elements.qaTitle.textContent = 'Проверка документа'
@@ -1848,103 +1826,6 @@
         if (object) focusPage(object.pageIndex, object.id)
         refreshSelection()
       })
-      elements.qaList.append(item)
-    }
-  }
-
-  function applyOcrSuggestions(suggestions) {
-    const applicable = suggestions.filter(suggestion => suggestion.applicable && suggestion.objectId && suggestion.suggestedText)
-    if (!applicable.length) return
-    checkpoint()
-    let applied = 0
-    for (const suggestion of applicable) {
-      const object = state.scene.objects.find(item => item.id === suggestion.objectId)
-      if (!object || String(object.sourceText || '').trim() !== String(suggestion.originalText || '').trim()) continue
-      object.sourceText = suggestion.suggestedText
-      object.sourceTextStyles = []
-      object.status = 'ocr-reviewed'
-      applied += 1
-    }
-    renderDocument()
-    scheduleSave()
-    showToast(`Применено правок распознавания: ${applied}`)
-  }
-
-  function showOcrReview(report) {
-    elements.qaPanel.hidden = false
-    elements.qaTitle.textContent = 'Рекомендации по распознаванию'
-    elements.qaSummary.innerHTML = `
-      <div><strong>${report.counts.total}</strong><span>всего</span></div>
-      <div><strong>${report.counts.agent}</strong><span>от агента</span></div>
-      <div><strong>${report.counts.applicable}</strong><span>можно применить</span></div>`
-    elements.qaActions.replaceChildren()
-    const highConfidence = report.suggestions.filter(item => item.applicable && item.confidence >= .82)
-    if (highConfidence.length) {
-      const applyAll = document.createElement('button')
-      applyAll.type = 'button'
-      applyAll.className = 'button button--primary'
-      applyAll.textContent = `Применить надёжные (${highConfidence.length})`
-      applyAll.addEventListener('click', () => applyOcrSuggestions(highConfidence))
-      elements.qaActions.append(applyAll)
-    }
-    elements.qaList.replaceChildren()
-    if (!report.suggestions.length) {
-      const item = document.createElement('div')
-      item.className = 'qa-item'
-      item.textContent = 'Проверка не нашла подозрительных фрагментов.'
-      elements.qaList.append(item)
-      return
-    }
-    for (const suggestion of report.suggestions) {
-      const item = document.createElement('article')
-      item.className = 'qa-suggestion'
-      item.dataset.source = suggestion.source
-      const meta = document.createElement('div')
-      meta.className = 'qa-suggestion__meta'
-      meta.innerHTML = `<span>${suggestion.source === 'agent' ? 'Агент' : 'Локальная проверка'} · стр. ${suggestion.pageIndex + 1}</span><strong>${Math.round(suggestion.confidence * 100)}%</strong>`
-      const reason = document.createElement('strong')
-      reason.textContent = suggestion.reason
-      item.append(meta, reason)
-      if (suggestion.originalText) {
-        const original = document.createElement('del')
-        original.textContent = suggestion.originalText
-        item.append(original)
-      }
-      if (suggestion.suggestedText) {
-        const proposed = document.createElement('ins')
-        proposed.textContent = suggestion.suggestedText
-        item.append(proposed)
-      }
-      const buttons = document.createElement('div')
-      buttons.className = 'qa-suggestion__buttons'
-      if (suggestion.objectId) {
-        const show = document.createElement('button')
-        show.type = 'button'
-        show.textContent = 'Показать'
-        show.addEventListener('click', () => {
-          state.selected = new Set([suggestion.objectId])
-          focusPage(suggestion.pageIndex, suggestion.objectId)
-          refreshSelection()
-        })
-        buttons.append(show)
-      }
-      if (suggestion.applicable) {
-        const apply = document.createElement('button')
-        apply.type = 'button'
-        apply.textContent = 'Применить'
-        apply.addEventListener('click', () => { applyOcrSuggestions([suggestion]); item.remove() })
-        buttons.append(apply)
-      } else if (suggestion.kind === 'missing-text' && suggestion.suggestedText) {
-        const create = document.createElement('button')
-        create.type = 'button'
-        create.textContent = 'Создать сегмент'
-        create.addEventListener('click', () => {
-          addObject({ pageIndex: suggestion.pageIndex, sourceText: suggestion.suggestedText })
-          item.remove()
-        })
-        buttons.append(create)
-      }
-      if (buttons.childElementCount) item.append(buttons)
       elements.qaList.append(item)
     }
   }
@@ -2042,7 +1923,7 @@
     state.scene.objects.push({
       id, pageIndex: page.index, type: 'text', readingOrder: state.scene.objects.length + 1,
       sourceText, translation: '', confidence: 1,
-      sourceTextStyles: [], translationTextStyles: [], ocrAlternatives: [],
+      sourceTextStyles: [], translationTextStyles: [],
       x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42, rotation: 0,
       excluded: false, status: 'manual', sourceLineIds: [],
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
@@ -2105,7 +1986,6 @@
     next.id = id
     next.readingOrder = state.scene.objects.length + 1
     next.sourceLineIds = []
-    next.ocrAlternatives = []
     next.confidence = 1
     next.status = 'manual-split'
     next.sourceText = field === 'sourceText' ? extractedText : ''
@@ -2354,7 +2234,6 @@
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
     elements.analyze.addEventListener('click', () => runAgent('analyze', 'Проверяем порядок чтения и типы объектов…'))
     elements.reanalyze.addEventListener('click', reanalyzeSource)
-    elements.ocrReview.addEventListener('click', runOcrReview)
     elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
     elements.translate.addEventListener('click', translateSelection)
     elements.qa.addEventListener('click', runQa)
@@ -2417,7 +2296,7 @@
       if (state.serviceStatus.documentAnalysisMode === 'codex') {
         const ready = state.serviceStatus.codexAvailable && state.serviceStatus.codexAuthenticated
         elements.analysisServiceNote.textContent = ready
-          ? `Агент ${state.serviceStatus.documentAgentModel || 'Codex'} готов. Изображения страниц будут переданы OpenAI; сторонние OCR-сервисы не используются.`
+          ? `Агент ${state.serviceStatus.documentAgentModel || 'Codex'} готов. Изображения страниц будут переданы OpenAI; локальное извлечение текста не выполняется.`
           : `Агент не готов: ${state.serviceStatus.codexStatusError || 'выполните codex login'}.`
         elements.fileInput.disabled = !ready
       } else {

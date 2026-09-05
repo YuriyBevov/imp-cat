@@ -15,7 +15,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
-    'memory-search-button', 'approve-button', 'merge-button', 'split-button', 'ocr-review-button',
+    'memory-search-button', 'approve-button', 'merge-button', 'split-button',
     'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
@@ -287,7 +287,7 @@ test('segments view follows visual page order from top-left instead of stale rea
     id: idValue, pageIndex: 0, type: 'text', readingOrder, sourceText: text, translation: '', confidence: .98,
     x, y, width: 180, height: 32, rotation: 0, excluded: false,
     style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
-    sourceTextStyles: [], translationTextStyles: [], ocrAlternatives: [], originalBounds: { x, y, width: 180, height: 32 },
+    sourceTextStyles: [], translationTextStyles: [], originalBounds: { x, y, width: 180, height: 32 },
   })
   const scene = {
     title: 'Reading order', sourceLanguage: 'en', targetLanguage: 'ru',
@@ -335,7 +335,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
       sourceText: 'Source', translation: 'Перевод', confidence: .98,
       x: 50, y: 60, width: 200, height: 32, rotation: 0, excluded: false,
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
-      sourceTextStyles: [], translationTextStyles: [], ocrAlternatives: [],
+      sourceTextStyles: [], translationTextStyles: [],
       originalBounds: { x: 50, y: 60, width: 200, height: 32 },
     }],
   }
