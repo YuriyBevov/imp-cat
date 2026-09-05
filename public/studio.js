@@ -2,7 +2,8 @@
   const $ = selector => document.querySelector(selector)
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
-    loadingView: $('#loading-view'), loadingMessage: $('#loading-message'), studioView: $('#studio-view'),
+    loadingView: $('#loading-view'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), studioView: $('#studio-view'),
+    documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'), addDocumentTab: $('#add-document-tab'),
     documentTitle: $('#document-title'), documentStatus: $('#document-status'), newDocument: $('#new-document-button'),
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), pageCount: $('#page-count'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
@@ -26,6 +27,9 @@
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
+    aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
+    aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
+    aitunnelApiKey: $('#aitunnel-api-key'), aiProviderStatus: $('#ai-provider-status'), saveAiSettings: $('#save-ai-settings'), removeAitunnelKey: $('#remove-aitunnel-key'),
   }
 
   const state = {
@@ -48,6 +52,10 @@
     sourceCollapsed: false,
     pendingWorkbenchZoom: null,
     pendingSourceZoom: null,
+    tabs: new Map(),
+    activeTabKey: null,
+    jobsPollTimer: null,
+    providerSettings: null,
   }
 
   function showToast(message, isError = false) {
@@ -68,32 +76,270 @@
     return response
   }
 
+  function pemToArrayBuffer(pem) {
+    const base64 = String(pem || '').replace(/-----BEGIN PUBLIC KEY-----|-----END PUBLIC KEY-----|\s+/g, '')
+    const binary = atob(base64)
+    return Uint8Array.from(binary, character => character.charCodeAt(0)).buffer
+  }
+
+  async function encryptApiKey(secret, publicKeyPem) {
+    if (!window.crypto?.subtle) throw new Error('Браузер не поддерживает безопасное шифрование ключа')
+    const publicKey = await window.crypto.subtle.importKey(
+      'spki',
+      pemToArrayBuffer(publicKeyPem),
+      { name: 'RSA-OAEP', hash: 'SHA-256' },
+      false,
+      ['encrypt']
+    )
+    const encrypted = await window.crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, new TextEncoder().encode(secret))
+    let binary = ''
+    for (const byte of new Uint8Array(encrypted)) binary += String.fromCharCode(byte)
+    return btoa(binary)
+  }
+
+  function renderProviderSettings(settings) {
+    state.providerSettings = settings
+    elements.aiProviderSelect.value = settings.activeProvider || 'aitunnel'
+    elements.aitunnelModel.value = settings.model || ''
+    elements.aitunnelApiKey.value = ''
+    elements.aitunnelSettings.hidden = elements.aiProviderSelect.value !== 'aitunnel'
+    elements.removeAitunnelKey.hidden = settings.keySource !== 'session'
+    const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelConfigured
+    elements.aiProviderStatus.classList.toggle('is-error', !activeReady)
+    elements.aiProviderStatus.textContent = settings.activeProvider === 'codex'
+      ? settings.codexConfigured
+        ? 'Codex готов: перевод использует текущий вход через ChatGPT.'
+        : 'Codex недоступен: проверьте установку CLI и выполните codex login.'
+      : settings.aitunnelConfigured
+        ? `AITunnel готов · модель ${settings.model} · ключ ${settings.keySource === 'session' ? 'в памяти процесса' : 'из локального окружения'}.`
+        : `AITunnel не настроен. Укажите модель и ключ; endpoint: ${settings.apiHost}.`
+  }
+
+  async function loadProviderSettings() {
+    const response = await api('/api/studio/provider')
+    const settings = await response.json()
+    renderProviderSettings(settings)
+    return settings
+  }
+
+  async function openProviderSettings() {
+    elements.aiSettingsModal.hidden = false
+    elements.aiProviderStatus.textContent = 'Проверяем настройки…'
+    try { await loadProviderSettings() } catch (error) {
+      elements.aiProviderStatus.classList.add('is-error')
+      elements.aiProviderStatus.textContent = error.message
+    }
+  }
+
+  function closeProviderSettings() {
+    elements.aitunnelApiKey.value = ''
+    elements.aiSettingsModal.hidden = true
+  }
+
+  async function saveProviderSettings() {
+    elements.saveAiSettings.disabled = true
+    try {
+      const provider = elements.aiProviderSelect.value
+      const payload = { provider, model: elements.aitunnelModel.value.trim() }
+      const secret = elements.aitunnelApiKey.value.trim()
+      if (secret) {
+        if (!state.providerSettings?.publicKey) await loadProviderSettings()
+        payload.encryptedApiKey = await encryptApiKey(secret, state.providerSettings.publicKey)
+      }
+      const response = await api('/api/studio/provider', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      })
+      renderProviderSettings(await response.json())
+      await loadServiceStatus()
+      showToast(provider === 'codex' ? 'Перевод переключён на Codex' : 'AITunnel настроен безопасно')
+      closeProviderSettings()
+    } catch (error) {
+      elements.aitunnelApiKey.value = ''
+      elements.aiProviderStatus.classList.add('is-error')
+      elements.aiProviderStatus.textContent = error.message
+    } finally {
+      elements.saveAiSettings.disabled = false
+    }
+  }
+
+  async function removeAitunnelKey() {
+    try {
+      const response = await api('/api/studio/provider/key', { method: 'DELETE' })
+      renderProviderSettings(await response.json())
+      await loadServiceStatus()
+      showToast('Ключ удалён из памяти процесса')
+    } catch (error) { showToast(error.message, true) }
+  }
+
   function setView(name) {
     elements.uploadView.hidden = name !== 'upload'
     elements.loadingView.hidden = name !== 'loading'
     elements.studioView.hidden = name !== 'studio'
   }
 
-  async function upload(file) {
-    if (!file) return
-    setView('loading')
-    elements.loadingMessage.textContent = `Анализируем «${file.name}»…`
-    try {
-      const response = await api('/api/studio/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
-        body: file,
+  function updateTabsVisibility() {
+    const visible = state.tabs.size > 0
+    elements.documentTabs.hidden = !visible
+    document.body.classList.toggle('has-document-tabs', visible)
+  }
+
+  function renderDocumentTabs() {
+    elements.documentTabsList.replaceChildren()
+    for (const tab of state.tabs.values()) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = `document-tab${tab.key === state.activeTabKey ? ' is-active' : ''}`
+      button.dataset.status = tab.status
+      button.title = tab.error || tab.title
+      const dot = document.createElement('span')
+      dot.className = 'document-tab__dot'
+      const title = document.createElement('span')
+      title.className = 'document-tab__title'
+      title.textContent = tab.status === 'running' || tab.status === 'queued'
+        ? `${tab.title} · ${tab.progress || 0}%`
+        : tab.title
+      const close = document.createElement('span')
+      close.className = 'document-tab__close'
+      close.textContent = '×'
+      close.title = 'Закрыть вкладку'
+      close.addEventListener('click', event => {
+        event.stopPropagation()
+        closeTab(tab.key)
       })
-      const documentData = await response.json()
-      openDocument(documentData)
-      history.replaceState(null, '', `/?document=${documentData.metadata.id}`)
-      showToast(`Документ готов: ${documentData.scene.pages.length} стр., ${documentData.scene.objects.length} сегментов`)
-    } catch (error) {
-      setView('upload')
-      showToast(error.message, true)
-    } finally {
-      elements.fileInput.value = ''
+      button.append(dot, title, close)
+      button.addEventListener('click', () => activateTab(tab.key))
+      elements.documentTabsList.append(button)
     }
+    updateTabsVisibility()
+  }
+
+  function updateLoadingFromTab(tab) {
+    const progress = Math.max(0, Math.min(100, Number(tab?.progress) || 0))
+    elements.loadingMessage.textContent = tab?.error || tab?.message || `Анализируем «${tab?.title || 'документ'}»…`
+    elements.loadingProgress.style.width = `${progress}%`
+    elements.loadingProgressLabel.textContent = `${progress}%`
+  }
+
+  function rememberCurrentDocument() {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (tab?.status === 'completed' && state.scene && state.metadata) {
+      tab.documentData = { metadata: state.metadata, scene: state.scene }
+    }
+  }
+
+  async function activateTab(key, forceReload = false) {
+    const tab = state.tabs.get(key)
+    if (!tab) return
+    if (key !== state.activeTabKey) {
+      rememberCurrentDocument()
+      if (state.saveTimer) {
+        try { await saveScene(true) } catch {}
+      }
+    }
+    state.activeTabKey = key
+    renderDocumentTabs()
+    if (tab.status === 'failed') {
+      setView('loading')
+      updateLoadingFromTab(tab)
+      elements.loadingProgressLabel.textContent = 'Ошибка'
+      return
+    }
+    if (tab.status !== 'completed') {
+      setView('loading')
+      updateLoadingFromTab(tab)
+      history.replaceState(null, '', `/?job=${tab.jobId}`)
+      return
+    }
+    try {
+      if (!tab.documentData || forceReload) {
+        const response = await api(`/api/studio/documents/${tab.documentId}`)
+        tab.documentData = await response.json()
+      }
+      openDocument(tab.documentData)
+      history.replaceState(null, '', `/?document=${tab.documentId}`)
+    } catch (error) {
+      tab.status = 'failed'
+      tab.error = error.message
+      renderDocumentTabs()
+      setView('loading')
+      updateLoadingFromTab(tab)
+    }
+  }
+
+  function closeTab(key) {
+    const keys = [...state.tabs.keys()]
+    const index = keys.indexOf(key)
+    const wasActive = state.activeTabKey === key
+    state.tabs.delete(key)
+    if (wasActive) {
+      state.activeTabKey = null
+      state.metadata = null
+      state.scene = null
+      const nextKey = keys[index + 1] || keys[index - 1]
+      if (nextKey && state.tabs.has(nextKey)) activateTab(nextKey)
+      else {
+        setView('upload')
+        history.replaceState(null, '', '/')
+      }
+    }
+    renderDocumentTabs()
+  }
+
+  async function createUploadJob(file) {
+    const response = await api('/api/studio/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+      body: file,
+    })
+    const { job } = await response.json()
+    const tab = { key: job.id, jobId: job.id, documentId: job.documentId, title: file.name, ...job }
+    state.tabs.set(tab.key, tab)
+    return tab
+  }
+
+  async function upload(files) {
+    const selectedFiles = [...(files || [])]
+    if (!selectedFiles.length) return
+    elements.fileInput.value = ''
+    const results = await Promise.allSettled(selectedFiles.map(createUploadJob))
+    const created = results.filter(result => result.status === 'fulfilled').map(result => result.value)
+    const failed = results.filter(result => result.status === 'rejected')
+    renderDocumentTabs()
+    if (created.length) {
+      await activateTab(created[0].key)
+      scheduleJobsPoll(100)
+      showToast(`Добавлено документов: ${created.length}`)
+    }
+    if (failed.length) showToast(`Не удалось загрузить файлов: ${failed.length}. ${failed[0].reason?.message || ''}`, true)
+  }
+
+  function scheduleJobsPoll(delay = 1_500) {
+    clearTimeout(state.jobsPollTimer)
+    if (![...state.tabs.values()].some(tab => tab.status === 'queued' || tab.status === 'running')) return
+    state.jobsPollTimer = setTimeout(pollJobs, delay)
+  }
+
+  async function pollJobs() {
+    const pending = [...state.tabs.values()].filter(tab => tab.status === 'queued' || tab.status === 'running')
+    await Promise.all(pending.map(async tab => {
+      try {
+        const response = await api(`/api/studio/jobs/${tab.jobId}`)
+        const { job } = await response.json()
+        Object.assign(tab, job, { key: tab.key, jobId: tab.jobId, title: tab.title })
+        if (tab.key === state.activeTabKey) {
+          if (tab.status === 'completed') {
+            tab.documentId = job.documentId
+            await activateTab(tab.key, true)
+            showToast(`Документ готов: ${job.message}`)
+          } else updateLoadingFromTab(tab)
+        }
+      } catch (error) {
+        tab.status = 'failed'
+        tab.error = error.message
+      }
+    }))
+    renderDocumentTabs()
+    scheduleJobsPoll()
   }
 
   function openDocument(documentData) {
@@ -104,6 +350,15 @@
     state.future = []
     state.activePage = 0
     state.sourceRenderedPage = null
+    const activeTab = state.tabs.get(state.activeTabKey)
+    if (activeTab) {
+      activeTab.documentId = documentData.metadata.id
+      activeTab.status = 'completed'
+      activeTab.progress = 100
+      activeTab.documentData = documentData
+      activeTab.title = documentData.scene.title || activeTab.title
+    }
+    renderDocumentTabs()
     elements.documentTitle.textContent = state.scene.title
     elements.documentStatus.textContent = `${state.scene.pages.length} стр. · ${state.scene.objects.length} сегментов · сохранено локально`
     elements.pageCount.textContent = state.scene.pages.length
@@ -158,10 +413,16 @@
         heading.innerHTML = `<span>Страница ${page.index + 1}</span><small>${pageObjects.length} сегм.</small>`
         const list = document.createElement('div')
         list.className = 'segments-list'
+        const columnHeadings = document.createElement('div')
+        columnHeadings.className = 'segments-column-headings'
+        columnHeadings.innerHTML = '<span>Распознанный исходник</span><span>Перевод</span>'
         for (const object of visualReadingOrder(pageObjects)) {
-          list.append(createObjectElement(object))
+          const row = document.createElement('div')
+          row.className = 'segment-translation-row'
+          row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
+          list.append(row)
         }
-        surface.append(heading, list)
+        surface.append(heading, columnHeadings, list)
       } else {
         const boundary = document.createElement('div')
         boundary.className = 'content-boundary'
@@ -323,9 +584,9 @@
     return result
   }
 
-  function renderTextContent(content, object) {
-    const text = objectOutput(object)
-    const field = objectOutputField(object)
+  function renderTextContent(content, object, requestedField = null) {
+    const field = requestedField || objectOutputField(object)
+    const text = requestedField ? String(object[field] || '') : objectOutput(object)
     content.dataset.outputField = field
     const ranges = styleRanges(object, field).filter(range => range.end > range.start && range.start < text.length)
     if (!ranges.length) {
@@ -361,7 +622,7 @@
     content.replaceChildren(fragment)
   }
 
-  function getTextSelection(content, objectId) {
+  function getTextSelection(content, objectId, field = content?.dataset?.outputField) {
     const selection = window.getSelection?.()
     if (!selection?.rangeCount) return null
     const range = selection.getRangeAt(0)
@@ -369,7 +630,7 @@
     const before = range.cloneRange()
     before.selectNodeContents(content)
     before.setEnd(range.startContainer, range.startOffset)
-    return { objectId, start: before.toString().length, end: before.toString().length + range.toString().length }
+    return { objectId, field, start: before.toString().length, end: before.toString().length + range.toString().length }
   }
 
   function rememberTextSelection(content, objectId) {
@@ -403,10 +664,13 @@
       : []
   }
 
-  function createObjectElement(object) {
+  function createObjectElement(object, requestedField = null) {
+    const displayField = requestedField || objectOutputField(object)
+    const editField = requestedField || 'translation'
     const node = document.createElement('article')
     node.className = 'scene-object'
-    if (!object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
+    if (requestedField) node.classList.add(`scene-object--${requestedField === 'sourceText' ? 'source' : 'translation'}`)
+    if (editField === 'translation' && !object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
     if (object.confidence < .76) node.classList.add('is-low-confidence')
     if (state.selected.has(object.id)) node.classList.add('is-selected')
     node.dataset.id = object.id
@@ -435,7 +699,8 @@
     content.className = 'scene-object__content'
     content.contentEditable = 'true'
     content.spellcheck = true
-    renderTextContent(content, object)
+    content.dataset.editField = editField
+    renderTextContent(content, object, displayField)
     content.addEventListener('focus', () => {
       if (!state.selected.has(object.id)) selectOnly(object.id)
       if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
@@ -443,11 +708,15 @@
     for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
     content.addEventListener('blur', () => { state.textCheckpoint = false; scheduleSave() })
     content.addEventListener('input', () => {
-      object.translation = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
-      object.translationTextStyles = extractInlineStyles(content, object.translation)
+      object[editField] = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
+      const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
+      object[stylesField] = extractInlineStyles(content, object[editField])
       object.status = 'edited'
       node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
-      if (state.selected.size === 1) elements.translationText.value = object.translation
+      if (state.selected.size === 1) {
+        if (editField === 'translation') elements.translationText.value = object.translation
+        else elements.sourceText.value = object.sourceText
+      }
       scheduleSave()
       requestAnimationFrame(() => {
         if (state.viewMode === 'segments') refreshSegmentsViewHeights()
@@ -1163,6 +1432,8 @@
       })
       const data = await response.json()
       state.metadata = data.metadata
+      const activeTab = state.tabs.get(state.activeTabKey)
+      if (activeTab?.status === 'completed') activeTab.documentData = { metadata: state.metadata, scene: state.scene }
       elements.documentStatus.textContent = `${state.scene.pages.length} стр. · ${state.scene.objects.filter(item => !item.excluded).length} в сборке · изменения сохранены`
     } catch (error) {
       showToast(`Не удалось сохранить: ${error.message}`, true)
@@ -1526,7 +1797,7 @@
     const object = objects[0]
     const selection = state.lastTextSelection
     if (!selection || selection.objectId !== object.id) return showToast('Поставьте курсор или выделите текст внутри сегмента', true)
-    const field = objectOutputField(object)
+    const field = selection.field || objectOutputField(object)
     const styleField = field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
     const text = String(object[field] || '')
     const start = Math.max(0, Math.min(text.length, selection.start))
@@ -1569,12 +1840,14 @@
   function selectedTextRange() {
     const objects = selectedObjects()
     if (objects.length !== 1) return null
-    const liveContent = elements.canvas.querySelector(`[data-id="${CSS.escape(objects[0].id)}"] .scene-object__content`)
+    const liveContent = [...elements.canvas.querySelectorAll(`[data-id="${CSS.escape(objects[0].id)}"] .scene-object__content`)]
+      .find(content => getTextSelection(content, objects[0].id))
     const liveRange = liveContent ? getTextSelection(liveContent, objects[0].id) : null
     const range = liveRange && liveRange.end > liveRange.start ? liveRange : state.lastTextSelection
     if (!range || range.objectId !== objects[0].id || range.end <= range.start) return null
-    const text = objectOutput(objects[0])
-    return { object: objects[0], field: objectOutputField(objects[0]), start: Math.max(0, Math.min(text.length, range.start)), end: Math.max(0, Math.min(text.length, range.end)) }
+    const field = range.field || objectOutputField(objects[0])
+    const text = String(objects[0][field] || '')
+    return { object: objects[0], field, start: Math.max(0, Math.min(text.length, range.start)), end: Math.max(0, Math.min(text.length, range.end)) }
   }
 
   function applySelectedTextStyle(patch) {
@@ -1706,24 +1979,34 @@
 
   function renderSelectedText(field) {
     for (const object of selectedObjects()) {
-      const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
-      if (!node) continue
-      renderTextContent(node.querySelector('.scene-object__content'), object)
-      node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
+      const nodes = elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)
+      for (const node of nodes) {
+        const content = node.querySelector('.scene-object__content')
+        if (!content) continue
+        const requestedField = state.viewMode === 'segments' ? content.dataset.editField : null
+        if (state.viewMode !== 'segments' || requestedField === field) renderTextContent(content, object, requestedField)
+        node.classList.toggle('is-untranslated', content.dataset.editField !== 'sourceText' && !object.translation && isTranslatableType(object.type))
+      }
     }
     if (state.viewMode === 'segments') requestAnimationFrame(refreshSegmentsViewHeights)
   }
 
   function bindEvents() {
-    elements.fileInput.addEventListener('change', () => upload(elements.fileInput.files[0]))
+    elements.fileInput.addEventListener('change', () => upload(elements.fileInput.files))
     for (const eventName of ['dragenter', 'dragover']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.add('is-dragover') })
     for (const eventName of ['dragleave', 'drop']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.remove('is-dragover') })
-    elements.uploadZone.addEventListener('drop', event => upload([...event.dataTransfer.files][0]))
+    elements.uploadZone.addEventListener('drop', event => upload(event.dataTransfer.files))
     elements.newDocument.addEventListener('click', async () => {
       if (state.saveTimer) await saveScene()
-      history.replaceState(null, '', '/')
-      location.reload()
+      elements.fileInput.click()
     })
+    elements.addDocumentTab.addEventListener('click', () => elements.fileInput.click())
+    elements.aiSettingsButton.addEventListener('click', openProviderSettings)
+    elements.aiSettingsClose.addEventListener('click', closeProviderSettings)
+    elements.aiSettingsModal.addEventListener('pointerdown', event => { if (event.target === elements.aiSettingsModal) closeProviderSettings() })
+    elements.aiProviderSelect.addEventListener('change', () => { elements.aitunnelSettings.hidden = elements.aiProviderSelect.value !== 'aitunnel' })
+    elements.saveAiSettings.addEventListener('click', saveProviderSettings)
+    elements.removeAitunnelKey.addEventListener('click', removeAitunnelKey)
     elements.zoomOut.addEventListener('click', () => setZoom(state.zoom - .1))
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
@@ -1812,6 +2095,7 @@
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        if (!elements.aiSettingsModal.hidden) closeProviderSettings()
         state.selected.clear()
         state.lastTextSelection = null
         elements.qaPanel.hidden = true
@@ -1820,6 +2104,7 @@
       }
     })
     window.addEventListener('pagehide', () => {
+      clearTimeout(state.jobsPollTimer)
       if (!state.saveTimer || !state.metadata) return
       fetch(`/api/studio/documents/${state.metadata.id}/scene`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.scene), keepalive: true,
@@ -1848,7 +2133,29 @@
   }
 
   async function restoreDocumentFromUrl() {
-    const id = new URL(location.href).searchParams.get('document')
+    const parameters = new URL(location.href).searchParams
+    const id = parameters.get('document')
+    const jobId = parameters.get('job')
+    if (/^[a-f0-9]{32}$/.test(jobId || '')) {
+      setView('loading')
+      try {
+        const response = await api(`/api/studio/jobs/${jobId}`)
+        const { job } = await response.json()
+        const tab = { key: job.id, jobId: job.id, title: job.title, ...job }
+        state.tabs.set(tab.key, tab)
+        state.activeTabKey = tab.key
+        renderDocumentTabs()
+        if (tab.status === 'completed') await activateTab(tab.key, true)
+        else {
+          updateLoadingFromTab(tab)
+          scheduleJobsPoll(100)
+        }
+        return
+      } catch (error) {
+        history.replaceState(null, '', '/')
+        showToast(error.message, true)
+      }
+    }
     if (!/^[a-f0-9]{32}$/.test(id || '')) {
       setView('upload')
       return
@@ -1857,7 +2164,14 @@
     elements.loadingMessage.textContent = 'Открываем сохранённый локальный проект…'
     try {
       const response = await api(`/api/studio/documents/${id}`)
-      openDocument(await response.json())
+      const documentData = await response.json()
+      const key = `document-${id}`
+      state.tabs.set(key, {
+        key, jobId: null, documentId: id, title: documentData.scene.title,
+        status: 'completed', progress: 100, documentData,
+      })
+      state.activeTabKey = key
+      openDocument(documentData)
     } catch (error) {
       history.replaceState(null, '', '/')
       setView('upload')

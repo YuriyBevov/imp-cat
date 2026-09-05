@@ -20,6 +20,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
+    'document-tabs', 'add-document-tab', 'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
@@ -40,6 +41,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /setDocumentView/)
   assert.match(client, /toggleSourcePanel/)
   assert.match(client, /agent\/reanalyze/)
+  assert.match(client, /\/api\/studio\/jobs/)
+  assert.match(client, /encryptApiKey/)
+  assert.match(client, /segment-translation-row/)
   assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)
@@ -79,6 +83,45 @@ test('studio client boots on the upload screen without runtime errors', async ()
   dom.window.close()
 })
 
+test('multiple dropped files create independent asynchronous document tabs', async () => {
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  let created = 0
+  dom.window.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/status')) return {
+      ok: true,
+      json: async () => ({ codexAvailable: true, codexAuthenticated: true, documentAnalysisMode: 'codex', translationProviderConfigured: false }),
+    }
+    if (String(url).endsWith('/jobs') && options.method === 'POST') {
+      created += 1
+      const id = String(created).repeat(32)
+      return {
+        ok: true,
+        json: async () => ({ job: { id, documentId: String(created + 4).repeat(32), title: `file-${created}.png`, status: 'queued', progress: 0, message: 'Ожидает обработки' } }),
+      }
+    }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  const files = [
+    new dom.window.File(['first'], 'first.png', { type: 'image/png' }),
+    new dom.window.File(['second'], 'second.png', { type: 'image/png' }),
+  ]
+  const drop = new dom.window.Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(drop, 'dataTransfer', { value: { files } })
+  dom.window.document.querySelector('#upload-zone').dispatchEvent(drop)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  assert.equal(created, 2)
+  assert.equal(dom.window.document.querySelectorAll('.document-tab').length, 2)
+  assert.equal(dom.window.document.querySelector('#document-tabs').hidden, false)
+  assert.equal(dom.window.document.body.classList.contains('has-document-tabs'), true)
+  assert.equal(dom.window.document.querySelector('#loading-view').hidden, false)
+  dom.window.close()
+})
+
 test('segments view follows visual page order from top-left instead of stale readingOrder', async () => {
   const id = '2'.repeat(32)
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
@@ -111,8 +154,9 @@ test('segments view follows visual page order from top-left instead of stale rea
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#view-segments-button').click()
 
-  const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object')].map(node => node.dataset.id)
+  const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object--source')].map(node => node.dataset.id)
   assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right'])
+  assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 4)
   dom.window.close()
 })
 
@@ -167,7 +211,9 @@ test('studio restores a saved scene and renders editable page objects', async ()
 
   dom.window.document.querySelector('#view-segments-button').click()
   assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), true)
-  assert.equal(dom.window.document.querySelectorAll('.studio-page--segments .scene-object').length, 1)
+  assert.equal(dom.window.document.querySelectorAll('.studio-page--segments .scene-object').length, 2)
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').textContent, 'Source')
+  assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').textContent, 'Перевод')
   assert.match(dom.window.document.querySelector('.segments-page-heading').textContent, /Страница 1/)
   dom.window.document.querySelector('#view-layout-button').click()
   assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), false)

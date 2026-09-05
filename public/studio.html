@@ -17,6 +17,7 @@
         <span id="document-status">Загрузите PDF или изображение</span>
       </div>
       <div class="appbar__actions">
+        <button id="ai-settings-button" class="button" type="button">AI-провайдер</button>
         <button id="undo-button" class="icon-button" type="button" title="Отменить (Cmd/Ctrl+Z)" disabled>↶</button>
         <button id="redo-button" class="icon-button" type="button" title="Повторить" disabled>↷</button>
         <button id="new-document-button" class="button" type="button" hidden>Другой документ</button>
@@ -33,14 +34,19 @@
       <button class="workflow__step" data-stage="qa"><span>5</span>Проверка</button>
     </nav>
 
+    <nav id="document-tabs" class="document-tabs" aria-label="Открытые документы" hidden>
+      <div id="document-tabs-list" class="document-tabs__list"></div>
+      <button id="add-document-tab" class="document-tabs__add" type="button" title="Добавить документы">＋</button>
+    </nav>
+
     <main id="upload-view" class="upload-view">
       <section id="upload-zone" class="upload-card">
-        <input id="file-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.heic,.bmp,application/pdf,image/*" hidden />
+        <input id="file-input" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.heic,.bmp,application/pdf,image/*" hidden />
         <div class="upload-card__icon">PDF</div>
         <p class="eyebrow">Новый проект</p>
         <h1>Загрузите документ на перевод</h1>
         <p>PDF, скан или изображение. Страницы будут подготовлены локально и разобраны агентом до открытия редактора.</p>
-        <label class="button button--primary button--large" for="file-input">Выбрать документ</label>
+        <label class="button button--primary button--large" for="file-input">Выбрать документы</label>
         <small id="analysis-service-note">Проверяем готовность агента анализа…</small>
       </section>
       <section class="pipeline-card">
@@ -55,6 +61,8 @@
       <div class="loader"></div>
       <h1>Готовим документ к переводу</h1>
       <p id="loading-message">Рендерим страницы и выполняем полный анализ документа агентом…</p>
+      <div class="job-progress" aria-label="Прогресс обработки"><span id="loading-progress"></span></div>
+      <strong id="loading-progress-label" class="job-progress__label">0%</strong>
       <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
@@ -290,6 +298,35 @@
 
     <div id="selection-box" class="selection-box" hidden></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="ai-settings-modal" class="modal-backdrop" hidden>
+      <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
+        <div class="settings-dialog__header">
+          <div><p class="eyebrow">Настройки</p><h2 id="ai-settings-title">AI-провайдер перевода</h2></div>
+          <button id="ai-settings-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <p class="settings-dialog__intro">Анализ документов по-прежнему доступен через Codex. Для перевода можно выбрать Codex или AITunnel.</p>
+        <label>Провайдер
+          <select id="ai-provider-select">
+            <option value="aitunnel">AITunnel API</option>
+            <option value="codex">Codex · вход через ChatGPT</option>
+          </select>
+        </label>
+        <div id="aitunnel-settings" class="settings-dialog__fields">
+          <label>Модель AITunnel
+            <input id="aitunnel-model" type="text" autocomplete="off" placeholder="Название модели из AITunnel" />
+          </label>
+          <label>API-ключ AITunnel
+            <input id="aitunnel-api-key" type="password" maxlength="180" autocomplete="new-password" placeholder="Ключ не сохраняется на диск" />
+          </label>
+          <small>Ключ шифруется RSA-OAEP в браузере, хранится только в памяти backend и передаётся AITunnel по HTTPS. После перезапуска сервера его нужно ввести снова.</small>
+        </div>
+        <div id="ai-provider-status" class="provider-status">Проверяем настройки…</div>
+        <div class="settings-dialog__actions">
+          <button id="remove-aitunnel-key" class="button button--danger" type="button">Удалить ключ из памяти</button>
+          <button id="save-ai-settings" class="button button--primary" type="button">Сохранить</button>
+        </div>
+      </section>
+    </div>
     <script src="/studio.js"></script>
   </body>
 </html>
