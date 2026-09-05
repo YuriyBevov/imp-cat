@@ -20,7 +20,9 @@ test('studio exposes the complete source-to-export workflow', () => {
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
-    'document-tabs', 'add-document-tab', 'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key',
+    'document-tabs', 'add-document-tab', 'document-library-button', 'document-library-modal', 'document-library-list',
+    'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button',
+    'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
@@ -43,6 +45,11 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /agent\/reanalyze/)
   assert.match(client, /\/api\/studio\/jobs/)
   assert.match(client, /encryptApiKey/)
+  assert.match(client, /\/api\/studio\/provider\/models/)
+  assert.match(client, /\/api\/studio\/provider\/test/)
+  assert.match(client, /\/api\/studio\/documents\?scope=all/)
+  assert.match(client, /setDocumentArchived/)
+  assert.match(client, /deleteLibraryDocument/)
   assert.match(client, /segment-translation-row/)
   assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
@@ -80,6 +87,155 @@ test('studio client boots on the upload screen without runtime errors', async ()
   assert.equal(dom.window.document.querySelector('#upload-view').hidden, false)
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, true)
   assert.deepEqual(errors, [])
+  dom.window.close()
+})
+
+test('AI settings load the live AITunnel catalog and disable text-only models', async () => {
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async url => {
+    if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ documentAnalysisMode: 'codex', codexAvailable: true, codexAuthenticated: true }) }
+    if (String(url).endsWith('/provider/models')) return { ok: true, json: async () => ({ models: [
+      { id: 'vision-a', provider: 'test', description: 'Vision', documentCapable: true },
+      { id: 'text-a', provider: 'test', description: 'Text', documentCapable: false },
+    ] }) }
+    if (String(url).endsWith('/provider')) return { ok: true, json: async () => ({
+      activeProvider: 'aitunnel', model: 'vision-a', keySource: 'session', aitunnelConfigured: true,
+      aitunnelVerified: false, codexConfigured: true, apiHost: 'api.aitunnel.ru', publicKey: '',
+    }) }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  dom.window.document.querySelector('#ai-settings-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  const options = [...dom.window.document.querySelector('#aitunnel-model').options]
+  assert.equal(options.find(option => option.value === 'vision-a').disabled, false)
+  assert.equal(options.find(option => option.value === 'text-a').disabled, true)
+  assert.equal(dom.window.document.querySelector('#aitunnel-model').value, 'vision-a')
+  assert.match(dom.window.document.querySelector('#aitunnel-model-note').textContent, /Доступно 1/)
+  dom.window.close()
+})
+
+test('failed document jobs stop polling and show a terminal error state', async () => {
+  const jobId = '3'.repeat(32)
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?job=${jobId}`,
+  })
+  let jobRequests = 0
+  dom.window.fetch = async url => {
+    if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ documentAnalysisMode: 'codex', codexAvailable: true, codexAuthenticated: true }) }
+    if (String(url).endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (String(url).endsWith(`/jobs/${jobId}`)) {
+      jobRequests += 1
+      return { ok: true, json: async () => ({ job: {
+        id: jobId, title: 'failed.pdf', status: 'failed', stage: 'failed', progress: 30,
+        error: 'AITunnel вернул некорректный JSON анализа',
+      } }) }
+    }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 120))
+  assert.equal(jobRequests, 1)
+  assert.equal(dom.window.document.querySelector('#loading-view').classList.contains('is-failed'), true)
+  assert.equal(dom.window.document.querySelector('#loading-title').textContent, 'Обработка остановлена')
+  assert.equal(dom.window.document.querySelector('#loading-progress-label').textContent, 'Ошибка')
+  assert.equal(dom.window.document.querySelector('#retry-job-button').hidden, false)
+  dom.window.close()
+})
+
+test('failed document job can be restarted from the error screen', async () => {
+  const failedJobId = '7'.repeat(32)
+  const retryJobId = '8'.repeat(32)
+  const documentId = '9'.repeat(32)
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?job=${failedJobId}`,
+  })
+  let retryRequests = 0
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ documentAnalysisMode: 'codex', codexAvailable: true, codexAuthenticated: true }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (value.endsWith(`/jobs/${failedJobId}`)) return { ok: true, json: async () => ({ job: {
+      id: failedJobId, documentId, title: 'failed.pdf', status: 'failed', stage: 'failed', progress: 30, error: 'Ошибка анализа',
+    } }) }
+    if (value.endsWith(`/jobs/${failedJobId}/retry`) && options.method === 'POST') {
+      retryRequests += 1
+      return { ok: true, json: async () => ({ job: {
+        id: retryJobId, documentId, title: 'failed.pdf', status: 'queued', stage: 'queued', progress: 0, message: 'Ожидает обработки',
+      } }) }
+    }
+    if (value.endsWith(`/jobs/${retryJobId}`)) return { ok: true, json: async () => ({ job: {
+      id: retryJobId, documentId, title: 'failed.pdf', status: 'running', stage: 'rendering', progress: 10, message: 'Подготавливаем страницы документа',
+    } }) }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  dom.window.document.querySelector('#retry-job-button').click()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(retryRequests, 1)
+  assert.equal(dom.window.document.querySelector('#retry-job-button').hidden, true)
+  assert.match(dom.window.location.search, new RegExp(retryJobId))
+  dom.window.close()
+})
+
+test('completed document history is restored from local server storage after reload', async () => {
+  const id = '4'.repeat(32)
+  const scene = {
+    title: 'Saved project', sourceLanguage: 'en', targetLanguage: 'ru', objects: [],
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+  }
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async url => {
+    if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ documentAnalysisMode: 'codex', codexAvailable: true, codexAuthenticated: true }) }
+    if (String(url).endsWith('/documents')) return { ok: true, json: async () => ({ documents: [{ id, title: 'Saved project', filename: 'saved.pdf', updatedAt: '2026-09-05T00:00:00Z' }] }) }
+    if (String(url).endsWith(`/documents/${id}`)) return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 40))
+  assert.equal(dom.window.document.querySelectorAll('.document-tab').length, 1)
+  assert.match(dom.window.document.querySelector('.document-tab__title').textContent, /Saved project/)
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
+  assert.equal(dom.window.document.querySelector('#document-title').textContent, 'Saved project')
+  dom.window.close()
+})
+
+test('document library shows active and archived projects with lifecycle actions', async () => {
+  const activeId = '5'.repeat(32)
+  const archivedId = '6'.repeat(32)
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async url => {
+    const value = String(url)
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ documentAnalysisMode: 'codex', codexAvailable: true, codexAuthenticated: true }) }
+    if (value.includes('/documents?scope=all')) return { ok: true, json: async () => ({ documents: [
+      { id: activeId, title: 'Active', pageCount: 3, objectCount: 10, updatedAt: '2026-09-05T00:00:00Z', archivedAt: null },
+      { id: archivedId, title: 'Archived', pageCount: 2, objectCount: 4, updatedAt: '2026-09-04T00:00:00Z', archivedAt: '2026-09-05T00:00:00Z' },
+    ] }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  dom.window.document.querySelector('#document-library-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+
+  const rows = [...dom.window.document.querySelectorAll('.document-library-row')]
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0].querySelector('.document-library-row__status').textContent, 'В работе')
+  assert.equal(rows[1].classList.contains('is-archived'), true)
+  assert.equal(rows[1].querySelector('.document-library-row__status').textContent, 'Архив')
+  assert.match(rows[1].textContent, /Восстановить/)
+  assert.match(rows[0].textContent, /В архив/)
+  assert.match(rows[0].textContent, /Удалить/)
   dom.window.close()
 })
 

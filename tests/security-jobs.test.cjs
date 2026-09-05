@@ -41,6 +41,8 @@ test('credential vault falls back to a local environment secret after a session 
   assert.equal(vault.status().source, 'environment')
   vault.clearSession()
   assert.equal(vault.getSecret(), 'environment-only-secret')
+  vault.setEnvironmentSecret('rotated-environment-secret')
+  assert.equal(vault.getSecret(), 'rotated-environment-secret')
 })
 
 test('job manager reports queued work, monotonic progress and a safe completed result', async () => {
@@ -49,6 +51,8 @@ test('job manager reports queued work, monotonic progress and a safe completed r
     kind: 'document-analysis',
     title: 'contract.pdf',
     documentId: 'a'.repeat(32),
+    provider: 'aitunnel',
+    model: 'vision-model',
     task: async update => {
       update({ stage: 'rendering', progress: 15, message: 'Rendering' })
       await new Promise(resolve => setTimeout(resolve, 10))
@@ -58,6 +62,8 @@ test('job manager reports queued work, monotonic progress and a safe completed r
     },
   })
   assert.equal(created.status, 'queued')
+  assert.equal(created.provider, 'aitunnel')
+  assert.equal(created.model, 'vision-model')
   assert.equal('task' in created, false)
   const completed = await waitFor(() => {
     const job = manager.get(created.id)

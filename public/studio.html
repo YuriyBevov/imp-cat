@@ -17,6 +17,7 @@
         <span id="document-status">Загрузите PDF или изображение</span>
       </div>
       <div class="appbar__actions">
+        <button id="document-library-button" class="button" type="button">Документы</button>
         <button id="ai-settings-button" class="button" type="button">AI-провайдер</button>
         <button id="undo-button" class="icon-button" type="button" title="Отменить (Cmd/Ctrl+Z)" disabled>↶</button>
         <button id="redo-button" class="icon-button" type="button" title="Повторить" disabled>↷</button>
@@ -59,10 +60,11 @@
 
     <main id="loading-view" class="loading-view" hidden>
       <div class="loader"></div>
-      <h1>Готовим документ к переводу</h1>
+      <h1 id="loading-title">Готовим документ к переводу</h1>
       <p id="loading-message">Рендерим страницы и выполняем полный анализ документа агентом…</p>
       <div class="job-progress" aria-label="Прогресс обработки"><span id="loading-progress"></span></div>
       <strong id="loading-progress-label" class="job-progress__label">0%</strong>
+      <button id="retry-job-button" class="button button--primary loading-retry" type="button" hidden>Повторить обработку</button>
       <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
@@ -298,31 +300,44 @@
 
     <div id="selection-box" class="selection-box" hidden></div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="document-library-modal" class="modal-backdrop" hidden>
+      <section class="document-library-dialog" role="dialog" aria-modal="true" aria-labelledby="document-library-title">
+        <div class="settings-dialog__header">
+          <div><p class="eyebrow">Локальное хранилище</p><h2 id="document-library-title">Документы</h2></div>
+          <button id="document-library-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <p class="settings-dialog__intro">Архив скрывает документ из рабочего списка, но оставляет файлы на диске. Удаление необратимо.</p>
+        <div id="document-library-list" class="document-library-list"><small>Загружаем список…</small></div>
+      </section>
+    </div>
     <div id="ai-settings-modal" class="modal-backdrop" hidden>
       <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
         <div class="settings-dialog__header">
-          <div><p class="eyebrow">Настройки</p><h2 id="ai-settings-title">AI-провайдер перевода</h2></div>
+          <div><p class="eyebrow">Настройки</p><h2 id="ai-settings-title">Маршрут AI</h2></div>
           <button id="ai-settings-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
         </div>
-        <p class="settings-dialog__intro">Анализ документов по-прежнему доступен через Codex. Для перевода можно выбрать Codex или AITunnel.</p>
+        <p class="settings-dialog__intro">Выбранный маршрут используется для распознавания и анализа документа, проверки OCR и перевода. Рендер страниц, редактор и экспорт работают локально.</p>
         <label>Провайдер
           <select id="ai-provider-select">
-            <option value="aitunnel">AITunnel API</option>
-            <option value="codex">Codex · вход через ChatGPT</option>
+            <option value="aitunnel">AITunnel API · весь AI через API</option>
+            <option value="codex">Codex · весь AI через ChatGPT-вход</option>
           </select>
         </label>
         <div id="aitunnel-settings" class="settings-dialog__fields">
           <label>Модель AITunnel
-            <input id="aitunnel-model" type="text" autocomplete="off" placeholder="Название модели из AITunnel" />
+            <select id="aitunnel-model"><option value="">Загружаем каталог…</option></select>
           </label>
+          <small id="aitunnel-model-note">Для полного маршрута нужна модель, принимающая изображения или файлы.</small>
           <label>API-ключ AITunnel
-            <input id="aitunnel-api-key" type="password" maxlength="180" autocomplete="new-password" placeholder="Ключ не сохраняется на диск" />
+            <input id="aitunnel-api-key" type="password" maxlength="180" autocomplete="new-password" placeholder="Введите ключ или оставьте сохранённый" />
           </label>
-          <small>Ключ шифруется RSA-OAEP в браузере, хранится только в памяти backend и передаётся AITunnel по HTTPS. После перезапуска сервера его нужно ввести снова.</small>
+          <label class="credential-persistence"><input id="aitunnel-persist-key" type="checkbox" checked /><span>Сохранить ключ на сервере после перезапуска</span></label>
+          <small>В браузере ключ передаётся в RSA-OAEP-шифротексте. Backend сохраняет его в исключённом из Git файле `.env` с правами `0600` и отправляет AITunnel только по HTTPS.</small>
         </div>
         <div id="ai-provider-status" class="provider-status">Проверяем настройки…</div>
         <div class="settings-dialog__actions">
-          <button id="remove-aitunnel-key" class="button button--danger" type="button">Удалить ключ из памяти</button>
+          <button id="remove-aitunnel-key" class="button button--danger" type="button">Удалить ключ</button>
+          <button id="test-ai-connection" class="button" type="button">Проверить подключение</button>
           <button id="save-ai-settings" class="button button--primary" type="button">Сохранить</button>
         </div>
       </section>

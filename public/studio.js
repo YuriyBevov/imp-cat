@@ -2,8 +2,10 @@
   const $ = selector => document.querySelector(selector)
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
-    loadingView: $('#loading-view'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), studioView: $('#studio-view'),
+    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), retryJob: $('#retry-job-button'), studioView: $('#studio-view'),
     documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'), addDocumentTab: $('#add-document-tab'),
+    documentLibraryButton: $('#document-library-button'), documentLibraryModal: $('#document-library-modal'),
+    documentLibraryClose: $('#document-library-close'), documentLibraryList: $('#document-library-list'),
     documentTitle: $('#document-title'), documentStatus: $('#document-status'), newDocument: $('#new-document-button'),
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), pageCount: $('#page-count'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
@@ -29,7 +31,8 @@
     selectionBox: $('#selection-box'), toast: $('#toast'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
-    aitunnelApiKey: $('#aitunnel-api-key'), aiProviderStatus: $('#ai-provider-status'), saveAiSettings: $('#save-ai-settings'), removeAitunnelKey: $('#remove-aitunnel-key'),
+    aitunnelApiKey: $('#aitunnel-api-key'), aitunnelPersistKey: $('#aitunnel-persist-key'), aitunnelModelNote: $('#aitunnel-model-note'), aiProviderStatus: $('#ai-provider-status'),
+    saveAiSettings: $('#save-ai-settings'), testAiConnection: $('#test-ai-connection'), removeAitunnelKey: $('#remove-aitunnel-key'),
   }
 
   const state = {
@@ -56,6 +59,8 @@
     activeTabKey: null,
     jobsPollTimer: null,
     providerSettings: null,
+    aitunnelModels: [],
+    documentLibrary: [],
   }
 
   function showToast(message, isError = false) {
@@ -100,19 +105,25 @@
   function renderProviderSettings(settings) {
     state.providerSettings = settings
     elements.aiProviderSelect.value = settings.activeProvider || 'aitunnel'
+    if (settings.model && ![...elements.aitunnelModel.options].some(option => option.value === settings.model)) {
+      elements.aitunnelModel.append(new Option(settings.model, settings.model))
+    }
     elements.aitunnelModel.value = settings.model || ''
     elements.aitunnelApiKey.value = ''
     elements.aitunnelSettings.hidden = elements.aiProviderSelect.value !== 'aitunnel'
-    elements.removeAitunnelKey.hidden = settings.keySource !== 'session'
-    const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelConfigured
+    elements.removeAitunnelKey.hidden = !settings.keyConfigured
+    if (settings.keyPersisted || !settings.keyConfigured) elements.aitunnelPersistKey.checked = true
+    const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelVerified
     elements.aiProviderStatus.classList.toggle('is-error', !activeReady)
     elements.aiProviderStatus.textContent = settings.activeProvider === 'codex'
       ? settings.codexConfigured
-        ? 'Codex готов: перевод использует текущий вход через ChatGPT.'
+        ? 'Codex готов: распознавание, проверка и перевод идут через текущий вход ChatGPT.'
         : 'Codex недоступен: проверьте установку CLI и выполните codex login.'
-      : settings.aitunnelConfigured
-        ? `AITunnel готов · модель ${settings.model} · ключ ${settings.keySource === 'session' ? 'в памяти процесса' : 'из локального окружения'}.`
-        : `AITunnel не настроен. Укажите модель и ключ; endpoint: ${settings.apiHost}.`
+      : settings.aitunnelVerified
+        ? `AITunnel подключён · модель ${settings.model} · ${settings.keyPersisted ? 'ключ сохранён на сервере' : 'ключ только в памяти'}.`
+        : settings.aitunnelConfigured
+          ? `AITunnel настроен · модель ${settings.model} · нажмите «Проверить подключение».`
+          : `AITunnel не настроен. Выберите модель и укажите ключ; endpoint: ${settings.apiHost}.`
   }
 
   async function loadProviderSettings() {
@@ -122,10 +133,68 @@
     return settings
   }
 
+  function renderAitunnelModels(models, authenticationError = '') {
+    state.aitunnelModels = models
+    const previous = state.providerSettings?.model || elements.aitunnelModel.value
+    elements.aitunnelModel.replaceChildren()
+    const supported = models.filter(model => model.documentCapable)
+    const unsupported = models.filter(model => !model.documentCapable)
+    if (supported.length) {
+      const group = document.createElement('optgroup')
+      group.label = 'Для документов · Vision'
+      for (const model of supported) {
+        const option = document.createElement('option')
+        option.value = model.id
+        const maxOutput = Number(model.maxOutput)
+        const outputLabel = Number.isFinite(maxOutput) && maxOutput > 0 ? ` · Max ${Math.round(maxOutput / 1000)}k` : ''
+        option.textContent = `${model.id}${model.provider ? ` · ${model.provider}` : ''}${outputLabel}`
+        option.title = `${model.description || model.id}${outputLabel}`
+        group.append(option)
+      }
+      elements.aitunnelModel.append(group)
+    }
+    if (unsupported.length) {
+      const group = document.createElement('optgroup')
+      group.label = 'Только текст · недоступны для полного маршрута'
+      for (const model of unsupported) {
+        const option = document.createElement('option')
+        option.value = model.id
+        option.textContent = `${model.id}${model.provider ? ` · ${model.provider}` : ''}`
+        option.disabled = true
+        group.append(option)
+      }
+      elements.aitunnelModel.append(group)
+    }
+    const selected = supported.some(model => model.id === previous) ? previous : supported[0]?.id || ''
+    elements.aitunnelModel.value = selected
+    elements.aitunnelModelNote.textContent = supported.length
+      ? `Доступно ${supported.length} моделей для документов из ${models.length} моделей AITunnel.${authenticationError ? ' Ключ ещё не подтверждён.' : ''}`
+      : 'В каталоге не найдено моделей с поддержкой изображений.'
+  }
+
+  async function loadAitunnelModels() {
+    elements.aitunnelModel.disabled = true
+    elements.aitunnelModelNote.textContent = 'Обновляем список моделей AITunnel…'
+    try {
+      const response = await api('/api/studio/provider/models')
+      const catalog = await response.json()
+      renderAitunnelModels(Array.isArray(catalog.models) ? catalog.models : [], catalog.authenticationError)
+    } catch (error) {
+      elements.aitunnelModelNote.textContent = `Не удалось загрузить каталог: ${error.message}`
+      elements.aiProviderStatus.classList.add('is-error')
+      elements.aiProviderStatus.textContent = error.message
+    } finally {
+      elements.aitunnelModel.disabled = false
+    }
+  }
+
   async function openProviderSettings() {
     elements.aiSettingsModal.hidden = false
     elements.aiProviderStatus.textContent = 'Проверяем настройки…'
-    try { await loadProviderSettings() } catch (error) {
+    try {
+      await loadProviderSettings()
+      await loadAitunnelModels()
+    } catch (error) {
       elements.aiProviderStatus.classList.add('is-error')
       elements.aiProviderStatus.textContent = error.message
     }
@@ -136,22 +205,31 @@
     elements.aiSettingsModal.hidden = true
   }
 
+  async function persistProviderSettings(options = {}) {
+    const provider = elements.aiProviderSelect.value
+    const payload = {
+      provider,
+      model: elements.aitunnelModel.value,
+      persistKey: Boolean(options.persistKey && provider === 'aitunnel' && elements.aitunnelPersistKey.checked),
+    }
+    const secret = elements.aitunnelApiKey.value.trim()
+    if (secret) {
+      if (!state.providerSettings?.publicKey) await loadProviderSettings()
+      payload.encryptedApiKey = await encryptApiKey(secret, state.providerSettings.publicKey)
+    }
+    const response = await api('/api/studio/provider', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+    renderProviderSettings(await response.json())
+    await loadServiceStatus()
+    return provider
+  }
+
   async function saveProviderSettings() {
     elements.saveAiSettings.disabled = true
     try {
-      const provider = elements.aiProviderSelect.value
-      const payload = { provider, model: elements.aitunnelModel.value.trim() }
-      const secret = elements.aitunnelApiKey.value.trim()
-      if (secret) {
-        if (!state.providerSettings?.publicKey) await loadProviderSettings()
-        payload.encryptedApiKey = await encryptApiKey(secret, state.providerSettings.publicKey)
-      }
-      const response = await api('/api/studio/provider', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-      })
-      renderProviderSettings(await response.json())
-      await loadServiceStatus()
-      showToast(provider === 'codex' ? 'Перевод переключён на Codex' : 'AITunnel настроен безопасно')
+      const provider = await persistProviderSettings({ persistKey: true })
+      showToast(provider === 'codex' ? 'Весь AI переключён на Codex' : 'Весь AI переключён на AITunnel')
       closeProviderSettings()
     } catch (error) {
       elements.aitunnelApiKey.value = ''
@@ -162,12 +240,38 @@
     }
   }
 
+  async function testAiConnection() {
+    elements.testAiConnection.disabled = true
+    elements.aiProviderStatus.classList.remove('is-error')
+    elements.aiProviderStatus.textContent = 'Проверяем ключ и доступность модели…'
+    try {
+      const shouldPersist = elements.aiProviderSelect.value === 'aitunnel' && elements.aitunnelPersistKey.checked
+      const provider = await persistProviderSettings()
+      const response = await api('/api/studio/provider/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, persistKey: provider === 'aitunnel' && shouldPersist }),
+      })
+      const result = await response.json()
+      await loadProviderSettings()
+      await loadServiceStatus()
+      elements.aiProviderStatus.classList.remove('is-error')
+      elements.aiProviderStatus.textContent = result.message
+      showToast('Подключение работает')
+    } catch (error) {
+      elements.aitunnelApiKey.value = ''
+      elements.aiProviderStatus.classList.add('is-error')
+      elements.aiProviderStatus.textContent = error.message
+    } finally {
+      elements.testAiConnection.disabled = false
+    }
+  }
+
   async function removeAitunnelKey() {
     try {
       const response = await api('/api/studio/provider/key', { method: 'DELETE' })
       renderProviderSettings(await response.json())
       await loadServiceStatus()
-      showToast('Ключ удалён из памяти процесса')
+      showToast('Ключ удалён из памяти и .env')
     } catch (error) { showToast(error.message, true) }
   }
 
@@ -215,9 +319,14 @@
 
   function updateLoadingFromTab(tab) {
     const progress = Math.max(0, Math.min(100, Number(tab?.progress) || 0))
+    const failed = tab?.status === 'failed'
+    elements.loadingView.classList.toggle('is-failed', failed)
+    elements.loadingTitle.textContent = failed ? 'Обработка остановлена' : 'Готовим документ к переводу'
     elements.loadingMessage.textContent = tab?.error || tab?.message || `Анализируем «${tab?.title || 'документ'}»…`
     elements.loadingProgress.style.width = `${progress}%`
-    elements.loadingProgressLabel.textContent = `${progress}%`
+    elements.loadingProgressLabel.textContent = failed ? 'Ошибка' : `${progress}%`
+    elements.retryJob.hidden = !(failed && tab?.jobId)
+    elements.retryJob.disabled = false
   }
 
   function rememberCurrentDocument() {
@@ -313,13 +422,40 @@
     if (failed.length) showToast(`Не удалось загрузить файлов: ${failed.length}. ${failed[0].reason?.message || ''}`, true)
   }
 
+  async function retryFailedJob() {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (!tab || tab.status !== 'failed' || !tab.jobId) return
+    elements.retryJob.disabled = true
+    try {
+      const response = await api(`/api/studio/jobs/${tab.jobId}/retry`, { method: 'POST' })
+      const { job } = await response.json()
+      Object.assign(tab, job, {
+        key: tab.key,
+        jobId: job.id,
+        documentId: job.documentId,
+        title: job.title || tab.title,
+        error: null,
+      })
+      renderDocumentTabs()
+      updateLoadingFromTab(tab)
+      history.replaceState(null, '', `/?job=${job.id}`)
+      scheduleJobsPoll(100)
+      showToast('Повторная обработка запущена')
+    } catch (error) {
+      elements.retryJob.disabled = false
+      showToast(error.message, true)
+    }
+  }
+
   function scheduleJobsPoll(delay = 1_500) {
     clearTimeout(state.jobsPollTimer)
+    state.jobsPollTimer = null
     if (![...state.tabs.values()].some(tab => tab.status === 'queued' || tab.status === 'running')) return
     state.jobsPollTimer = setTimeout(pollJobs, delay)
   }
 
   async function pollJobs() {
+    state.jobsPollTimer = null
     const pending = [...state.tabs.values()].filter(tab => tab.status === 'queued' || tab.status === 'running')
     await Promise.all(pending.map(async tab => {
       try {
@@ -340,6 +476,156 @@
     }))
     renderDocumentTabs()
     scheduleJobsPoll()
+  }
+
+  async function loadDocumentHistory() {
+    try {
+      const response = await api('/api/studio/documents')
+      const { documents } = await response.json()
+      for (const metadata of Array.isArray(documents) ? documents : []) {
+        if (!/^[a-f0-9]{32}$/.test(metadata?.id || '')) continue
+        const key = `document-${metadata.id}`
+        if (state.tabs.has(key)) continue
+        state.tabs.set(key, {
+          key, jobId: null, documentId: metadata.id,
+          title: metadata.title || metadata.filename || 'Документ',
+          status: 'completed', progress: 100, metadata,
+        })
+      }
+      renderDocumentTabs()
+    } catch {}
+  }
+
+  function documentLibraryDetails(metadata) {
+    const parts = []
+    if (Number.isFinite(Number(metadata.pageCount))) parts.push(`${metadata.pageCount} стр.`)
+    if (Number.isFinite(Number(metadata.objectCount))) parts.push(`${metadata.objectCount} сегментов`)
+    const date = new Date(metadata.updatedAt || metadata.createdAt || '')
+    if (!Number.isNaN(date.getTime())) parts.push(date.toLocaleString('ru-RU'))
+    return parts.join(' · ')
+  }
+
+  function tabForDocument(documentId) {
+    return [...state.tabs.values()].find(tab => tab.documentId === documentId)
+  }
+
+  function closeDocumentTab(documentId) {
+    const tab = tabForDocument(documentId)
+    if (tab) closeTab(tab.key)
+  }
+
+  async function openLibraryDocument(metadata) {
+    let tab = tabForDocument(metadata.id)
+    if (!tab) {
+      const key = `document-${metadata.id}`
+      tab = {
+        key, jobId: null, documentId: metadata.id,
+        title: metadata.title || metadata.filename || 'Документ',
+        status: 'completed', progress: 100, metadata,
+      }
+      state.tabs.set(key, tab)
+    }
+    elements.documentLibraryModal.hidden = true
+    renderDocumentTabs()
+    await activateTab(tab.key)
+  }
+
+  async function setDocumentArchived(metadata, archived) {
+    if (archived && state.metadata?.id === metadata.id && state.saveTimer) await saveScene(true)
+    const response = await api(`/api/studio/documents/${metadata.id}/archive`, {
+      method: archived ? 'POST' : 'DELETE',
+    })
+    const result = await response.json()
+    if (archived) {
+      closeDocumentTab(metadata.id)
+      showToast(`Документ «${metadata.title || metadata.filename}» перемещён в архив`)
+    } else {
+      showToast(`Документ «${metadata.title || metadata.filename}» восстановлен`)
+    }
+    const index = state.documentLibrary.findIndex(item => item.id === metadata.id)
+    if (index >= 0) state.documentLibrary[index] = result.metadata
+    renderDocumentLibrary()
+    if (!archived) await openLibraryDocument(result.metadata)
+  }
+
+  async function deleteLibraryDocument(metadata) {
+    const title = metadata.title || metadata.filename || 'Документ'
+    if (!window.confirm(`Удалить «${title}» без возможности восстановления?`)) return
+    if (state.metadata?.id === metadata.id) {
+      clearTimeout(state.saveTimer)
+      state.saveTimer = null
+    }
+    await api(`/api/studio/documents/${metadata.id}`, {
+      method: 'DELETE',
+      headers: { 'X-Confirm-Document-Id': metadata.id },
+    })
+    closeDocumentTab(metadata.id)
+    state.documentLibrary = state.documentLibrary.filter(item => item.id !== metadata.id)
+    renderDocumentLibrary()
+    showToast(`Документ «${title}» удалён`)
+  }
+
+  function renderDocumentLibrary() {
+    elements.documentLibraryList.replaceChildren()
+    if (!state.documentLibrary.length) {
+      const empty = document.createElement('div')
+      empty.className = 'document-library-empty'
+      empty.textContent = 'Обработанных и архивных документов пока нет.'
+      elements.documentLibraryList.append(empty)
+      return
+    }
+    for (const metadata of state.documentLibrary) {
+      const row = document.createElement('article')
+      row.className = `document-library-row${metadata.archivedAt ? ' is-archived' : ''}`
+      const content = document.createElement('div')
+      content.className = 'document-library-row__content'
+      const title = document.createElement('strong')
+      title.className = 'document-library-row__title'
+      title.textContent = metadata.title || metadata.filename || 'Документ'
+      const details = document.createElement('span')
+      details.className = 'document-library-row__meta'
+      const status = document.createElement('span')
+      status.className = 'document-library-row__status'
+      status.textContent = metadata.archivedAt ? 'Архив' : 'В работе'
+      details.append(status, document.createTextNode(` · ${documentLibraryDetails(metadata)}`))
+      content.append(title, details)
+      const actions = document.createElement('div')
+      actions.className = 'document-library-row__actions'
+      const primary = document.createElement('button')
+      primary.type = 'button'
+      primary.className = 'button'
+      primary.textContent = metadata.archivedAt ? 'Восстановить' : 'Открыть'
+      primary.addEventListener('click', () => (metadata.archivedAt
+        ? setDocumentArchived(metadata, false)
+        : openLibraryDocument(metadata)).catch(error => showToast(error.message, true)))
+      const archive = document.createElement('button')
+      archive.type = 'button'
+      archive.className = 'button'
+      archive.textContent = metadata.archivedAt ? 'Вернуть' : 'В архив'
+      archive.hidden = Boolean(metadata.archivedAt)
+      archive.addEventListener('click', () => setDocumentArchived(metadata, true).catch(error => showToast(error.message, true)))
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'button button--danger'
+      remove.textContent = 'Удалить'
+      remove.addEventListener('click', () => deleteLibraryDocument(metadata).catch(error => showToast(error.message, true)))
+      actions.append(primary, archive, remove)
+      row.append(content, actions)
+      elements.documentLibraryList.append(row)
+    }
+  }
+
+  async function openDocumentLibrary() {
+    elements.documentLibraryModal.hidden = false
+    elements.documentLibraryList.innerHTML = '<small>Загружаем список…</small>'
+    try {
+      const response = await api('/api/studio/documents?scope=all')
+      const { documents } = await response.json()
+      state.documentLibrary = Array.isArray(documents) ? documents : []
+      renderDocumentLibrary()
+    } catch (error) {
+      elements.documentLibraryList.innerHTML = `<div class="document-library-empty">${escapeHtml(error.message)}</div>`
+    }
   }
 
   function openDocument(documentData) {
@@ -2001,12 +2287,22 @@
       elements.fileInput.click()
     })
     elements.addDocumentTab.addEventListener('click', () => elements.fileInput.click())
+    elements.documentLibraryButton.addEventListener('click', openDocumentLibrary)
+    elements.documentLibraryClose.addEventListener('click', () => { elements.documentLibraryModal.hidden = true })
+    elements.documentLibraryModal.addEventListener('pointerdown', event => {
+      if (event.target === elements.documentLibraryModal) elements.documentLibraryModal.hidden = true
+    })
     elements.aiSettingsButton.addEventListener('click', openProviderSettings)
     elements.aiSettingsClose.addEventListener('click', closeProviderSettings)
     elements.aiSettingsModal.addEventListener('pointerdown', event => { if (event.target === elements.aiSettingsModal) closeProviderSettings() })
-    elements.aiProviderSelect.addEventListener('change', () => { elements.aitunnelSettings.hidden = elements.aiProviderSelect.value !== 'aitunnel' })
+    elements.aiProviderSelect.addEventListener('change', () => {
+      elements.aitunnelSettings.hidden = elements.aiProviderSelect.value !== 'aitunnel'
+      if (elements.aiProviderSelect.value === 'aitunnel' && !state.aitunnelModels.length) loadAitunnelModels()
+    })
     elements.saveAiSettings.addEventListener('click', saveProviderSettings)
+    elements.testAiConnection.addEventListener('click', testAiConnection)
     elements.removeAitunnelKey.addEventListener('click', removeAitunnelKey)
+    elements.retryJob.addEventListener('click', retryFailedJob)
     elements.zoomOut.addEventListener('click', () => setZoom(state.zoom - .1))
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
@@ -2096,6 +2392,7 @@
       }
       if (event.key === 'Escape') {
         if (!elements.aiSettingsModal.hidden) closeProviderSettings()
+        elements.documentLibraryModal.hidden = true
         state.selected.clear()
         state.lastTextSelection = null
         elements.qaPanel.hidden = true
@@ -2124,7 +2421,11 @@
           : `Агент не готов: ${state.serviceStatus.codexStatusError || 'выполните codex login'}.`
         elements.fileInput.disabled = !ready
       } else {
-        elements.analysisServiceNote.textContent = 'Включён архивный локальный OCR-режим.'
+        const ready = state.serviceStatus.aiProviderConfigured
+        elements.analysisServiceNote.textContent = ready
+          ? `AITunnel готов к анализу · ${state.serviceStatus.documentAgentModel}. Все изображения страниц будут отправлены выбранной модели по API.`
+          : 'AITunnel не настроен. Откройте «AI-провайдер», выберите модель и добавьте ключ.'
+        elements.fileInput.disabled = !ready
       }
     } catch {
       state.serviceStatus = null
@@ -2146,6 +2447,7 @@
         state.activeTabKey = tab.key
         renderDocumentTabs()
         if (tab.status === 'completed') await activateTab(tab.key, true)
+        else if (tab.status === 'failed') await activateTab(tab.key)
         else {
           updateLoadingFromTab(tab)
           scheduleJobsPoll(100)
@@ -2157,7 +2459,9 @@
       }
     }
     if (!/^[a-f0-9]{32}$/.test(id || '')) {
-      setView('upload')
+      const latest = [...state.tabs.values()].find(tab => tab.status === 'completed' && tab.documentId)
+      if (latest) await activateTab(latest.key)
+      else setView('upload')
       return
     }
     setView('loading')
@@ -2180,5 +2484,9 @@
   }
 
   bindEvents()
-  loadServiceStatus().finally(restoreDocumentFromUrl)
+  ;(async () => {
+    await loadServiceStatus()
+    await loadDocumentHistory()
+    await restoreDocumentFromUrl()
+  })()
 })()
