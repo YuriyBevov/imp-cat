@@ -118,7 +118,7 @@
     elements.aitunnelSettings.hidden = elements.aiProviderSelect.value !== 'aitunnel'
     elements.removeAitunnelKey.hidden = !settings.keyConfigured
     if (settings.keyPersisted || !settings.keyConfigured) elements.aitunnelPersistKey.checked = true
-    const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelVerified
+    const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelConfigured
     elements.aiProviderStatus.classList.toggle('is-error', !activeReady)
     elements.aiProviderStatus.textContent = settings.activeProvider === 'codex'
       ? settings.codexConfigured
@@ -127,7 +127,7 @@
       : settings.aitunnelVerified
         ? `AITunnel подключён · модель ${settings.model} · ${settings.keyPersisted ? 'ключ сохранён на сервере' : 'ключ только в памяти'}.`
         : settings.aitunnelConfigured
-          ? `AITunnel настроен · модель ${settings.model} · нажмите «Проверить подключение».`
+          ? `AITunnel настроен · модель ${settings.model} · ${settings.keyPersisted ? 'ключ сохранён на сервере' : 'ключ только в памяти'}. Проверка подключения доступна отдельно.`
           : `AITunnel не настроен. Выберите модель и укажите ключ; endpoint: ${settings.apiHost}.`
   }
 
