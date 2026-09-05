@@ -1,5 +1,6 @@
 (() => {
   const $ = selector => document.querySelector(selector)
+  const translationUnits = window.IcatTranslationUnits
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), retryJob: $('#retry-job-button'), studioView: $('#studio-view'),
@@ -19,6 +20,10 @@
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
+    translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
+    translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
+    translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
+    translationUnitsApplyExact: $('#translation-units-apply-exact'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
     objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
@@ -1259,6 +1264,160 @@
     refreshSelection()
   }
 
+  function ensureObjectTranslationUnits(object) {
+    if (!translationUnits) return []
+    return translationUnits.ensureTranslationUnits(object)
+  }
+
+  function translationUnitStatusLabel(unit) {
+    return ({
+      new: 'Не переведено',
+      'memory-suggested': '100% из БЗ',
+      'memory-applied': 'Применено из БЗ',
+      'machine-translated': 'Переведено ИИ',
+      edited: 'Изменено',
+      approved: 'В БЗ',
+    })[unit.status] || 'Не переведено'
+  }
+
+  function applyExactSuggestion(object, unit) {
+    const suggestion = unit.memorySuggestion
+    if (!suggestion?.translation || suggestion.matchType !== 'exact') return false
+    unit.translation = suggestion.translation
+    unit.memoryEntryId = suggestion.entryId || null
+    unit.status = 'memory-applied'
+    translationUnits.syncObjectTranslation(object)
+    object.translationTextStyles = []
+    object.status = object.translation ? 'memory-applied' : 'partially-translated'
+    return true
+  }
+
+  async function saveUnitsToKnowledgeBase(object, units) {
+    const eligible = units.filter(unit => unit.sourceText.trim() && unit.translation.trim() && !unit.memoryEntryId)
+    if (!eligible.length) return { created: 0, results: [] }
+    const response = await api('/api/studio/knowledge-base/entries', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries: eligible.map(unit => ({
+        sourceText: unit.sourceText,
+        translation: unit.translation,
+        sourceLanguage: state.scene.sourceLanguage,
+        targetLanguage: state.scene.targetLanguage,
+        clientRef: unit.id,
+        provenance: { documentId: state.metadata.id, objectId: object.id, unitId: unit.id },
+      })) }),
+    })
+    const result = await response.json()
+    for (const item of result.results || []) {
+      const unit = eligible.find(candidate => candidate.id === item.clientRef)
+      if (!unit || !item.entry) continue
+      if (item.status === 'conflict') {
+        unit.memorySuggestion = {
+          entryId: item.entry.id,
+          translation: item.entry.translation,
+          score: 1,
+          matchType: 'exact',
+          targetLanguage: item.entry.targetLanguage,
+        }
+        continue
+      }
+      unit.memoryEntryId = item.entry.id
+      unit.status = 'approved'
+    }
+    return result
+  }
+
+  function renderTranslationUnits(selection) {
+    const object = selection.length === 1 && isTranslatableType(selection[0].type) ? selection[0] : null
+    elements.translationUnitsCard.hidden = !object
+    elements.translationUnitsList.replaceChildren()
+    if (!object) return
+    const units = ensureObjectTranslationUnits(object)
+    elements.translationUnitsCount.textContent = units.length
+    elements.translationUnitsMerge.disabled = units.length < 2
+    const exactSuggestions = units.filter(unit => unit.memorySuggestion?.matchType === 'exact' && !unit.translation)
+    elements.translationUnitsApplyExact.disabled = exactSuggestions.length === 0
+    elements.translationUnitsApplyExact.textContent = exactSuggestions.length
+      ? `Применить все 100% совпадения (${exactSuggestions.length})`
+      : 'Нет новых 100% совпадений'
+
+    units.forEach((unit, index) => {
+      const row = document.createElement('article')
+      row.className = 'translation-unit'
+      row.dataset.unitId = unit.id
+      const header = document.createElement('div')
+      header.className = 'translation-unit__header'
+      const number = document.createElement('span')
+      number.className = 'translation-unit__number'
+      number.textContent = `Единица ${index + 1}`
+      const status = document.createElement('span')
+      status.className = 'translation-unit__status'
+      status.dataset.status = unit.status
+      status.textContent = translationUnitStatusLabel(unit)
+      header.append(number, status)
+      const source = document.createElement('p')
+      source.className = 'translation-unit__source'
+      source.textContent = unit.sourceText
+      const input = document.createElement('textarea')
+      input.spellcheck = true
+      input.placeholder = 'Введите перевод этой единицы'
+      input.value = unit.translation
+      input.addEventListener('focus', () => {
+        if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
+      })
+      input.addEventListener('input', () => {
+        unit.translation = input.value
+        unit.status = 'edited'
+        unit.memoryEntryId = null
+        translationUnits.syncObjectTranslation(object)
+        object.translationTextStyles = []
+        object.status = object.translation ? 'translated-edited' : 'partially-translated'
+        elements.translationText.value = object.translation
+        status.dataset.status = unit.status
+        status.textContent = translationUnitStatusLabel(unit)
+        renderSelectedText('translation')
+        scheduleSave()
+      })
+      input.addEventListener('blur', () => { state.textCheckpoint = false })
+      row.append(header, source)
+      if (unit.memorySuggestion?.matchType === 'exact' && !unit.translation) {
+        const suggestion = document.createElement('div')
+        suggestion.className = 'translation-unit__suggestion'
+        const value = document.createElement('span')
+        value.textContent = unit.memorySuggestion.translation
+        const apply = document.createElement('button')
+        apply.type = 'button'
+        apply.textContent = 'Применить 100% совпадение'
+        apply.addEventListener('click', () => {
+          checkpoint()
+          applyExactSuggestion(object, unit)
+          renderDocument()
+          scheduleSave()
+        })
+        suggestion.append(value, apply)
+        row.append(suggestion)
+      }
+      row.append(input)
+      const actions = document.createElement('div')
+      actions.className = 'translation-unit__actions'
+      const save = document.createElement('button')
+      save.type = 'button'
+      save.disabled = !unit.translation.trim() || Boolean(unit.memoryEntryId)
+      save.textContent = unit.memoryEntryId ? 'Уже в БЗ' : 'Добавить в БЗ'
+      save.addEventListener('click', async () => {
+        try {
+          const result = await saveUnitsToKnowledgeBase(object, [unit])
+          renderTranslationUnits([object])
+          scheduleSave()
+          const conflict = result.results?.some(item => item.status === 'conflict')
+          showToast(conflict ? 'В БЗ уже есть другой перевод этого исходного текста' : 'Переводческая единица добавлена в БЗ', conflict)
+        } catch (error) { showToast(error.message, true) }
+      })
+      actions.append(save)
+      row.append(actions)
+      elements.translationUnitsList.append(row)
+    })
+  }
+
   function refreshSelection() {
     for (const node of elements.canvas.querySelectorAll('.scene-object')) node.classList.toggle('is-selected', state.selected.has(node.dataset.id))
     const selection = selectedObjects()
@@ -1273,13 +1432,21 @@
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     elements.flexApply.disabled = !onePage || selection.length < 2
     elements.agentNotes.hidden = true
-    if (!selection.length) return
+    if (!selection.length) {
+      elements.translationText.disabled = false
+      elements.translationUnitsCard.hidden = true
+      elements.translationUnitsList.replaceChildren()
+      return
+    }
     const first = selection[0]
+    const units = selection.length === 1 && isTranslatableType(first.type) ? ensureObjectTranslationUnits(first) : []
     elements.selectionTitle.textContent = selection.length === 1 ? `${typeLabel(first.type)} · стр. ${first.pageIndex + 1}` : `${selection.length} сегмента`
     elements.selectionCount.textContent = selection.length
     setMixedControl(elements.objectType, selection.map(item => item.type))
     setMixedControl(elements.sourceText, selection.map(item => item.sourceText))
     setMixedControl(elements.translationText, selection.map(item => item.translation))
+    elements.translationText.disabled = units.length > 1
+    elements.translationText.title = units.length > 1 ? 'Переводите части во внутренних сегментах ниже' : ''
     elements.confidence.textContent = selection.length === 1 ? `${Math.round(first.confidence * 100)}%` : 'несколько'
     if (selection.length === 1 && first.agentNotes) {
       elements.agentNotes.textContent = first.agentNotes
@@ -1299,6 +1466,7 @@
           : selection.every(item => item.style.textAlign === action)
       button.classList.toggle('is-active', active)
     })
+    renderTranslationUnits(selection)
   }
 
   function setMixedControl(control, values) {
@@ -1779,7 +1947,7 @@
       state.scene = data.scene
       renderDocument()
       elements.agentStatus.textContent = data.message
-      showToast(data.message, data.pending.length > 0 && !data.translated.length)
+      showToast(data.message, data.pending.length > 0 && !data.translated.length && !data.suggested?.length)
     } catch (error) {
       elements.agentStatus.textContent = 'Перевод не выполнен.'
       showToast(error.message, true)
@@ -1833,9 +2001,12 @@
   async function findMemory() {
     const object = selectedObjects()[0]
     if (!object) return
+    const units = ensureObjectTranslationUnits(object)
+    const activeUnit = units.find(unit => !unit.translation) || units[0]
+    if (!activeUnit) return
     elements.memoryResults.innerHTML = '<small>Ищем…</small>'
     try {
-      const response = await api(`/api/studio/translation-memory?query=${encodeURIComponent(object.sourceText)}&targetLanguage=${encodeURIComponent(state.scene.targetLanguage)}`)
+      const response = await api(`/api/studio/knowledge-base/search?query=${encodeURIComponent(activeUnit.sourceText)}&targetLanguage=${encodeURIComponent(state.scene.targetLanguage)}`)
       const data = await response.json()
       elements.memoryResults.replaceChildren()
       if (!data.matches.length) {
@@ -1846,10 +2017,15 @@
         const button = document.createElement('button')
         button.className = 'memory-result'
         button.type = 'button'
-        button.innerHTML = `<span>${escapeHtml(match.translation)}</span><small>Совпадение ${Math.round(match.score * 100)}%</small>`
+        button.innerHTML = `<span>${escapeHtml(match.translation)}</span><small>${match.matchType === 'exact' ? 'Точное совпадение' : 'Векторная близость'} ${Math.round(match.score * 100)}%</small>`
         button.addEventListener('click', () => {
           checkpoint()
-          for (const selected of selectedObjects()) { selected.translation = match.translation; selected.translationTextStyles = [] }
+          activeUnit.translation = match.translation
+          activeUnit.memoryEntryId = match.id
+          activeUnit.memorySuggestion = null
+          activeUnit.status = match.matchType === 'exact' ? 'memory-applied' : 'edited'
+          translationUnits.syncObjectTranslation(object)
+          object.translationTextStyles = []
           renderDocument()
           scheduleSave()
         })
@@ -1859,17 +2035,78 @@
   }
 
   async function approveTranslation() {
-    const objects = selectedObjects().filter(object => object.sourceText.trim() && object.translation.trim())
-    if (!objects.length) return showToast('Введите исходный текст и перевод', true)
+    const objects = selectedObjects().filter(object => isTranslatableType(object.type))
+    const unitsByObject = objects.map(object => ({ object, units: ensureObjectTranslationUnits(object).filter(unit => unit.sourceText.trim() && unit.translation.trim()) }))
+    const count = unitsByObject.reduce((sum, item) => sum + item.units.length, 0)
+    if (!count) return showToast('Введите перевод хотя бы для одной переводческой единицы', true)
     try {
-      await Promise.all(objects.map(object => api('/api/studio/translation-memory', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceText: object.sourceText, translation: object.translation, sourceLanguage: state.scene.sourceLanguage, targetLanguage: state.scene.targetLanguage }),
-      })))
-      for (const object of objects) object.status = 'approved'
+      const results = await Promise.all(unitsByObject.map(item => saveUnitsToKnowledgeBase(item.object, item.units)))
+      for (const { object } of unitsByObject) {
+        if (object.translationUnits.every(unit => unit.memoryEntryId)) object.status = 'approved'
+      }
       scheduleSave()
-      showToast(`Подтверждено: ${objects.length}. Перевод добавлен в локальную БЗ.`)
+      renderTranslationUnits(selectedObjects())
+      const created = results.reduce((sum, result) => sum + result.created, 0)
+      const conflicts = results.flatMap(result => result.results || []).filter(item => item.status === 'conflict').length
+      showToast(`Новых записей в БЗ: ${created}. Уже существовали: ${count - created - conflicts}.${conflicts ? ` Конфликтов: ${conflicts}.` : ''}`, conflicts > 0)
     } catch (error) { showToast(error.message, true) }
+  }
+
+  function splitInternalBySentences() {
+    const object = selectedObjects()[0]
+    if (selectedObjects().length !== 1 || !isTranslatableType(object?.type)) return
+    const current = ensureObjectTranslationUnits(object)
+    if (current.some(unit => unit.translation.trim()) && !window.confirm('При новом разбиении несопоставленные переводы частей будут очищены. Продолжить?')) return
+    checkpoint()
+    const units = translationUnits.splitBySentences(object, state.scene.sourceLanguage)
+    renderDocument()
+    scheduleSave()
+    showToast(units.length > 1 ? `Создано внутренних единиц: ${units.length}` : 'Текст не удалось разделить на отдельные предложения')
+  }
+
+  function splitInternalBySelection() {
+    const object = selectedObjects()[0]
+    if (selectedObjects().length !== 1 || !isTranslatableType(object?.type)) return
+    const start = elements.sourceText.selectionStart
+    const end = elements.sourceText.selectionEnd
+    const hasSelection = Number.isInteger(end) && end > start
+    const validCaret = Number.isInteger(start) && start > 0 && start < object.sourceText.length
+    const validSelection = hasSelection && !(start === 0 && end === object.sourceText.length)
+    if (!validCaret && !validSelection) {
+      return showToast('Поставьте курсор или выделите фрагмент внутри поля исходного текста', true)
+    }
+    const current = ensureObjectTranslationUnits(object)
+    if (current.some(unit => unit.translation.trim()) && !window.confirm('При новом разбиении несопоставленные переводы частей будут очищены. Продолжить?')) return
+    checkpoint()
+    const units = translationUnits.splitAtRange(object, start, end)
+    renderDocument()
+    scheduleSave()
+    showToast(`Создано внутренних единиц: ${units.length}`)
+  }
+
+  function mergeInternalUnits() {
+    const object = selectedObjects()[0]
+    if (selectedObjects().length !== 1 || !isTranslatableType(object?.type)) return
+    const units = ensureObjectTranslationUnits(object)
+    if (units.length < 2) return
+    checkpoint()
+    object.translation = translationUnits.translationFromUnits(units, false)
+    translationUnits.mergeTranslationUnits(object)
+    object.translationTextStyles = []
+    renderDocument()
+    scheduleSave()
+    showToast('Внутренние единицы объединены; геометрия сегмента сохранена')
+  }
+
+  function applyAllExactSuggestions() {
+    const object = selectedObjects()[0]
+    if (selectedObjects().length !== 1 || !object) return
+    const units = ensureObjectTranslationUnits(object)
+    checkpoint()
+    const count = units.filter(unit => applyExactSuggestion(object, unit)).length
+    renderDocument()
+    scheduleSave()
+    if (count) showToast(`Применено 100% совпадений: ${count}`)
   }
 
   function mergeStyledField(objects, field) {
@@ -1904,6 +2141,8 @@
     first.sourceTextStyles = source.ranges
     first.translation = translation.text
     first.translationTextStyles = translation.ranges
+    first.translationUnits = []
+    ensureObjectTranslationUnits(first)
     first.type = 'text'
     first.originalBounds = { x: first.x, y: first.y, width: first.width, height: first.height }
     const removed = new Set(objects.slice(1).map(item => item.id))
@@ -1992,6 +2231,10 @@
     next.translation = field === 'translation' ? extractedText : ''
     next.sourceTextStyles = field === 'sourceText' ? clippedRanges(originalRanges, start, extractedEnd, start) : []
     next.translationTextStyles = field === 'translation' ? clippedRanges(originalRanges, start, extractedEnd, start) : []
+    object.translationUnits = []
+    next.translationUnits = []
+    ensureObjectTranslationUnits(object)
+    ensureObjectTranslationUnits(next)
     const below = object.y + object.height + 8
     next.y = below + next.height <= page.heightPx ? below : Math.max(0, object.y - next.height - 8)
     next.originalBounds = { x: next.x, y: next.y, width: next.width, height: next.height }
@@ -2120,9 +2363,25 @@
         for (const object of selectedObjects()) {
           object[field] = control.value
           object[field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'] = []
+          if (field === 'sourceText') {
+            object.translation = ''
+            object.translationTextStyles = []
+            object.translationUnits = []
+            ensureObjectTranslationUnits(object)
+          } else {
+            const units = ensureObjectTranslationUnits(object)
+            if (units.length === 1) {
+              units[0].translation = control.value
+              units[0].status = 'edited'
+              units[0].memorySuggestion = null
+              units[0].memoryEntryId = null
+            }
+          }
           object.status = 'edited'
         }
-        renderSelectedText(field)
+        renderSelectedText(field === 'sourceText' ? 'sourceText' : field)
+        if (field === 'sourceText') renderSelectedText('translation')
+        renderTranslationUnits(selectedObjects())
         scheduleSave()
       })
       control.addEventListener('blur', () => { state.textCheckpoint = false })
@@ -2241,6 +2500,10 @@
     elements.addObject.addEventListener('click', () => addObject())
     elements.memorySearch.addEventListener('click', findMemory)
     elements.approve.addEventListener('click', approveTranslation)
+    elements.translationUnitsSplitSentences.addEventListener('click', splitInternalBySentences)
+    elements.translationUnitsSplitSelection.addEventListener('click', splitInternalBySelection)
+    elements.translationUnitsMerge.addEventListener('click', mergeInternalUnits)
+    elements.translationUnitsApplyExact.addEventListener('click', applyAllExactSuggestions)
     elements.merge.addEventListener('click', mergeSelected)
     elements.split.addEventListener('click', splitSelectedText)
     elements.resetPosition.addEventListener('click', resetPosition)

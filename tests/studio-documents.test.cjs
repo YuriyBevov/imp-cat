@@ -134,3 +134,47 @@ test('provider key can be persisted server-side without exposing it through the 
   assert.equal(clearedSettings.keyPersisted, false)
   assert.doesNotMatch(await fs.promises.readFile(envPath, 'utf8'), /(?:TRANSLATION|AI)_API_KEY=/)
 })
+
+test('translation route proposes exact knowledge-base matches without silently applying them', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-translation-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = 'b'.repeat(32)
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Translation test', filename: 'translation.pdf', revision: 1, pageCount: 1, objectCount: 1,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Translation test', sourceLanguage: 'en', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'object-1', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'Power of attorney', translation: '', confidence: 1,
+      x: 40, y: 40, width: 300, height: 40, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      originalBounds: { x: 40, y: 40, width: 300, height: 40 },
+    }],
+  }))
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({
+    rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
+    runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
+  }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  let response = await fetch(`${base}/knowledge-base/entries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceText: 'Power of attorney', translation: 'Доверенность', sourceLanguage: 'en', targetLanguage: 'ru' }),
+  })
+  assert.equal(response.status, 201)
+  response = await fetch(`${base}/documents/${id}/translate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: ['object-1'] }),
+  })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.equal(result.translated.length, 0)
+  assert.equal(result.suggested.length, 1)
+  assert.equal(result.scene.objects[0].translation, '')
+  assert.equal(result.scene.objects[0].translationUnits[0].memorySuggestion.translation, 'Доверенность')
+  assert.equal(result.scene.objects[0].translationUnits[0].status, 'memory-suggested')
+})

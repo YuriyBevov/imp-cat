@@ -145,6 +145,21 @@ test('normalizeScene preserves safe inline text styles', () => {
   assert.deepEqual(normalized.objects[0].sourceTextStyles[0], { start: 0, end: 5, fontSizePx: 22, fontWeight: 700 })
 })
 
+test('normalizeScene preserves internal translation units and derives the exported translation', () => {
+  const input = buildScene(analysisFixture(), { documentId: '7'.repeat(32) })
+  const object = input.objects[1]
+  object.sourceText = 'First sentence. Second sentence.'
+  object.translation = ''
+  object.translationUnits = [
+    { id: 'unit-1', sourceText: 'First sentence.', separatorAfter: ' ', translation: 'Первое предложение.', status: 'machine-translated' },
+    { id: 'unit-2', sourceText: 'Second sentence.', separatorAfter: '', translation: 'Второе предложение.', status: 'approved', memoryEntryId: 'entry-2' },
+  ]
+  const normalized = normalizeScene(input, '6'.repeat(32), 'Title')
+  assert.equal(normalized.objects[1].translationUnits.length, 2)
+  assert.equal(normalized.objects[1].translation, 'Первое предложение. Второе предложение.')
+  assert.equal(normalized.objects[1].translationUnits[1].memoryEntryId, 'entry-2')
+})
+
 test('parseJsonArray accepts plain and fenced provider responses', () => {
   assert.deepEqual(parseJsonArray('[{"id":"1","translatedText":"Да"}]')[0], { id: '1', translatedText: 'Да' })
   assert.equal(parseJsonArray('```json\n[{"id":"2","translatedText":"Нет"}]\n```')[0].id, '2')

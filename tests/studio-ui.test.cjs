@@ -7,6 +7,7 @@ const { JSDOM, VirtualConsole } = require('jsdom')
 const root = path.resolve(__dirname, '..')
 const html = fs.readFileSync(path.join(root, 'public/studio.html'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
+const translationUnits = fs.readFileSync(path.join(root, 'public/translation-units.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
 const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
 
@@ -16,6 +17,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'approve-button', 'merge-button', 'split-button',
+    'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
+    'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact',
     'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
@@ -27,7 +30,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
   assert.match(client, /\/api\/studio\/documents/)
-  assert.match(client, /\/translation-memory/)
+  assert.match(client, /\/knowledge-base\/search/)
   assert.match(client, /event\.ctrlKey \|\| event\.metaKey/)
   assert.match(client, /beginMarquee/)
   assert.match(client, /beginDrag/)
@@ -82,6 +85,8 @@ test('studio client boots on the upload screen without runtime errors', async ()
     ok: true,
     json: async () => ({ translationProviderConfigured: false, translationModel: null }),
   })
+  dom.window.eval(translationUnits)
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
   assert.equal(dom.window.document.querySelector('#upload-view').hidden, false)
@@ -106,6 +111,8 @@ test('AI settings load the live AITunnel catalog and disable text-only models', 
     }) }
     throw new Error(`Unexpected fetch: ${url}`)
   }
+  dom.window.eval(translationUnits)
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
   dom.window.document.querySelector('#ai-settings-button').click()
@@ -136,6 +143,8 @@ test('failed document jobs stop polling and show a terminal error state', async 
     }
     throw new Error(`Unexpected fetch: ${url}`)
   }
+  dom.window.eval(translationUnits)
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 120))
   assert.equal(jobRequests, 1)
@@ -172,6 +181,8 @@ test('failed document job can be restarted from the error screen', async () => {
     } }) }
     throw new Error(`Unexpected fetch: ${url}`)
   }
+  dom.window.eval(translationUnits)
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#retry-job-button').click()
@@ -198,6 +209,7 @@ test('completed document history is restored from local server storage after rel
     throw new Error(`Unexpected fetch: ${url}`)
   }
   dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 40))
   assert.equal(dom.window.document.querySelectorAll('.document-tab').length, 1)
@@ -223,6 +235,7 @@ test('document library shows active and archived projects with lifecycle actions
     if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
     throw new Error(`Unexpected fetch: ${url}`)
   }
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 20))
   dom.window.document.querySelector('#document-library-button').click()
@@ -259,6 +272,7 @@ test('multiple dropped files create independent asynchronous document tabs', asy
     }
     throw new Error(`Unexpected fetch: ${url}`)
   }
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
   const files = [
@@ -306,6 +320,7 @@ test('segments view follows visual page order from top-left instead of stale rea
       : { metadata: { id, revision: 1 }, scene },
   })
   dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#view-segments-button').click()
@@ -351,6 +366,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.Element.prototype.releasePointerCapture = function releasePointerCapture(pointerId) {
     if (this.__pointerId === pointerId) this.__pointerId = null
   }
+  dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
@@ -458,5 +474,40 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(zoomAfterWheel >= zoomBeforeWheel, `${zoomBeforeWheel} -> ${zoomAfterWheel}`)
   assert.ok(zoomAfterWheel - zoomBeforeWheel <= 2)
   assert.deepEqual(errors, [])
+  dom.window.close()
+})
+
+test('internal sentence splitting keeps one positioned page object', async () => {
+  const id = 'c'.repeat(32)
+  const scene = {
+    title: 'Internal units', sourceLanguage: 'en', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'paragraph', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText: 'First sentence. Second sentence!', translation: '', confidence: .99,
+      x: 40, y: 80, width: 500, height: 50, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 80, width: 500, height: 50 },
+    }],
+  }
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.fetch = async url => ({
+    ok: true,
+    json: async () => String(url).endsWith('/status')
+      ? { translationProviderConfigured: false, translationModel: null }
+      : { metadata: { id, revision: 1 }, scene },
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  const object = dom.window.document.querySelector('.scene-object')
+  object.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+  dom.window.document.querySelector('#translation-units-split-sentences').click()
+  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
+  assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
+  assert.equal(dom.window.document.querySelector('#translation-text').disabled, true)
   dom.window.close()
 })

@@ -186,6 +186,19 @@
           <label>Перевод / обозначение
             <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
           </label>
+          <section id="translation-units-card" class="translation-units-card" hidden>
+            <div class="translation-units-card__heading">
+              <div><strong>Внутренние сегменты перевода</strong><small>Геометрия внешнего блока не меняется</small></div>
+              <span id="translation-units-count">0</span>
+            </div>
+            <div class="translation-units-actions">
+              <button id="translation-units-split-sentences" type="button">Разбить по предложениям</button>
+              <button id="translation-units-split-selection" type="button">Разбить по выделению</button>
+              <button id="translation-units-merge" type="button">Объединить внутри</button>
+            </div>
+            <div id="translation-units-list" class="translation-units-list"></div>
+            <button id="translation-units-apply-exact" class="button" type="button">Применить все 100% совпадения</button>
+          </section>
           <div class="object-grid">
             <label>Шрифт, px<input id="font-size" type="number" min="6" max="96" step="0.5" /></label>
             <label>Интервал<input id="line-height" type="number" min="0.8" max="3" step="0.05" /></label>
@@ -276,11 +289,11 @@
             </div>
           </div>
           <div class="memory-card">
-            <div><strong>База переводов</strong><button id="memory-search-button" type="button">Найти похожие</button></div>
+            <div><strong>Векторная база знаний</strong><button id="memory-search-button" type="button">Найти похожие</button></div>
             <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
           </div>
           <div class="object-actions">
-            <button id="approve-button" class="button button--primary" type="button">Подтвердить и добавить в БЗ</button>
+            <button id="approve-button" class="button button--primary" type="button">Добавить переведённые единицы в БЗ</button>
             <button id="merge-button" class="button" type="button" disabled>Объединить выбранные</button>
             <button id="split-button" class="button" type="button">Разделить по курсору / выделению</button>
             <button id="reset-position-button" class="button" type="button">Вернуть исходное положение</button>
@@ -341,6 +354,7 @@
         </div>
       </section>
     </div>
+    <script src="/translation-units.js"></script>
     <script src="/studio.js"></script>
   </body>
 </html>
