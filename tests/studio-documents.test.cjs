@@ -184,30 +184,44 @@ test('translation route proposes exact knowledge-base matches without silently a
   assert.equal(result.scene.objects[0].translationUnits[0].status, 'memory-suggested')
 })
 
-test('machine translation is written into the unit, outer segment and persisted scene', async t => {
+test('multiple selected segments are translated, persisted, and leave unselected segments untouched', async t => {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-machine-translation-'))
   t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
   const id = 'd'.repeat(32)
   const directory = path.join(dataDir, id)
   await fs.promises.mkdir(directory)
   await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
-    id, title: 'Machine translation test', filename: 'translation.pdf', revision: 1, pageCount: 1, objectCount: 1,
+    id, title: 'Machine translation test', filename: 'translation.pdf', revision: 1, pageCount: 1, objectCount: 3,
   }))
   await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
     documentId: id, title: 'Machine translation test', sourceLanguage: 'en', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
-    objects: [{
-      id: 'object-machine', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'A new source sentence.', translation: '', confidence: 1,
-      x: 40, y: 40, width: 300, height: 40, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
-      originalBounds: { x: 40, y: 40, width: 300, height: 40 },
-    }],
+    objects: [
+      {
+        id: 'object-machine-1', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'A new source sentence.', translation: '', confidence: 1,
+        x: 40, y: 40, width: 300, height: 40, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+        originalBounds: { x: 40, y: 40, width: 300, height: 40 },
+      },
+      {
+        id: 'object-machine-2', pageIndex: 0, type: 'text', readingOrder: 2, sourceText: 'A second source sentence.', translation: '', confidence: 1,
+        x: 40, y: 90, width: 300, height: 40, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+        originalBounds: { x: 40, y: 90, width: 300, height: 40 },
+      },
+      {
+        id: 'object-unselected', pageIndex: 0, type: 'text', readingOrder: 3, sourceText: 'Do not translate me.', translation: '', confidence: 1,
+        x: 40, y: 140, width: 300, height: 40, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+        originalBounds: { x: 40, y: 140, width: 300, height: 40 },
+      },
+    ],
   }))
   const runProcess = async (command, args) => {
     if (args[0] === 'login') return { code: 0, stdout: 'Logged in', stderr: '' }
     if (args[0] === 'exec') {
       const outputPath = args[args.indexOf('--output-last-message') + 1]
-      const unitId = args.at(-1).match(/"id":"([^"]+)"/)?.[1]
-      await fs.promises.writeFile(outputPath, JSON.stringify({ translations: [{ id: unitId, translatedText: 'Новый перевод.' }] }))
+      const unitIds = [...args.at(-1).matchAll(/"id":"([^"]+)"/g)].map(match => match[1])
+      await fs.promises.writeFile(outputPath, JSON.stringify({
+        translations: unitIds.map((unitId, index) => ({ id: unitId, translatedText: `Перевод ${index + 1}.` })),
+      }))
       return { code: 0, stdout: '', stderr: '' }
     }
     return { code: 1, stdout: '', stderr: 'unexpected command' }
@@ -219,17 +233,22 @@ test('machine translation is written into the unit, outer segment and persisted 
   const base = await listen(app, t)
 
   let response = await fetch(`${base}/documents/${id}/translate`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: ['object-machine'] }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectIds: ['object-machine-1', 'object-machine-2'] }),
   })
   assert.equal(response.status, 200)
   const result = await response.json()
-  assert.equal(result.translated.length, 1)
+  assert.equal(result.translated.length, 2)
   assert.equal(result.pending.length, 0)
-  assert.equal(result.scene.objects[0].translation, 'Новый перевод.')
-  assert.equal(result.scene.objects[0].translationUnits[0].translation, 'Новый перевод.')
+  assert.equal(result.scene.objects[0].translation, 'Перевод 1.')
+  assert.equal(result.scene.objects[1].translation, 'Перевод 2.')
+  assert.equal(result.scene.objects[2].translation, '')
+  assert.equal(result.scene.objects[0].translationUnits[0].translation, 'Перевод 1.')
   assert.equal(result.scene.objects[0].translationUnits[0].status, 'machine-translated')
 
   response = await fetch(`${base}/documents/${id}`)
   const persisted = await response.json()
-  assert.equal(persisted.scene.objects[0].translation, 'Новый перевод.')
+  assert.equal(persisted.scene.objects[0].translation, 'Перевод 1.')
+  assert.equal(persisted.scene.objects[1].translation, 'Перевод 2.')
+  assert.equal(persisted.scene.objects[2].translation, '')
 })

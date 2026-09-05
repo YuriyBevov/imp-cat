@@ -15,6 +15,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
     'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
+    'translation-select-all', 'translation-selection-count',
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'approve-button', 'merge-button', 'split-button',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
@@ -292,7 +293,7 @@ test('multiple dropped files create independent asynchronous document tabs', asy
   dom.window.close()
 })
 
-test('segments view follows visual page order from top-left instead of stale readingOrder', async () => {
+test('segments view follows visual order and supports partial or full batch translation selection', async () => {
   const id = '2'.repeat(32)
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
     runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
@@ -313,12 +314,19 @@ test('segments view follows visual page order from top-left instead of stale rea
       makeObject('second-right', 'Second right', 430, 104, 3),
     ],
   }
-  dom.window.fetch = async url => ({
-    ok: true,
-    json: async () => String(url).endsWith('/status')
-      ? { translationProviderConfigured: false, translationModel: null }
-      : { metadata: { id, revision: 1 }, scene },
-  })
+  const translationRequests = []
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
+    if (value.endsWith(`/documents/${id}/scene`) && options.method === 'PUT') {
+      return { ok: true, json: async () => ({ metadata: { id, revision: 2 } }) }
+    }
+    if (value.endsWith(`/documents/${id}/translate`) && options.method === 'POST') {
+      translationRequests.push(JSON.parse(options.body))
+      return { ok: true, json: async () => ({ scene, translated: [], suggested: [], pending: [], message: 'Пакет обработан' }) }
+    }
+    return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
+  }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
   dom.window.eval(client)
@@ -328,6 +336,36 @@ test('segments view follows visual page order from top-left instead of stale rea
   const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object--source')].map(node => node.dataset.id)
   assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right'])
   assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 4)
+  const checkboxes = [...dom.window.document.querySelectorAll('[data-translation-select]')]
+  const selectAll = dom.window.document.querySelector('#translation-select-all')
+  const translate = dom.window.document.querySelector('#translate-button')
+  assert.equal(checkboxes.length, 4)
+  assert.equal(translate.disabled, true)
+  assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 4')
+
+  checkboxes[0].checked = true
+  checkboxes[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(translate.disabled, false)
+  assert.equal(translate.textContent, 'Перевести выбранные (1)')
+  assert.equal(selectAll.indeterminate, true)
+
+  selectAll.checked = true
+  selectAll.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(checkboxes.every(checkbox => checkbox.checked), true)
+  assert.equal(translate.textContent, 'Перевести весь документ (4)')
+  translate.click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(translationRequests.length, 1)
+  assert.deepEqual(new Set(translationRequests[0].objectIds), new Set(['top-left', 'top-right', 'second-left', 'second-right']))
+
+  const refreshedCheckboxes = [...dom.window.document.querySelectorAll('[data-translation-select]')]
+  refreshedCheckboxes[0].checked = false
+  refreshedCheckboxes[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  dom.window.document.querySelector('#translate-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(translationRequests.length, 2)
+  assert.equal(translationRequests[1].objectIds.length, 3)
+  assert.equal(translationRequests[1].objectIds.includes(refreshedCheckboxes[0].dataset.translationSelect), false)
   dom.window.close()
 })
 

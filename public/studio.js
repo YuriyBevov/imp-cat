@@ -17,6 +17,7 @@
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
+    translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
@@ -47,6 +48,7 @@
     sourceZoom: .5,
     sourceRenderedPage: null,
     selected: new Set(),
+    translationSelected: new Set(),
     activePage: 0,
     history: [],
     future: [],
@@ -389,6 +391,7 @@
       state.activeTabKey = null
       state.metadata = null
       state.scene = null
+      state.translationSelected = new Set()
       const nextKey = keys[index + 1] || keys[index - 1]
       if (nextKey && state.tabs.has(nextKey)) activateTab(nextKey)
       else {
@@ -634,20 +637,24 @@
   }
 
   function openDocument(documentData) {
+    const activeTab = state.tabs.get(state.activeTabKey)
     state.metadata = documentData.metadata
     state.scene = documentData.scene
     state.selected.clear()
+    state.translationSelected = activeTab?.translationSelected instanceof Set
+      ? new Set(activeTab.translationSelected)
+      : new Set()
     state.history = []
     state.future = []
     state.activePage = 0
     state.sourceRenderedPage = null
-    const activeTab = state.tabs.get(state.activeTabKey)
     if (activeTab) {
       activeTab.documentId = documentData.metadata.id
       activeTab.status = 'completed'
       activeTab.progress = 100
       activeTab.documentData = documentData
       activeTab.title = documentData.scene.title || activeTab.title
+      activeTab.translationSelected = state.translationSelected
     }
     renderDocumentTabs()
     elements.documentTitle.textContent = state.scene.title
@@ -702,10 +709,31 @@
         list.className = 'segments-list'
         const columnHeadings = document.createElement('div')
         columnHeadings.className = 'segments-column-headings'
-        columnHeadings.innerHTML = '<span>Распознанный исходник</span><span>Перевод</span>'
+        columnHeadings.innerHTML = '<span aria-hidden="true"></span><span>Распознанный исходник</span><span>Перевод</span>'
         for (const object of visualReadingOrder(pageObjects)) {
           const row = document.createElement('div')
           row.className = 'segment-translation-row'
+          const selectable = isTranslatableType(object.type) && String(object.sourceText || '').trim()
+          if (selectable) {
+            const selector = document.createElement('label')
+            selector.className = 'segment-translation-selector'
+            selector.title = 'Добавить сегмент в пакет перевода'
+            const checkbox = document.createElement('input')
+            checkbox.type = 'checkbox'
+            checkbox.dataset.translationSelect = object.id
+            checkbox.checked = state.translationSelected.has(object.id)
+            checkbox.setAttribute('aria-label', `Выбрать сегмент ${object.readingOrder || object.id} для перевода`)
+            checkbox.addEventListener('pointerdown', event => event.stopPropagation())
+            checkbox.addEventListener('change', () => setTranslationObjectSelected(object.id, checkbox.checked))
+            selector.append(checkbox)
+            row.append(selector)
+          } else {
+            const placeholder = document.createElement('span')
+            placeholder.className = 'segment-translation-selector is-disabled'
+            placeholder.title = 'Этот тип объекта не переводится автоматически'
+            row.append(placeholder)
+          }
+          row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
           row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
           list.append(row)
         }
@@ -732,6 +760,7 @@
     applyZoom()
     renderSourcePreview()
     refreshSelection()
+    refreshTranslationSelectionControls()
     if (state.viewMode === 'layout') requestAnimationFrame(expandClippedObjects)
   }
 
@@ -837,6 +866,51 @@
 
   function isTranslatableType(type) {
     return type === 'text' || type === 'table' || type === 'table_cell'
+  }
+
+  function translationCandidates() {
+    return state.scene?.objects.filter(object => (
+      !object.excluded && isTranslatableType(object.type) && String(object.sourceText || '').trim()
+    )) || []
+  }
+
+  function rememberTranslationSelection() {
+    const activeTab = state.tabs.get(state.activeTabKey)
+    if (activeTab) activeTab.translationSelected = state.translationSelected
+  }
+
+  function refreshTranslationSelectionControls() {
+    const candidates = translationCandidates()
+    const validIds = new Set(candidates.map(object => object.id))
+    state.translationSelected = new Set([...state.translationSelected].filter(id => validIds.has(id)))
+    rememberTranslationSelection()
+    const selectedCount = state.translationSelected.size
+    const total = candidates.length
+    elements.translationSelectAll.disabled = total === 0
+    elements.translationSelectAll.checked = total > 0 && selectedCount === total
+    elements.translationSelectAll.indeterminate = selectedCount > 0 && selectedCount < total
+    elements.translationSelectionCount.textContent = `Выбрано: ${selectedCount} из ${total}`
+    elements.translate.disabled = selectedCount === 0
+    elements.translate.textContent = selectedCount === total && total > 0
+      ? `Перевести весь документ (${total})`
+      : `Перевести выбранные (${selectedCount})`
+    for (const checkbox of elements.canvas.querySelectorAll('[data-translation-select]')) {
+      checkbox.checked = state.translationSelected.has(checkbox.dataset.translationSelect)
+      checkbox.closest('.segment-translation-row')?.classList.toggle('is-translation-selected', checkbox.checked)
+    }
+  }
+
+  function setTranslationObjectSelected(objectId, selected) {
+    if (selected) state.translationSelected.add(objectId)
+    else state.translationSelected.delete(objectId)
+    refreshTranslationSelectionControls()
+  }
+
+  function selectAllTranslationObjects(selected) {
+    state.translationSelected = selected
+      ? new Set(translationCandidates().map(object => object.id))
+      : new Set()
+    refreshTranslationSelectionControls()
   }
 
   function servicePlaceholder(type) {
@@ -984,7 +1058,9 @@
     handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
-    content.contentEditable = 'true'
+    const hasMultipleTranslationUnits = editField === 'translation' && isTranslatableType(object.type) && ensureObjectTranslationUnits(object).length > 1
+    content.contentEditable = hasMultipleTranslationUnits ? 'false' : 'true'
+    if (hasMultipleTranslationUnits) content.title = 'Этот сегмент разбит на внутренние единицы. Редактируйте их в правой панели.'
     content.spellcheck = true
     content.dataset.editField = editField
     renderTextContent(content, object, displayField)
@@ -998,6 +1074,20 @@
       object[editField] = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
       object[stylesField] = extractInlineStyles(content, object[editField])
+      if (editField === 'sourceText') {
+        object.translation = ''
+        object.translationTextStyles = []
+        object.translationUnits = []
+        ensureObjectTranslationUnits(object)
+      } else {
+        const units = ensureObjectTranslationUnits(object)
+        if (units.length === 1) {
+          units[0].translation = object.translation
+          units[0].status = 'edited'
+          units[0].memorySuggestion = null
+          units[0].memoryEntryId = null
+        }
+      }
       object.status = 'edited'
       node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
       if (state.selected.size === 1) {
@@ -1935,12 +2025,17 @@
 
   async function translateSelection() {
     if (!state.scene) return
-    elements.agentStatus.textContent = 'Ищем совпадения в БЗ и готовим перевод…'
+    refreshTranslationSelectionControls()
+    const objectIds = [...state.translationSelected]
+    if (!objectIds.length) return showToast('Отметьте сегменты для перевода', true)
+    elements.translate.disabled = true
+    elements.translate.textContent = `Переводим ${objectIds.length}…`
+    elements.agentStatus.textContent = `Ищем совпадения в БЗ и переводим сегменты: ${objectIds.length}…`
     try {
       await saveScene(true)
       const response = await api(`/api/studio/documents/${state.metadata.id}/translate`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objectIds: [...state.selected] }),
+        body: JSON.stringify({ objectIds }),
       })
       const data = await response.json()
       checkpoint()
@@ -1951,6 +2046,8 @@
     } catch (error) {
       elements.agentStatus.textContent = 'Перевод не выполнен.'
       showToast(error.message, true)
+    } finally {
+      refreshTranslationSelectionControls()
     }
   }
 
@@ -2494,6 +2591,7 @@
     elements.analyze.addEventListener('click', () => runAgent('analyze', 'Проверяем порядок чтения и типы объектов…'))
     elements.reanalyze.addEventListener('click', reanalyzeSource)
     elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
+    elements.translationSelectAll.addEventListener('change', () => selectAllTranslationObjects(elements.translationSelectAll.checked))
     elements.translate.addEventListener('click', translateSelection)
     elements.qa.addEventListener('click', runQa)
     elements.qaClose.addEventListener('click', () => { elements.qaPanel.hidden = true })

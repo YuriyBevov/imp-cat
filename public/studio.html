@@ -140,10 +140,14 @@
         <div class="agent-card">
           <div class="agent-card__title"><span class="agent-dot"></span><strong>Агент-переводчик</strong></div>
           <p id="agent-status">Документ распознан и структурирован агентом.</p>
+          <div class="translation-batch-controls">
+            <label><input id="translation-select-all" type="checkbox" /> <span>Выбрать все переводимые сегменты</span></label>
+            <small id="translation-selection-count">Выбрано: 0</small>
+          </div>
           <div class="agent-actions">
             <button id="analyze-button" class="button button--primary" type="button">Проверить структуру</button>
             <button id="reanalyze-button" class="button" type="button">Повторить анализ исходника</button>
-            <button id="translate-button" class="button" type="button">Перевести выбранное</button>
+            <button id="translate-button" class="button" type="button" disabled>Перевести выбранные</button>
             <button id="auto-layout-button" class="button" type="button">Исправить наложения</button>
             <button id="qa-button" class="button" type="button">Финальная проверка</button>
           </div>
