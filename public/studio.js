@@ -24,9 +24,10 @@
     translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
     translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
     translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
-    translationUnitsApplyExact: $('#translation-units-apply-exact'),
+    translationUnitsApplyExact: $('#translation-units-apply-exact'), translationSelectionPreview: $('#translation-selection-preview'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
     objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
+    documentFontSize: $('#document-font-size'), applyDocumentFontSize: $('#apply-document-font-size'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
     alignmentScope: $('#alignment-scope'),
     flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
@@ -58,6 +59,7 @@
     toastTimer: null,
     serviceStatus: null,
     lastTextSelection: null,
+    focusedTranslationUnitId: null,
     viewMode: 'layout',
     sourceCollapsed: false,
     pendingWorkbenchZoom: null,
@@ -1437,7 +1439,10 @@
       : null
     elements.translationUnitsCard.hidden = !object
     elements.translationUnitsList.replaceChildren()
-    if (!object) return
+    if (!object) {
+      refreshTranslationSelectionPreview()
+      return
+    }
     const units = ensureObjectTranslationUnits(object)
     elements.translationUnitsCount.textContent = units.length
     elements.translationUnitsMerge.disabled = units.length < 2
@@ -1451,11 +1456,12 @@
       const row = document.createElement('article')
       row.className = 'translation-unit'
       row.dataset.unitId = unit.id
+      row.classList.toggle('is-new-term', state.focusedTranslationUnitId === unit.id)
       const header = document.createElement('div')
       header.className = 'translation-unit__header'
       const number = document.createElement('span')
       number.className = 'translation-unit__number'
-      number.textContent = `Единица ${index + 1}`
+      number.textContent = units.length === 1 ? 'Весь сегмент' : `Часть ${index + 1}`
       const status = document.createElement('span')
       status.className = 'translation-unit__status'
       status.dataset.status = unit.status
@@ -1466,7 +1472,7 @@
       source.textContent = unit.sourceText
       const input = document.createElement('textarea')
       input.spellcheck = true
-      input.placeholder = 'Введите перевод этой единицы'
+      input.placeholder = unit.sourceText.length <= 80 ? `Перевод: ${unit.sourceText.trim()}` : 'Введите перевод этой части'
       input.value = unit.translation
       input.addEventListener('focus', () => {
         if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
@@ -1481,6 +1487,8 @@
         elements.translationText.value = object.translation
         status.dataset.status = unit.status
         status.textContent = translationUnitStatusLabel(unit)
+        save.disabled = !unit.translation.trim()
+        save.textContent = 'Сохранить эту пару в БЗ'
         renderSelectedText('translation')
         scheduleSave()
       })
@@ -1509,20 +1517,46 @@
       const save = document.createElement('button')
       save.type = 'button'
       save.disabled = !unit.translation.trim() || Boolean(unit.memoryEntryId)
-      save.textContent = unit.memoryEntryId ? 'Уже в БЗ' : 'Добавить в БЗ'
+      save.textContent = unit.memoryEntryId ? 'Пара сохранена в БЗ' : 'Сохранить эту пару в БЗ'
       save.addEventListener('click', async () => {
         try {
           const result = await saveUnitsToKnowledgeBase(object, [unit])
           renderTranslationUnits([object])
           scheduleSave()
           const conflict = result.results?.some(item => item.status === 'conflict')
-          showToast(conflict ? 'В БЗ уже есть другой перевод этого исходного текста' : 'Переводческая единица добавлена в БЗ', conflict)
+          showToast(conflict
+            ? `В БЗ уже есть другой перевод для «${unit.sourceText.trim()}»`
+            : `Пара «${unit.sourceText.trim()}» → «${unit.translation.trim()}» сохранена в БЗ`, conflict)
         } catch (error) { showToast(error.message, true) }
       })
       actions.append(save)
       row.append(actions)
       elements.translationUnitsList.append(row)
     })
+    refreshTranslationSelectionPreview()
+  }
+
+  function sourceTextSelection(object) {
+    if (!object || document.activeElement !== elements.sourceText) return null
+    const start = elements.sourceText.selectionStart
+    const end = elements.sourceText.selectionEnd
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) return null
+    const text = String(object.sourceText || '')
+    if (start === 0 && end === text.length) return null
+    const value = text.slice(start, end)
+    return value.trim() ? { start, end, value } : null
+  }
+
+  function refreshTranslationSelectionPreview() {
+    if (!elements.translationSelectionPreview) return
+    const object = selectedObjects().length === 1 ? selectedObjects()[0] : null
+    const selection = sourceTextSelection(object)
+    elements.translationUnitsSplitSelection.disabled = !selection
+    elements.translationSelectionPreview.classList.toggle('is-ready', Boolean(selection))
+    const value = elements.translationSelectionPreview.querySelector('strong')
+    value.textContent = selection
+      ? `«${selection.value.trim().slice(0, 120)}${selection.value.trim().length > 120 ? '…' : ''}»`
+      : 'Сначала выделите слово или фразу выше'
   }
 
   function refreshSelection() {
@@ -2184,18 +2218,27 @@
     const start = elements.sourceText.selectionStart
     const end = elements.sourceText.selectionEnd
     const hasSelection = Number.isInteger(end) && end > start
-    const validCaret = Number.isInteger(start) && start > 0 && start < object.sourceText.length
     const validSelection = hasSelection && !(start === 0 && end === object.sourceText.length)
-    if (!validCaret && !validSelection) {
-      return showToast('Поставьте курсор или выделите фрагмент внутри поля исходного текста', true)
+    const selectedTerm = validSelection ? object.sourceText.slice(start, end).trim() : ''
+    if (!selectedTerm) {
+      return showToast('Выделите слово или фразу в поле «Распознанный исходник»', true)
     }
     const current = ensureObjectTranslationUnits(object)
     if (current.some(unit => unit.translation.trim()) && !window.confirm('При новом разбиении несопоставленные переводы частей будут очищены. Продолжить?')) return
     checkpoint()
     const units = translationUnits.splitAtRange(object, start, end)
+    const selectedUnit = units.find(unit => translationUnits.canonicalText(unit.sourceText) === translationUnits.canonicalText(selectedTerm))
+    state.focusedTranslationUnitId = selectedUnit?.id || null
     renderDocument()
     scheduleSave()
-    showToast(`Создано внутренних единиц: ${units.length}`)
+    requestAnimationFrame(() => {
+      const row = state.focusedTranslationUnitId
+        ? elements.translationUnitsList.querySelector(`[data-unit-id="${CSS.escape(state.focusedTranslationUnitId)}"]`)
+        : null
+      row?.scrollIntoView({ block: 'nearest' })
+      row?.querySelector('textarea')?.focus()
+    })
+    showToast(`«${selectedTerm}» выделено отдельно. Введите перевод и сохраните эту пару в БЗ.`)
   }
 
   function mergeInternalUnits() {
@@ -2429,6 +2472,35 @@
     scheduleSave()
   }
 
+  function withoutInlineFontSize(ranges) {
+    return (Array.isArray(ranges) ? ranges : []).map(range => {
+      const normalized = { ...range }
+      delete normalized.fontSizePx
+      return normalized
+    }).filter(range => Object.keys(range).some(key => key !== 'start' && key !== 'end'))
+  }
+
+  function applyUnifiedDocumentFontSize() {
+    if (!state.scene) return
+    const fontSizePx = Number(elements.documentFontSize.value)
+    if (!Number.isFinite(fontSizePx) || fontSizePx < 6 || fontSizePx > 96) {
+      return showToast('Укажите размер шрифта от 6 до 96 px', true)
+    }
+    const objects = state.scene.objects.filter(object => (
+      !object.excluded && object.type !== 'image' && object.type !== 'logo'
+    ))
+    if (!objects.length) return showToast('В документе нет текстовых сегментов', true)
+    checkpoint()
+    for (const object of objects) {
+      object.style = { ...(object.style || {}), fontSizePx }
+      object.sourceTextStyles = withoutInlineFontSize(object.sourceTextStyles)
+      object.translationTextStyles = withoutInlineFontSize(object.translationTextStyles)
+    }
+    renderDocument()
+    scheduleSave()
+    showToast(`Размер ${fontSizePx}px установлен во всех текстовых сегментах (${objects.length})`)
+  }
+
   async function exportDocument(format) {
     try {
       await saveScene(true)
@@ -2505,6 +2577,9 @@
     }
     bindText(elements.sourceText, 'sourceText')
     bindText(elements.translationText, 'translation')
+    for (const eventName of ['select', 'keyup', 'pointerup', 'focus']) {
+      elements.sourceText.addEventListener(eventName, refreshTranslationSelectionPreview)
+    }
     const numeric = [
       [elements.fontSize, (object, value) => { object.style.fontSizePx = value }],
       [elements.lineHeight, (object, value) => { object.style.lineHeight = value }],
@@ -2636,6 +2711,10 @@
     document.querySelectorAll('[data-align-selection]').forEach(button => button.addEventListener('click', () => alignSelection(button.dataset.alignSelection)))
     document.querySelectorAll('[data-align-document]').forEach(button => button.addEventListener('click', () => alignToDocument(button.dataset.alignDocument)))
     elements.flexApply.addEventListener('click', applyFlexLayout)
+    elements.applyDocumentFontSize.addEventListener('click', applyUnifiedDocumentFontSize)
+    elements.documentFontSize.addEventListener('keydown', event => {
+      if (event.key === 'Enter') applyUnifiedDocumentFontSize()
+    })
     elements.toolbarFontSize.addEventListener('change', () => {
       const value = Number(elements.toolbarFontSize.value)
       if (!applySelectedTextStyle({ fontSizePx: value })) applySelectionChange(object => { object.style.fontSizePx = value })

@@ -129,6 +129,12 @@
               <option value="18">18</option><option value="20">20</option><option value="24">24</option><option value="28">28</option>
             </select>
           </div>
+          <div class="toolbar-group document-font-controls" aria-label="Единый размер шрифта документа">
+            <label for="document-font-size">Весь документ</label>
+            <input id="document-font-size" type="number" min="6" max="96" step="0.5" value="12" title="Размер шрифта для всех текстовых сегментов" />
+            <span>px</span>
+            <button id="apply-document-font-size" class="compact-button" type="button" title="Установить этот размер во всех текстовых сегментах">Применить ко всем</button>
+          </div>
           <span class="workbench-toolbar__hint">Cmd/Ctrl + колесо — зум под курсором</span>
         </div>
         <div id="canvas-scroll" class="canvas-scroll">
@@ -192,12 +198,17 @@
           </label>
           <section id="translation-units-card" class="translation-units-card" hidden>
             <div class="translation-units-card__heading">
-              <div><strong>Внутренние сегменты перевода</strong><small>Геометрия внешнего блока не меняется</small></div>
+              <div><strong>Термины и части сегмента</strong><small>Внешний блок на странице останется единым</small></div>
               <span id="translation-units-count">0</span>
+            </div>
+            <p class="translation-units-guide">Чтобы исправить отдельное слово: выделите его в поле «Распознанный исходник», вынесите в отдельную часть, введите перевод справа и сохраните пару в БЗ.</p>
+            <div id="translation-selection-preview" class="translation-selection-preview" aria-live="polite">
+              <span>Выделенный термин</span>
+              <strong>Сначала выделите слово или фразу выше</strong>
             </div>
             <div class="translation-units-actions">
               <button id="translation-units-split-sentences" type="button">Разбить по предложениям</button>
-              <button id="translation-units-split-selection" type="button">Разбить по выделению</button>
+              <button id="translation-units-split-selection" type="button" disabled>Вынести выделенное в отдельную часть</button>
               <button id="translation-units-merge" type="button">Объединить внутри</button>
             </div>
             <div id="translation-units-list" class="translation-units-list"></div>

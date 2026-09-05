@@ -19,10 +19,11 @@ test('studio exposes the complete source-to-export workflow', () => {
     'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'approve-button', 'merge-button', 'split-button',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
-    'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact',
+    'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
     'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
+    'document-font-size', 'apply-document-font-size',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
     'document-tabs', 'add-document-tab', 'document-library-button', 'document-library-modal', 'document-library-list',
     'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button',
@@ -473,6 +474,15 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.document.querySelector('#split-button').click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object').length, 2)
 
+  const documentFontSize = dom.window.document.querySelector('#document-font-size')
+  documentFontSize.value = '17'
+  dom.window.document.querySelector('#apply-document-font-size').click()
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
+    ['17px', '17px']
+  )
+  assert.equal(dom.window.document.querySelector('.scene-object__content [style*="font-size"]'), null)
+
   const firstObject = dom.window.document.querySelector('[data-id="object-1"]')
   firstObject.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: true }))
   dom.window.document.querySelector('#align-left-button').click()
@@ -548,5 +558,66 @@ test('internal sentence splitting keeps one positioned page object', async () =>
   assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
   assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
   assert.equal(dom.window.document.querySelector('#translation-text').disabled, true)
+  dom.window.close()
+})
+
+test('a selected term can be translated manually and saved as an exact knowledge-base pair', async () => {
+  const id = 'd'.repeat(32)
+  const sourceText = 'SÜRELİDİR: Bu vekaletname 25/08/2026 tarihine kadar geçerlidir.'
+  const scene = {
+    title: 'Term workflow', sourceLanguage: 'tr', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'paragraph', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText, translation: '', confidence: .99,
+      x: 40, y: 80, width: 600, height: 50, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 80, width: 600, height: 50 },
+    }],
+  }
+  let knowledgeBaseRequest = null
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
+    if (String(url).endsWith('/knowledge-base/entries')) {
+      knowledgeBaseRequest = JSON.parse(options.body)
+      const entry = knowledgeBaseRequest.entries[0]
+      return { ok: true, json: async () => ({ created: 1, results: [{ clientRef: entry.clientRef, status: 'created', entry: { ...entry, id: 'term-entry' } }] }) }
+    }
+    if (options.method === 'PUT') return { ok: true, json: async () => ({ ok: true }) }
+    return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
+  }
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.HTMLElement.prototype.scrollIntoView = () => {}
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  dom.window.document.querySelector('.scene-object').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+  const sourceInput = dom.window.document.querySelector('#source-text')
+  sourceInput.focus()
+  sourceInput.setSelectionRange(0, 'SÜRELİDİR'.length)
+  sourceInput.dispatchEvent(new dom.window.Event('select', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('#translation-units-split-selection').disabled, false)
+  assert.match(dom.window.document.querySelector('#translation-selection-preview strong').textContent, /SÜRELİDİR/)
+
+  dom.window.document.querySelector('#translation-units-split-selection').click()
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
+  assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
+  const termRow = [...dom.window.document.querySelectorAll('.translation-unit')]
+    .find(row => row.querySelector('.translation-unit__source').textContent === 'SÜRELİDİR')
+  assert.ok(termRow)
+  const translation = termRow.querySelector('textarea')
+  translation.value = 'СРОЧНАЯ'
+  translation.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  termRow.querySelector('.translation-unit__actions button').click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(knowledgeBaseRequest.entries[0].sourceText, 'SÜRELİDİR')
+  assert.equal(knowledgeBaseRequest.entries[0].translation, 'СРОЧНАЯ')
+  assert.equal(knowledgeBaseRequest.entries[0].sourceLanguage, 'tr')
+  assert.equal(knowledgeBaseRequest.entries[0].targetLanguage, 'ru')
   dom.window.close()
 })
