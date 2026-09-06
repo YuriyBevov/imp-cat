@@ -17,7 +17,10 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'translation-select-all', 'translation-selection-count',
     'auto-layout-button', 'layout-review-button', 'layout-review-cancel-button', 'layout-review-status', 'qa-button', 'export-docx-button', 'export-pdf-button',
-    'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'approve-button', 'merge-button', 'split-button',
+    'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'knowledge-base-open-button',
+    'knowledge-base-modal', 'knowledge-base-query', 'knowledge-base-glossary-filter', 'knowledge-base-list',
+    'knowledge-base-new-button', 'knowledge-base-entry-form', 'knowledge-base-entry-source', 'knowledge-base-entry-translation',
+    'knowledge-base-entry-glossary', 'knowledge-base-previous', 'knowledge-base-next', 'approve-button', 'merge-button', 'split-button',
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
@@ -34,6 +37,10 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(server, /studio\.html/)
   assert.match(client, /\/api\/studio\/documents/)
   assert.match(client, /\/knowledge-base\/search/)
+  assert.match(client, /\/knowledge-base\/entries/)
+  assert.match(client, /function openKnowledgeBase/)
+  assert.match(client, /function saveKnowledgeBaseEntry/)
+  assert.match(client, /function deleteKnowledgeBaseEntry/)
   assert.match(client, /event\.ctrlKey \|\| event\.metaKey/)
   assert.match(client, /beginMarquee/)
   assert.match(client, /beginDrag/)
@@ -624,5 +631,52 @@ test('a selected term can be translated manually and saved as an exact knowledge
   assert.equal(knowledgeBaseRequest.entries[0].translation, 'СРОЧНАЯ')
   assert.equal(knowledgeBaseRequest.entries[0].sourceLanguage, 'tr')
   assert.equal(knowledgeBaseRequest.entries[0].targetLanguage, 'ru')
+  dom.window.close()
+})
+
+test('knowledge base manager lists, edits, and deletes stored entries', async () => {
+  const glossary = { id: '00000000-0000-4000-8000-000000000001', name: 'Основной глоссарий', sourceLanguage: 'en', targetLanguage: 'ru' }
+  const entry = {
+    id: 'memory-entry-1', glossaryId: glossary.id, sourceText: 'Power of attorney', translation: 'Доверенность',
+    sourceLanguage: 'en', targetLanguage: 'ru', updatedAt: '2026-09-06T08:00:00.000Z',
+  }
+  const requests = []
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async (url, options = {}) => {
+    requests.push({ url: String(url), options })
+    const pathname = String(url)
+    if (pathname.includes('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'postgres-pgvector', connected: true, persistent: true, entries: 1 }) }
+    if (pathname.includes('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [glossary] }) }
+    if (pathname.includes('/knowledge-base/entries') && (options.method || 'GET') === 'GET') {
+      return { ok: true, json: async () => ({ entries: [entry], total: 1, limit: 25, offset: 0 }) }
+    }
+    if (pathname.includes('/knowledge-base/entries/') && options.method === 'PATCH') return { ok: true, json: async () => ({ entry: { ...entry, translation: 'Новая доверенность' } }) }
+    if (pathname.includes('/knowledge-base/entries/') && options.method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) }
+    if (pathname.includes('/documents?scope=all')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (pathname.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (pathname.endsWith('/status')) return { ok: true, json: async () => ({ aiProviderConfigured: true, documentAnalysisMode: 'aitunnel' }) }
+    return { ok: true, json: async () => ({}) }
+  }
+  dom.window.confirm = () => true
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  dom.window.document.querySelector('#knowledge-base-open-button').click()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelectorAll('.knowledge-base-entry').length, 1)
+  dom.window.document.querySelector('.knowledge-base-entry__actions .button').click()
+  const translation = dom.window.document.querySelector('#knowledge-base-entry-translation')
+  assert.equal(translation.value, 'Доверенность')
+  translation.value = 'Новая доверенность'
+  dom.window.document.querySelector('#knowledge-base-entry-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+  await new Promise(resolve => setTimeout(resolve, 30))
+  const patchRequest = requests.find(request => request.options.method === 'PATCH')
+  assert.equal(JSON.parse(patchRequest.options.body).translation, 'Новая доверенность')
+
+  dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.ok(requests.some(request => request.options.method === 'DELETE'))
   dom.window.close()
 })

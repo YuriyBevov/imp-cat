@@ -43,3 +43,40 @@ test('knowledge base uses provider embeddings and separates entries by glossary'
   assert.equal((await kb.listGlossaries())[0].id, DEFAULT_GLOSSARY_ID)
   assert.equal((await kb.status()).persistent, false)
 })
+
+test('knowledge base supports paginated CRUD and refreshes an edited source embedding', async () => {
+  let embeddingCalls = 0
+  const provider = {
+    ...embeddingProvider,
+    async embed(values) {
+      embeddingCalls += 1
+      return embeddingProvider.embed(values)
+    },
+  }
+  const kb = createKnowledgeBase({ embeddingProvider: provider })
+  const added = await kb.addMany([
+    { sourceText: 'Power of attorney', translation: 'Доверенность', sourceLanguage: 'en', targetLanguage: 'ru' },
+    { sourceText: 'Legal address', translation: 'Юридический адрес', sourceLanguage: 'en', targetLanguage: 'ru' },
+  ])
+  const firstPage = await kb.listEntries({ query: 'юридический', limit: 1, offset: 0 })
+  assert.equal(firstPage.total, 1)
+  assert.equal(firstPage.entries[0].sourceText, 'Legal address')
+
+  const entry = added.results[0].entry
+  const callsBeforeTranslationEdit = embeddingCalls
+  const translationEdited = await kb.updateEntry(entry.id, { translation: 'Доверенность (обновлено)' })
+  assert.equal(translationEdited.translation, 'Доверенность (обновлено)')
+  assert.equal(embeddingCalls, callsBeforeTranslationEdit)
+
+  await kb.updateEntry(entry.id, { sourceText: 'Attorney legal powers' })
+  assert.equal(embeddingCalls, callsBeforeTranslationEdit + 1)
+  assert.equal((await kb.listEntries({ query: 'Attorney legal' })).entries[0].id, entry.id)
+
+  await assert.rejects(
+    kb.updateEntry(entry.id, { sourceText: 'Legal address' }),
+    error => error.code === 'KNOWLEDGE_BASE_CONFLICT',
+  )
+  assert.equal(await kb.deleteEntry(entry.id), true)
+  assert.equal(await kb.deleteEntry(entry.id), false)
+  assert.equal((await kb.listEntries()).total, 1)
+})

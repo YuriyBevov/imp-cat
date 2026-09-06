@@ -36,6 +36,14 @@
     flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'),
+    knowledgeBaseOpen: $('#knowledge-base-open-button'), knowledgeBaseModal: $('#knowledge-base-modal'), knowledgeBaseClose: $('#knowledge-base-close'),
+    knowledgeBaseQuery: $('#knowledge-base-query'), knowledgeBaseGlossaryFilter: $('#knowledge-base-glossary-filter'), knowledgeBaseSearch: $('#knowledge-base-search-button'),
+    knowledgeBaseNew: $('#knowledge-base-new-button'), knowledgeBaseList: $('#knowledge-base-list'), knowledgeBasePrevious: $('#knowledge-base-previous'),
+    knowledgeBaseNext: $('#knowledge-base-next'), knowledgeBasePageSummary: $('#knowledge-base-page-summary'),
+    knowledgeBaseEntryForm: $('#knowledge-base-entry-form'), knowledgeBaseEntryId: $('#knowledge-base-entry-id'),
+    knowledgeBaseEntrySource: $('#knowledge-base-entry-source'), knowledgeBaseEntryTranslation: $('#knowledge-base-entry-translation'),
+    knowledgeBaseEntryGlossary: $('#knowledge-base-entry-glossary'), knowledgeBaseEntrySourceLanguage: $('#knowledge-base-entry-source-language'),
+    knowledgeBaseEntryTargetLanguage: $('#knowledge-base-entry-target-language'), knowledgeBaseEntryCancel: $('#knowledge-base-entry-cancel'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
@@ -74,6 +82,11 @@
     providerSettings: null,
     aitunnelModels: [],
     documentLibrary: [],
+    glossaries: [],
+    knowledgeBaseEntries: [],
+    knowledgeBaseOffset: 0,
+    knowledgeBaseLimit: 25,
+    knowledgeBaseTotal: 0,
   }
 
   function showToast(message, isError = false) {
@@ -2830,6 +2843,26 @@
     elements.documentLibraryModal.addEventListener('pointerdown', event => {
       if (event.target === elements.documentLibraryModal) elements.documentLibraryModal.hidden = true
     })
+    elements.knowledgeBaseOpen.addEventListener('click', openKnowledgeBase)
+    elements.knowledgeBaseClose.addEventListener('click', closeKnowledgeBase)
+    elements.knowledgeBaseModal.addEventListener('pointerdown', event => { if (event.target === elements.knowledgeBaseModal) closeKnowledgeBase() })
+    elements.knowledgeBaseSearch.addEventListener('click', () => loadKnowledgeBaseEntries(true))
+    elements.knowledgeBaseQuery.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); loadKnowledgeBaseEntries(true) }
+    })
+    elements.knowledgeBaseGlossaryFilter.addEventListener('change', () => loadKnowledgeBaseEntries(true))
+    elements.knowledgeBaseNew.addEventListener('click', () => showKnowledgeBaseEntryForm())
+    elements.knowledgeBaseEntryCancel.addEventListener('click', closeKnowledgeBaseEntryForm)
+    elements.knowledgeBaseEntryForm.addEventListener('submit', saveKnowledgeBaseEntry)
+    elements.knowledgeBasePrevious.addEventListener('click', () => {
+      state.knowledgeBaseOffset = Math.max(0, state.knowledgeBaseOffset - state.knowledgeBaseLimit)
+      loadKnowledgeBaseEntries()
+    })
+    elements.knowledgeBaseNext.addEventListener('click', () => {
+      if (state.knowledgeBaseOffset + state.knowledgeBaseLimit >= state.knowledgeBaseTotal) return
+      state.knowledgeBaseOffset += state.knowledgeBaseLimit
+      loadKnowledgeBaseEntries()
+    })
     elements.aiSettingsButton.addEventListener('click', openProviderSettings)
     elements.aiSettingsClose.addEventListener('click', closeProviderSettings)
     elements.aiSettingsModal.addEventListener('pointerdown', event => { if (event.target === elements.aiSettingsModal) closeProviderSettings() })
@@ -2948,6 +2981,7 @@
       }
       if (event.key === 'Escape') {
         if (!elements.aiSettingsModal.hidden) closeProviderSettings()
+        if (!elements.knowledgeBaseModal.hidden) closeKnowledgeBase()
         elements.documentLibraryModal.hidden = true
         state.selected.clear()
         state.lastTextSelection = null
@@ -2989,6 +3023,167 @@
     }
   }
 
+  function fillGlossarySelect(select, { includeAll = false, selected = '' } = {}) {
+    select.replaceChildren()
+    if (includeAll) select.append(new Option('Все глоссарии', ''))
+    for (const glossary of state.glossaries) {
+      select.append(new Option(glossary.domain ? `${glossary.name} · ${glossary.domain}` : glossary.name, glossary.id))
+    }
+    if (selected && [...select.options].some(option => option.value === selected)) select.value = selected
+  }
+
+  function closeKnowledgeBaseEntryForm() {
+    elements.knowledgeBaseEntryForm.hidden = true
+    elements.knowledgeBaseEntryForm.reset()
+    elements.knowledgeBaseEntryId.value = ''
+  }
+
+  function showKnowledgeBaseEntryForm(entry = null) {
+    elements.knowledgeBaseEntryForm.hidden = false
+    elements.knowledgeBaseEntryId.value = entry?.id || ''
+    elements.knowledgeBaseEntrySource.value = entry?.sourceText || ''
+    elements.knowledgeBaseEntryTranslation.value = entry?.translation || ''
+    elements.knowledgeBaseEntrySourceLanguage.value = entry?.sourceLanguage || state.scene?.sourceLanguage || 'auto'
+    elements.knowledgeBaseEntryTargetLanguage.value = entry?.targetLanguage || state.scene?.targetLanguage || 'ru'
+    const glossaryId = entry?.glossaryId || state.scene?.glossaryId || elements.knowledgeBaseGlossaryFilter.value || state.glossaries[0]?.id || ''
+    fillGlossarySelect(elements.knowledgeBaseEntryGlossary, { selected: glossaryId })
+    elements.knowledgeBaseEntrySource.focus()
+  }
+
+  function renderKnowledgeBaseEntries() {
+    elements.knowledgeBaseList.replaceChildren()
+    const start = state.knowledgeBaseTotal ? state.knowledgeBaseOffset + 1 : 0
+    const end = Math.min(state.knowledgeBaseOffset + state.knowledgeBaseEntries.length, state.knowledgeBaseTotal)
+    elements.knowledgeBasePageSummary.textContent = `${start}–${end} из ${state.knowledgeBaseTotal}`
+    elements.knowledgeBasePrevious.disabled = state.knowledgeBaseOffset <= 0
+    elements.knowledgeBaseNext.disabled = state.knowledgeBaseOffset + state.knowledgeBaseLimit >= state.knowledgeBaseTotal
+    if (!state.knowledgeBaseEntries.length) {
+      const empty = document.createElement('div')
+      empty.className = 'document-library-empty'
+      empty.textContent = 'Записи не найдены. Измените запрос или создайте новую пару.'
+      elements.knowledgeBaseList.append(empty)
+      return
+    }
+    const glossaryNames = new Map(state.glossaries.map(glossary => [glossary.id, glossary.name]))
+    for (const entry of state.knowledgeBaseEntries) {
+      const row = document.createElement('article')
+      row.className = 'knowledge-base-entry'
+      row.dataset.entryId = entry.id
+      const source = document.createElement('p')
+      source.className = 'knowledge-base-entry__text'
+      const sourceLabel = document.createElement('small')
+      sourceLabel.textContent = `Оригинал · ${entry.sourceLanguage}`
+      source.append(sourceLabel, document.createTextNode(entry.sourceText))
+      const translation = document.createElement('p')
+      translation.className = 'knowledge-base-entry__text'
+      const translationLabel = document.createElement('small')
+      translationLabel.textContent = `Перевод · ${entry.targetLanguage}`
+      translation.append(translationLabel, document.createTextNode(entry.translation))
+      const actions = document.createElement('div')
+      actions.className = 'knowledge-base-entry__actions'
+      const edit = document.createElement('button')
+      edit.className = 'button'
+      edit.type = 'button'
+      edit.textContent = 'Изменить'
+      edit.addEventListener('click', () => showKnowledgeBaseEntryForm(entry))
+      const remove = document.createElement('button')
+      remove.className = 'button button--danger'
+      remove.type = 'button'
+      remove.textContent = 'Удалить'
+      remove.addEventListener('click', () => deleteKnowledgeBaseEntry(entry))
+      actions.append(edit, remove)
+      const meta = document.createElement('small')
+      meta.className = 'knowledge-base-entry__meta'
+      const updatedAt = entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('ru-RU') : '—'
+      meta.textContent = `${glossaryNames.get(entry.glossaryId) || 'Неизвестный глоссарий'} · изменено ${updatedAt}`
+      row.append(source, translation, actions, meta)
+      elements.knowledgeBaseList.append(row)
+    }
+  }
+
+  async function loadKnowledgeBaseEntries(resetOffset = false) {
+    if (resetOffset) state.knowledgeBaseOffset = 0
+    elements.knowledgeBaseList.innerHTML = '<small>Загружаем записи…</small>'
+    const parameters = new URLSearchParams({
+      query: elements.knowledgeBaseQuery.value.trim(),
+      glossaryId: elements.knowledgeBaseGlossaryFilter.value,
+      limit: String(state.knowledgeBaseLimit),
+      offset: String(state.knowledgeBaseOffset),
+    })
+    try {
+      const response = await api(`/api/studio/knowledge-base/entries?${parameters}`)
+      const data = await response.json()
+      state.knowledgeBaseEntries = Array.isArray(data.entries) ? data.entries : []
+      state.knowledgeBaseTotal = Number(data.total) || 0
+      if (state.knowledgeBaseOffset >= state.knowledgeBaseTotal && state.knowledgeBaseOffset > 0) {
+        state.knowledgeBaseOffset = Math.max(0, Math.floor(Math.max(0, state.knowledgeBaseTotal - 1) / state.knowledgeBaseLimit) * state.knowledgeBaseLimit)
+        return loadKnowledgeBaseEntries()
+      }
+      renderKnowledgeBaseEntries()
+    } catch (error) {
+      elements.knowledgeBaseList.innerHTML = `<div class="document-library-empty">${escapeHtml(error.message)}</div>`
+      elements.knowledgeBasePageSummary.textContent = 'Ошибка загрузки'
+    }
+  }
+
+  async function openKnowledgeBase() {
+    elements.knowledgeBaseModal.hidden = false
+    closeKnowledgeBaseEntryForm()
+    try {
+      await loadKnowledgeBase()
+      fillGlossarySelect(elements.knowledgeBaseGlossaryFilter, { includeAll: true, selected: elements.knowledgeBaseGlossaryFilter.value })
+      await loadKnowledgeBaseEntries(true)
+      elements.knowledgeBaseQuery.focus()
+    } catch (error) {
+      elements.knowledgeBaseList.innerHTML = `<div class="document-library-empty">${escapeHtml(error.message)}</div>`
+    }
+  }
+
+  function closeKnowledgeBase() {
+    elements.knowledgeBaseModal.hidden = true
+    closeKnowledgeBaseEntryForm()
+  }
+
+  async function saveKnowledgeBaseEntry(event) {
+    event.preventDefault()
+    const id = elements.knowledgeBaseEntryId.value
+    const payload = {
+      sourceText: elements.knowledgeBaseEntrySource.value.trim(),
+      translation: elements.knowledgeBaseEntryTranslation.value.trim(),
+      glossaryId: elements.knowledgeBaseEntryGlossary.value,
+      sourceLanguage: elements.knowledgeBaseEntrySourceLanguage.value.trim() || 'auto',
+      targetLanguage: elements.knowledgeBaseEntryTargetLanguage.value.trim() || 'ru',
+    }
+    if (!payload.sourceText || !payload.translation || !payload.glossaryId) return showToast('Заполните оригинал, перевод и глоссарий', true)
+    try {
+      if (id) {
+        await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(id)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        })
+      } else {
+        const response = await api('/api/studio/knowledge-base/entries', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        })
+        const result = await response.json()
+        const conflict = result.results?.find(item => item.status === 'conflict' || item.status === 'existing')
+        if (conflict) throw new Error(conflict.status === 'existing' ? 'Такая запись уже существует' : 'Для этой исходной фразы уже сохранён другой перевод')
+      }
+      closeKnowledgeBaseEntryForm()
+      await Promise.all([loadKnowledgeBaseEntries(), loadKnowledgeBase()])
+      showToast(id ? 'Запись Базы знаний обновлена' : 'Запись добавлена в Базу знаний')
+    } catch (error) { showToast(error.message, true) }
+  }
+
+  async function deleteKnowledgeBaseEntry(entry) {
+    if (!window.confirm(`Удалить пару «${entry.sourceText.slice(0, 80)}»? Переводы в уже сохранённых документах не изменятся.`)) return
+    try {
+      await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
+      if (elements.knowledgeBaseEntryId.value === entry.id) closeKnowledgeBaseEntryForm()
+      await Promise.all([loadKnowledgeBaseEntries(), loadKnowledgeBase()])
+      showToast('Запись удалена из Базы знаний')
+    } catch (error) { showToast(error.message, true) }
+  }
+
   async function loadKnowledgeBase() {
     const statusResponse = await api('/api/studio/knowledge-base/status')
     const status = await statusResponse.json()
@@ -2998,7 +3193,6 @@
         ? `PostgreSQL недоступен: ${status.error || 'проверьте DATABASE_URL'}`
         : `PostgreSQL/pgvector · ${status.entries || 0} записей · ${status.vectorSearch ? status.embeddingModel : 'только точный поиск'}`
       : 'Временная БЗ в памяти · настройте DATABASE_URL для постоянного хранения'
-    elements.glossarySelect.replaceChildren()
     let glossaries = []
     try {
       const glossariesResponse = await api('/api/studio/knowledge-base/glossaries')
@@ -3006,21 +3200,18 @@
     } catch (error) {
       elements.knowledgeBaseStatus.classList.add('is-error')
       elements.knowledgeBaseStatus.textContent = `База знаний недоступна: ${error.message}`
-      const option = document.createElement('option')
-      option.textContent = 'Глоссарии недоступны'
-      elements.glossarySelect.append(option)
+      elements.glossarySelect.replaceChildren(new Option('Глоссарии недоступны', ''))
       elements.glossarySelect.disabled = true
       return
     }
     elements.glossarySelect.disabled = false
-    for (const glossary of Array.isArray(glossaries) ? glossaries : []) {
-      const option = document.createElement('option')
-      option.value = glossary.id
-      option.textContent = glossary.domain ? `${glossary.name} · ${glossary.domain}` : glossary.name
-      elements.glossarySelect.append(option)
-    }
+    state.glossaries = Array.isArray(glossaries) ? glossaries : []
     const selected = state.scene?.glossaryId
-    if (selected && [...elements.glossarySelect.options].some(option => option.value === selected)) elements.glossarySelect.value = selected
+    fillGlossarySelect(elements.glossarySelect, { selected })
+    if (!elements.knowledgeBaseModal.hidden) {
+      fillGlossarySelect(elements.knowledgeBaseGlossaryFilter, { includeAll: true, selected: elements.knowledgeBaseGlossaryFilter.value })
+      fillGlossarySelect(elements.knowledgeBaseEntryGlossary, { selected: elements.knowledgeBaseEntryGlossary.value || selected })
+    }
     else if (elements.glossarySelect.value && state.scene) state.scene.glossaryId = elements.glossarySelect.value
   }
 
