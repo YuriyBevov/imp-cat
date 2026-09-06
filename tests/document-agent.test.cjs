@@ -44,6 +44,24 @@ test('Codex prompt requires complete text and readable service-object content', 
   assert.match(prompt, /Arial/)
   assert.match(prompt, /fontWeight строго 400 или 700/)
   assert.match(prompt, /Не определяй семейство шрифта, цвет/)
+  assert.match(prompt, /tableId/)
+})
+
+test('normalizes structural table coordinates for native export', () => {
+  const raw = {
+    documentTitle: 'Table', languages: ['en'],
+    pages: manifest().pages.map((page, pageIndex) => ({
+      pageIndex, languages: ['en'], segments: pageIndex ? [] : [{
+        segmentId: 'cell-a', type: 'table_cell', sourceText: 'A', readingOrder: 0,
+        flowGroup: 'page-1-table-1', tableId: 'table-1', rowIndex: 2, columnIndex: 3, rowSpan: 2, columnSpan: 1,
+        regions: [{ x: .1, y: .1, width: .2, height: .05 }], style: style(), confidence: .99, needsReview: false, notes: '',
+      }],
+    })),
+  }
+  const cell = normalizeCodexAnalysis(raw, manifest()).pages[0].segments[0]
+  assert.deepEqual({ tableId: cell.tableId, rowIndex: cell.rowIndex, columnIndex: cell.columnIndex, rowSpan: cell.rowSpan, columnSpan: cell.columnSpan }, {
+    tableId: 'table-1', rowIndex: 2, columnIndex: 3, rowSpan: 2, columnSpan: 1,
+  })
 })
 
 test('Codex arguments attach every page and enforce structured output', () => {

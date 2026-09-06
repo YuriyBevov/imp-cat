@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const {
   buildScene,
   buildSceneFromAgent,
+  buildTableStructures,
   classifyText,
   fitAgentFontSizePx,
   findMemoryMatches,
@@ -39,6 +40,18 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.match(scene.objects[1].sourceText, /First line[\s\S]*continues/)
   assert.equal(scene.objects[2].type, 'signature')
   assert.equal(scene.objects[2].translation, '/Подпись/')
+})
+
+test('structural table model groups positioned cells by page and table id', () => {
+  const tables = buildTableStructures([
+    { id: 'a', pageIndex: 0, type: 'table_cell', tableId: 'prices', rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 1, x: 20, y: 40, width: 100, height: 30 },
+    { id: 'b', pageIndex: 0, type: 'table_cell', tableId: 'prices', rowIndex: 0, columnIndex: 1, rowSpan: 1, columnSpan: 1, x: 120, y: 40, width: 180, height: 30 },
+    { id: 'c', pageIndex: 0, type: 'table_cell', tableId: 'prices', rowIndex: 1, columnIndex: 0, rowSpan: 1, columnSpan: 2, x: 20, y: 70, width: 280, height: 35 },
+  ])
+  assert.equal(tables.length, 1)
+  assert.equal(tables[0].rowCount, 2)
+  assert.equal(tables[0].columnCount, 2)
+  assert.deepEqual(tables[0].cells.map(cell => cell.objectId), ['a', 'b', 'c'])
 })
 
 test('buildScene fits standalone raster sources onto an undistorted A4 workspace', () => {

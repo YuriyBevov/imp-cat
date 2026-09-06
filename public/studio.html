@@ -64,7 +64,11 @@
       <p id="loading-message">Рендерим страницы и выполняем полный анализ документа агентом…</p>
       <div class="job-progress" aria-label="Прогресс обработки"><span id="loading-progress"></span></div>
       <strong id="loading-progress-label" class="job-progress__label">0%</strong>
-      <button id="retry-job-button" class="button button--primary loading-retry" type="button" hidden>Повторить обработку</button>
+      <p id="loading-progress-details" class="job-progress__details" hidden></p>
+      <div class="loading-job-actions">
+        <button id="cancel-job-button" class="button" type="button" hidden>Отменить обработку</button>
+        <button id="retry-job-button" class="button button--primary loading-retry" type="button" hidden>Повторить обработку</button>
+      </div>
       <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
@@ -155,8 +159,11 @@
             <button id="reanalyze-button" class="button" type="button">Повторить анализ исходника</button>
             <button id="translate-button" class="button" type="button" disabled>Перевести выбранные</button>
             <button id="auto-layout-button" class="button" type="button">Исправить наложения</button>
+            <button id="layout-review-button" class="button" type="button">AI: сравнить и исправить макет</button>
+            <button id="layout-review-cancel-button" class="button button--danger" type="button" hidden>Отменить сравнение</button>
             <button id="qa-button" class="button" type="button">Финальная проверка</button>
           </div>
+          <small id="layout-review-status" class="layout-review-status">Сравнение с оригиналом ещё не запускалось.</small>
         </div>
 
         <section class="language-card">
@@ -188,6 +195,13 @@
               <option value="handwriting">Рукописный текст</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
             </select>
           </label>
+          <section id="table-cell-fields" class="table-cell-fields" hidden>
+            <label>ID таблицы<input id="table-id" type="text" maxlength="120" /></label>
+            <label>Строка<input id="table-row" type="number" min="0" max="999" step="1" /></label>
+            <label>Колонка<input id="table-column" type="number" min="0" max="999" step="1" /></label>
+            <label>Строк занимает<input id="table-row-span" type="number" min="1" max="100" step="1" /></label>
+            <label>Колонок занимает<input id="table-column-span" type="number" min="1" max="100" step="1" /></label>
+          </section>
           <label>Распознанный исходник
             <textarea id="source-text" rows="6" spellcheck="true"></textarea>
           </label>
@@ -305,6 +319,11 @@
           </div>
           <div class="memory-card">
             <div><strong>Векторная база знаний</strong><button id="memory-search-button" type="button">Найти похожие</button></div>
+            <div class="memory-card__glossary">
+              <select id="glossary-select" aria-label="Активный глоссарий"><option value="">Загружаем глоссарии…</option></select>
+              <button id="glossary-add-button" type="button">＋ Новый</button>
+            </div>
+            <small id="knowledge-base-status" class="memory-card__status">Проверяем PostgreSQL/pgvector…</small>
             <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
           </div>
           <div class="object-actions">

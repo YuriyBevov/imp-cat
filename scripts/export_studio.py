@@ -82,38 +82,75 @@ def normalize_scene(scene: dict) -> dict:
         }
         for index, page in enumerate(scene.get("pages", []))
     ]
-    segments = []
-    for index, item in enumerate(scene.get("objects", [])):
+    objects = [item for item in scene.get("objects", []) if not item.get("excluded") and output_text(item).strip()]
+
+    def normalize_segment(item: dict, index: int) -> dict:
         text = output_text(item)
-        if item.get("excluded") or not text.strip():
-            continue
         style = item.get("style") or {}
-        segments.append(
-            {
-                "id": str(item.get("id") or f"object-{index + 1}"),
-                "pageIndex": int(item.get("pageIndex", 0)),
-                "text": text,
-                "x": float(item.get("x", 0)),
-                "y": float(item.get("y", 0)),
-                "width": float(item.get("width", 120)),
-                "height": float(item.get("height", 32)),
-                "rotation": float(item.get("rotation", 0)),
-                "zIndex": index + 1,
-                "fontFamily": str(style.get("fontFamily") or "Arial"),
-                "fontSizePx": float(style.get("fontSizePx", 14)),
-                "fontWeight": float(style.get("fontWeight", 400)),
-                "fontStyle": "italic" if style.get("fontStyle") == "italic" else "normal",
-                "lineHeight": float(style.get("lineHeight", 1.2)),
-                "color": str(style.get("color") or "#111827"),
-                "alignment": str(style.get("textAlign") or "left"),
-                "runs": text_runs(item, text),
-            }
-        )
+        return {
+            "id": str(item.get("id") or f"object-{index + 1}"),
+            "pageIndex": int(item.get("pageIndex", 0)),
+            "text": text,
+            "x": float(item.get("x", 0)),
+            "y": float(item.get("y", 0)),
+            "width": float(item.get("width", 120)),
+            "height": float(item.get("height", 32)),
+            "rotation": float(item.get("rotation", 0)),
+            "zIndex": index + 1,
+            "fontFamily": str(style.get("fontFamily") or "Arial"),
+            "fontSizePx": float(style.get("fontSizePx", 14)),
+            "fontWeight": float(style.get("fontWeight", 400)),
+            "fontStyle": "italic" if style.get("fontStyle") == "italic" else "normal",
+            "lineHeight": float(style.get("lineHeight", 1.2)),
+            "color": str(style.get("color") or "#111827"),
+            "alignment": str(style.get("textAlign") or "left"),
+            "runs": text_runs(item, text),
+        }
+
+    table_groups: dict[tuple[int, str], list[tuple[int, dict]]] = {}
+    for index, item in enumerate(objects):
+        if item.get("type") != "table_cell" or not item.get("tableId"):
+            continue
+        if not isinstance(item.get("rowIndex"), int) or not isinstance(item.get("columnIndex"), int):
+            continue
+        key = (int(item.get("pageIndex", 0)), str(item["tableId"]))
+        table_groups.setdefault(key, []).append((index, item))
+
+    structural_ids = {str(item.get("id")) for cells in table_groups.values() for _, item in cells}
+    segments = [normalize_segment(item, index) for index, item in enumerate(objects) if str(item.get("id")) not in structural_ids]
+    tables = []
+    for (page_index, table_id), source_cells in table_groups.items():
+        cells = []
+        for index, item in source_cells:
+            cell = normalize_segment(item, index)
+            cell.update({
+                "rowIndex": max(0, int(item.get("rowIndex", 0))),
+                "columnIndex": max(0, int(item.get("columnIndex", 0))),
+                "rowSpan": max(1, int(item.get("rowSpan", 1))),
+                "columnSpan": max(1, int(item.get("columnSpan", 1))),
+            })
+            cells.append(cell)
+        left = min(cell["x"] for cell in cells)
+        top = min(cell["y"] for cell in cells)
+        right = max(cell["x"] + cell["width"] for cell in cells)
+        bottom = max(cell["y"] + cell["height"] for cell in cells)
+        tables.append({
+            "id": table_id,
+            "pageIndex": page_index,
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+            "rowCount": max(cell["rowIndex"] + cell["rowSpan"] for cell in cells),
+            "columnCount": max(cell["columnIndex"] + cell["columnSpan"] for cell in cells),
+            "cells": sorted(cells, key=lambda cell: (cell["rowIndex"], cell["columnIndex"])),
+        })
     return {
         "title": str(scene.get("title") or "Translated document"),
         "gridSize": 1,
         "pages": pages,
         "segments": segments,
+        "tables": tables,
     }
 
 
@@ -227,8 +264,13 @@ def export_pdf(payload: dict, output_path: Path) -> None:
         page_height = page["heightPx"] * 0.75
         if page_index:
             canvas.setPageSize((page_width, page_height))
+        page_segments = [item for item in payload["segments"] if item["pageIndex"] == page["index"]]
+        for table in payload.get("tables", []):
+            if table["pageIndex"] != page["index"]:
+                continue
+            page_segments.extend({**cell, "_tableCell": True} for cell in table["cells"])
         for segment in sorted(
-            (item for item in payload["segments"] if item["pageIndex"] == page["index"]),
+            page_segments,
             key=lambda item: (item["zIndex"], item["y"], item["x"]),
         ):
             available_width = max(8, segment["width"] * 0.75)
@@ -236,6 +278,10 @@ def export_pdf(payload: dict, output_path: Path) -> None:
             canvas.saveState()
             origin_x = segment["x"] * 0.75
             y = page_height - segment["y"] * 0.75
+            if segment.get("_tableCell"):
+                canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
+                canvas.setLineWidth(0.5)
+                canvas.rect(origin_x, y - segment["height"] * 0.75, segment["width"] * 0.75, segment["height"] * 0.75, stroke=1, fill=0)
             for line in lines:
                 metrics = [run_font(segment, run) for _, run in line]
                 maximum_size = max((size for _, size in metrics), default=max(4.5, segment["fontSizePx"] * 0.75))

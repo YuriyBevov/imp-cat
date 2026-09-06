@@ -1,15 +1,19 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
+const { DEFAULT_GLOSSARY_ID, createKnowledgeBase } = require('../lib/knowledge-base.cjs')
 
-const { createKnowledgeBase, vectorize } = require('../lib/knowledge-base.cjs')
+const embeddingProvider = {
+  kind: 'test', model: 'test-embedding', dimensions: 3, available: () => true,
+  async embed(values) {
+    return values.map(value => {
+      const text = String(value).toLowerCase()
+      return [text.includes('attorney') ? 1 : 0, text.includes('legal') ? 1 : 0, text.includes('power') ? 1 : 0]
+    })
+  },
+}
 
-test('knowledge base returns an exact match before vector alternatives and does not duplicate it', async t => {
-  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-kb-'))
-  t.after(() => fs.promises.rm(directory, { recursive: true, force: true }))
-  const kb = createKnowledgeBase({ filePath: path.join(directory, 'translation-memory.json') })
+test('knowledge base returns an exact match before vector alternatives and does not duplicate it', async () => {
+  const kb = createKnowledgeBase({ embeddingProvider })
   let result = await kb.addMany([{
     sourceText: 'Power of attorney', translation: 'Доверенность', sourceLanguage: 'en', targetLanguage: 'ru', clientRef: 'unit-1',
   }])
@@ -26,15 +30,16 @@ test('knowledge base returns an exact match before vector alternatives and does 
   assert.equal(Object.hasOwn(matches[0], 'sourceVector'), false)
 })
 
-test('knowledge base migrates legacy arrays and builds deterministic local vectors', async t => {
-  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-kb-legacy-'))
-  t.after(() => fs.promises.rm(directory, { recursive: true, force: true }))
-  const filePath = path.join(directory, 'translation-memory.json')
-  await fs.promises.writeFile(filePath, JSON.stringify([{
-    id: 'legacy', sourceText: 'Attorney legal powers', translation: 'Полномочия поверенного', targetLanguage: 'ru', updatedAt: '2026-01-01',
-  }]))
-  const kb = createKnowledgeBase({ filePath })
-  const matches = await kb.search('legal powers of attorney', 'ru')
-  assert.equal(matches[0].id, 'legacy')
-  assert.deepEqual(vectorize('Same text'), vectorize('Same text'))
+test('knowledge base uses provider embeddings and separates entries by glossary', async () => {
+  const kb = createKnowledgeBase({ embeddingProvider })
+  const glossary = await kb.createGlossary({ name: 'Юридический', domain: 'law', sourceLanguage: 'en', targetLanguage: 'ru' })
+  await kb.addMany([{
+    sourceText: 'Attorney legal powers', translation: 'Полномочия поверенного', sourceLanguage: 'en', targetLanguage: 'ru', glossaryId: glossary.id,
+  }])
+  assert.deepEqual(await kb.search('legal powers of attorney', 'ru'), [])
+  const matches = await kb.search('legal powers of attorney', 'ru', 8, { glossaryId: glossary.id, sourceLanguage: 'en' })
+  assert.equal(matches[0].matchType, 'vector')
+  assert.equal(matches[0].glossaryId, glossary.id)
+  assert.equal((await kb.listGlossaries())[0].id, DEFAULT_GLOSSARY_ID)
+  assert.equal((await kb.status()).persistent, false)
 })

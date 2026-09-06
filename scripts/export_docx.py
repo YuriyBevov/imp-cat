@@ -290,6 +290,124 @@ def create_vml_text_box(
     return pict
 
 
+def create_word_table(table: dict) -> etree._Element:
+    row_count = max(1, int(table.get("rowCount", 1)))
+    column_count = max(1, int(table.get("columnCount", 1)))
+    table_width = px_to_twips(table.get("width", 120))
+    column_width = max(1, round(table_width / column_count))
+    cells = {(int(cell["rowIndex"]), int(cell["columnIndex"])): cell for cell in table.get("cells", [])}
+
+    table_node = element("w", "tbl")
+    properties = element("w", "tblPr")
+    width = element("w", "tblW")
+    word_attr(width, "w", table_width)
+    word_attr(width, "type", "dxa")
+    properties.append(width)
+    properties.append(element("w", "tblLayout", {qn("w:type"): "fixed"}))
+    borders = element("w", "tblBorders")
+    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        border = element("w", side)
+        word_attr(border, "val", "single")
+        word_attr(border, "sz", 4)
+        word_attr(border, "space", 0)
+        word_attr(border, "color", "808080")
+        borders.append(border)
+    properties.append(borders)
+    table_node.append(properties)
+    grid = element("w", "tblGrid")
+    for _ in range(column_count):
+        column = element("w", "gridCol")
+        word_attr(column, "w", column_width)
+        grid.append(column)
+    table_node.append(grid)
+
+    for row_index in range(row_count):
+        row = element("w", "tr")
+        row_cells = [cell for cell in table.get("cells", []) if int(cell["rowIndex"]) == row_index]
+        row_height_px = max((float(cell.get("height", 24)) / max(1, int(cell.get("rowSpan", 1))) for cell in row_cells), default=float(table.get("height", 24)) / row_count)
+        row_properties = element("w", "trPr")
+        height = element("w", "trHeight")
+        word_attr(height, "val", px_to_twips(row_height_px))
+        word_attr(height, "hRule", "atLeast")
+        row_properties.append(height)
+        row.append(row_properties)
+        column_index = 0
+        while column_index < column_count:
+            cell = cells.get((row_index, column_index))
+            vertical_source = None
+            if cell is None:
+                vertical_source = next((candidate for candidate in table.get("cells", []) if (
+                    int(candidate["columnIndex"]) == column_index
+                    and int(candidate["rowIndex"]) < row_index < int(candidate["rowIndex"]) + max(1, int(candidate.get("rowSpan", 1)))
+                )), None)
+            active = cell or vertical_source
+            span = min(column_count - column_index, max(1, int(active.get("columnSpan", 1)))) if active else 1
+            cell_node = element("w", "tc")
+            cell_properties = element("w", "tcPr")
+            cell_width = element("w", "tcW")
+            word_attr(cell_width, "w", column_width * span)
+            word_attr(cell_width, "type", "dxa")
+            cell_properties.append(cell_width)
+            if span > 1:
+                grid_span = element("w", "gridSpan")
+                word_attr(grid_span, "val", span)
+                cell_properties.append(grid_span)
+            if active and int(active.get("rowSpan", 1)) > 1:
+                merge = element("w", "vMerge")
+                word_attr(merge, "val", "restart" if cell is not None else "continue")
+                cell_properties.append(merge)
+            margins = element("w", "tcMar")
+            for side in ("top", "left", "bottom", "right"):
+                margin = element("w", side)
+                word_attr(margin, "w", 24)
+                word_attr(margin, "type", "dxa")
+                margins.append(margin)
+            cell_properties.append(margins)
+            cell_node.append(cell_properties)
+            if cell is not None:
+                cell_node.append(create_text_box_paragraph(cell))
+            else:
+                cell_node.append(element("w", "p"))
+            row.append(cell_node)
+            column_index += span
+        table_node.append(row)
+    return table_node
+
+
+def create_vml_table_box(table: dict, shape_id: int, include_shape_type: bool = False) -> etree._Element:
+    pict = element("w", "pict")
+    if include_shape_type:
+        shape_type = element("v", "shapetype", {"id": "_x0000_t202", "coordsize": "21600,21600", "path": "m,l,21600r21600,l21600,xe"})
+        namespaced_attr(shape_type, "o", "spt", 202)
+        shape_type.append(element("v", "stroke", {"joinstyle": "miter"}))
+        shape_path = element("v", "path", {"gradientshapeok": "t"})
+        namespaced_attr(shape_path, "o", "connecttype", "rect")
+        shape_type.append(shape_path)
+        pict.append(shape_type)
+    points = lambda value: f"{float(value) * 0.75:.3f}".rstrip("0").rstrip(".")
+    style = ";".join([
+        "position:absolute", "left:0", "top:0", "text-align:left",
+        f"margin-left:{points(table['x'])}pt", f"margin-top:{points(table['y'])}pt",
+        f"width:{points(table['width'])}pt", f"height:{points(table['height'])}pt",
+        f"z-index:{BASE_RELATIVE_HEIGHT + shape_id}", "visibility:visible", "mso-wrap-style:square",
+        "mso-wrap-distance-left:0", "mso-wrap-distance-top:0", "mso-wrap-distance-right:0", "mso-wrap-distance-bottom:0",
+        "mso-position-horizontal:absolute", "mso-position-horizontal-relative:page",
+        "mso-position-vertical:absolute", "mso-position-vertical-relative:page", "v-text-anchor:top",
+    ])
+    shape = element("v", "shape", {"id": f"ICAT table {shape_id}", "type": "#_x0000_t202", "style": style, "filled": "f", "stroked": "f"})
+    namespaced_attr(shape, "o", "spid", f"_x0000_s{1024 + shape_id}")
+    namespaced_attr(shape, "o", "allowoverlap", "t")
+    namespaced_attr(shape, "o", "allowincell", "f")
+    text_box = element("v", "textbox", {"inset": "0,0,0,0"})
+    content = element("w", "txbxContent")
+    content.append(create_word_table(table))
+    content.append(element("w", "p"))
+    text_box.append(content)
+    shape.append(text_box)
+    pict.append(shape)
+    return pict
+
+
 def create_drawingml_text_box(segment: dict, shape_id: int) -> etree._Element:
     width_emu = px_to_emu(segment["width"])
     height_emu = px_to_emu(segment["height"])
@@ -456,10 +574,30 @@ def add_shape_anchor(
     paragraph._p.append(run)
 
 
-def add_page_anchors(document: Document, segments: list[dict], first_shape_id: int) -> int:
+def add_table_anchor(document: Document, table: dict, shape_id: int, include_shape_type: bool = False) -> None:
+    paragraph = document.add_paragraph()
+    paragraph_properties = paragraph._p.get_or_add_pPr()
+    spacing = element("w", "spacing")
+    word_attr(spacing, "before", 0)
+    word_attr(spacing, "after", 0)
+    word_attr(spacing, "line", 1)
+    word_attr(spacing, "lineRule", "exact")
+    paragraph_properties.append(spacing)
+    run = element("w", "r")
+    run_properties = element("w", "rPr")
+    run_properties.append(element("w", "noProof"))
+    run.append(run_properties)
+    run.append(create_vml_table_box(table, shape_id, include_shape_type))
+    paragraph._p.append(run)
+
+
+def add_page_anchors(document: Document, segments: list[dict], tables: list[dict], first_shape_id: int) -> int:
     shape_id = first_shape_id
     for segment in segments:
         add_shape_anchor(document, segment, shape_id, include_shape_type=shape_id == 1)
+        shape_id += 1
+    for table in tables:
+        add_table_anchor(document, table, shape_id, include_shape_type=shape_id == 1)
         shape_id += 1
     return shape_id
 
@@ -484,7 +622,7 @@ def configure_vml_settings(document: Document, segment_count: int) -> None:
             compatibility_setting.set(qn("w:val"), "15")
 
 
-def validate_export(output_path: Path, expected_pages: int, expected_segments: int) -> None:
+def validate_export(output_path: Path, expected_pages: int, expected_segments: int, expected_tables: int = 0) -> None:
     """Fail the HTTP export before download if the package violates Word/VML invariants."""
     try:
         with ZipFile(output_path) as archive:
@@ -507,12 +645,13 @@ def validate_export(output_path: Path, expected_pages: int, expected_segments: i
     shapes = reopened.element.body.xpath(
         ".//*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
     )
-    if len(shapes) != expected_segments:
-        raise ValueError("DOCX VML shape count does not match the segment count")
+    expected_shapes = expected_segments + expected_tables
+    if len(shapes) != expected_shapes:
+        raise ValueError("DOCX VML shape count does not match the positioned object count")
     shape_types = reopened.element.body.xpath(
         ".//*[local-name()='shapetype' and namespace-uri()='urn:schemas-microsoft-com:vml']"
     )
-    if expected_segments and len(shape_types) != 1:
+    if expected_shapes and len(shape_types) != 1:
         raise ValueError("DOCX must define the VML text-box shape type exactly once")
 
     host_paragraphs = reopened.element.body.xpath(
@@ -522,8 +661,12 @@ def validate_export(output_path: Path, expected_pages: int, expected_segments: i
         "./w:r/w:pict/*[local-name()='shape' and namespace-uri()='urn:schemas-microsoft-com:vml']"
     )) != 1 for paragraph in host_paragraphs):
         raise ValueError("Each DOCX VML shape must have an independent host paragraph")
-    if len(host_paragraphs) != expected_segments:
+    if len(host_paragraphs) != expected_shapes:
         raise ValueError("DOCX VML host-paragraph count does not match the segment count")
+
+    tables = reopened.element.body.xpath(".//w:txbxContent/w:tbl")
+    if len(tables) != expected_tables:
+        raise ValueError("DOCX native table count does not match the scene table count")
 
     paragraph_alignments = reopened.element.body.xpath(".//w:txbxContent/w:p/w:pPr/w:jc/@w:val")
     invalid_alignments = sorted(set(paragraph_alignments).difference(VALID_WORD_ALIGNMENTS))
@@ -557,16 +700,28 @@ def export_layout(payload: dict, output_path: Path) -> None:
         )
         for page in pages
     }
+    grouped_tables = {
+        page["index"]: sorted(
+            (table for table in payload.get("tables", []) if table["pageIndex"] == page["index"]),
+            key=lambda item: (item["y"], item["x"]),
+        )
+        for page in pages
+    }
 
     next_shape_id = 1
     for page_index, page in enumerate(pages):
         section = document.sections[0] if page_index == 0 else document.add_section(WD_SECTION.NEW_PAGE)
         configure_section(section, page)
-        next_shape_id = add_page_anchors(document, grouped_segments[page["index"]], next_shape_id)
+        next_shape_id = add_page_anchors(
+            document,
+            grouped_segments[page["index"]],
+            grouped_tables[page["index"]],
+            next_shape_id,
+        )
 
-    configure_vml_settings(document, len(payload["segments"]))
+    configure_vml_settings(document, len(payload["segments"]) + len(payload.get("tables", [])))
     document.save(output_path)
-    validate_export(output_path, len(pages), len(payload["segments"]))
+    validate_export(output_path, len(pages), len(payload["segments"]), len(payload.get("tables", [])))
 
 
 def main() -> None:

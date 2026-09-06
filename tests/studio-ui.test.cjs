@@ -16,8 +16,9 @@ test('studio exposes the complete source-to-export workflow', () => {
     'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'translation-select-all', 'translation-selection-count',
-    'auto-layout-button', 'qa-button', 'export-docx-button', 'export-pdf-button',
-    'memory-search-button', 'approve-button', 'merge-button', 'split-button',
+    'auto-layout-button', 'layout-review-button', 'layout-review-cancel-button', 'layout-review-status', 'qa-button', 'export-docx-button', 'export-pdf-button',
+    'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'approve-button', 'merge-button', 'split-button',
+    'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
     'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
@@ -26,7 +27,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'document-font-size', 'apply-document-font-size',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
     'document-tabs', 'add-document-tab', 'document-library-button', 'document-library-modal', 'document-library-list',
-    'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button',
+    'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button', 'cancel-job-button', 'loading-progress-details',
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   assert.match(server, /app\.use\('\/api\/studio'/)
@@ -49,6 +50,10 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /toggleSourcePanel/)
   assert.match(client, /agent\/reanalyze/)
   assert.match(client, /\/api\/studio\/jobs/)
+  assert.match(client, /agent\/layout-review/)
+  assert.match(client, /loadPendingJobs/)
+  assert.match(client, /cancelActiveJob/)
+  assert.match(client, /rebuildClientTables/)
   assert.match(client, /encryptApiKey/)
   assert.match(client, /\/api\/studio\/provider\/models/)
   assert.match(client, /\/api\/studio\/provider\/test/)

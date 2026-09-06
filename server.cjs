@@ -208,8 +208,10 @@ app.use((error, request, response, next) => {
   response.status(status).json({ error: error.message || 'Внутренняя ошибка сервера' })
 })
 
-function runProcess(command, args, timeoutMs) {
+function runProcess(command, args, timeoutMs, options = {}) {
   return new Promise((resolve, reject) => {
+    const signal = options?.signal
+    if (signal?.aborted) return reject(signal.reason instanceof Error ? signal.reason : new DOMException('Операция отменена', 'AbortError'))
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
@@ -218,7 +220,13 @@ function runProcess(command, args, timeoutMs) {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
       callback()
+    }
+    const abort = () => {
+      child.kill('SIGTERM')
+      setTimeout(() => { if (!settled) child.kill('SIGKILL') }, 1_500).unref()
+      finish(() => reject(signal.reason instanceof Error ? signal.reason : new DOMException('Операция отменена', 'AbortError')))
     }
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
@@ -229,6 +237,7 @@ function runProcess(command, args, timeoutMs) {
       })
     }, timeoutMs)
     timer.unref()
+    signal?.addEventListener('abort', abort, { once: true })
 
     child.stdout.on('data', chunk => { stdout += chunk.toString() })
     child.stderr.on('data', chunk => { stderr += chunk.toString() })

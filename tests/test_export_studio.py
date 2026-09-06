@@ -66,6 +66,30 @@ class StudioExporterTests(unittest.TestCase):
                 self.assertNotIn("Не экспортировать", xml)
             self.assertTrue(pdf_path.read_bytes().startswith(b"%PDF"))
 
+    def test_exports_structural_cells_as_one_native_word_table(self):
+        scene = self.scene()
+        for row in range(2):
+            for column in range(2):
+                scene["objects"].append({
+                    "id": f"cell-{row}-{column}", "pageIndex": 0, "type": "table_cell",
+                    "tableId": "table-1", "rowIndex": row, "columnIndex": column,
+                    "rowSpan": 1, "columnSpan": 1,
+                    "sourceText": f"Cell {row + 1}:{column + 1}", "translation": f"Ячейка {row + 1}:{column + 1}",
+                    "x": 60 + column * 200, "y": 220 + row * 40, "width": 200, "height": 40,
+                    "style": {"fontFamily": "Arial", "fontSizePx": 12, "fontWeight": 400, "fontStyle": "normal", "lineHeight": 1.2, "textAlign": "left", "color": "#111827"},
+                })
+        payload = MODULE.normalize_scene(scene)
+        self.assertEqual(len(payload["tables"]), 1)
+        self.assertEqual(len(payload["tables"][0]["cells"]), 4)
+        self.assertFalse(any(segment["id"].startswith("cell-") for segment in payload["segments"]))
+        with tempfile.TemporaryDirectory() as directory:
+            docx_path = Path(directory) / "table.docx"
+            MODULE.export_layout(payload, docx_path)
+            with ZipFile(docx_path) as archive:
+                xml = archive.read("word/document.xml").decode("utf-8")
+                self.assertEqual(xml.count("<w:tbl>"), 1)
+                self.assertIn("Ячейка 2:2", xml)
+
 
 if __name__ == "__main__":
     unittest.main()

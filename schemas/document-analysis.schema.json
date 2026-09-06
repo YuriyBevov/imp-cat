@@ -52,6 +52,11 @@
                 "sourceText",
                 "readingOrder",
                 "flowGroup",
+                "tableId",
+                "rowIndex",
+                "columnIndex",
+                "rowSpan",
+                "columnSpan",
                 "regions",
                 "style",
                 "confidence",
@@ -91,6 +96,30 @@
                 "flowGroup": {
                   "type": "string",
                   "maxLength": 120
+                },
+                "tableId": {
+                  "type": ["string", "null"],
+                  "maxLength": 120
+                },
+                "rowIndex": {
+                  "type": ["integer", "null"],
+                  "minimum": 0,
+                  "maximum": 999
+                },
+                "columnIndex": {
+                  "type": ["integer", "null"],
+                  "minimum": 0,
+                  "maximum": 999
+                },
+                "rowSpan": {
+                  "type": ["integer", "null"],
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "columnSpan": {
+                  "type": ["integer", "null"],
+                  "minimum": 1,
+                  "maximum": 100
                 },
                 "regions": {
                   "type": "array",

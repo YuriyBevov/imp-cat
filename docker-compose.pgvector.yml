@@ -1,0 +1,20 @@
+services:
+  knowledge-base:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: icat
+      POSTGRES_USER: icat
+      POSTGRES_PASSWORD: ${ICAT_POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - icat-pgvector-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icat -d icat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  icat-pgvector-data:

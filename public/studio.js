@@ -3,7 +3,7 @@
   const translationUnits = window.IcatTranslationUnits
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
-    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), retryJob: $('#retry-job-button'), studioView: $('#studio-view'),
+    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
     documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'), addDocumentTab: $('#add-document-tab'),
     documentLibraryButton: $('#document-library-button'), documentLibraryModal: $('#document-library-modal'),
     documentLibraryClose: $('#document-library-close'), documentLibraryList: $('#document-library-list'),
@@ -17,9 +17,11 @@
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
+    layoutReview: $('#layout-review-button'), layoutReviewCancel: $('#layout-review-cancel-button'), layoutReviewStatus: $('#layout-review-status'),
     translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
+    tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
     translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
     translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
@@ -33,6 +35,7 @@
     flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
     flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
+    glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
@@ -67,6 +70,7 @@
     tabs: new Map(),
     activeTabKey: null,
     jobsPollTimer: null,
+    layoutReviewJobs: new Map(),
     providerSettings: null,
     aitunnelModels: [],
     documentLibrary: [],
@@ -329,13 +333,26 @@
   function updateLoadingFromTab(tab) {
     const progress = Math.max(0, Math.min(100, Number(tab?.progress) || 0))
     const failed = tab?.status === 'failed'
-    elements.loadingView.classList.toggle('is-failed', failed)
-    elements.loadingTitle.textContent = failed ? 'Обработка остановлена' : 'Готовим документ к переводу'
+    const cancelled = tab?.status === 'cancelled'
+    const pending = tab?.status === 'queued' || tab?.status === 'running'
+    elements.loadingView.classList.toggle('is-failed', failed || cancelled)
+    elements.loadingTitle.textContent = failed ? 'Обработка остановлена' : cancelled ? 'Обработка отменена' : 'Готовим документ к переводу'
     elements.loadingMessage.textContent = tab?.error || tab?.message || `Анализируем «${tab?.title || 'документ'}»…`
     elements.loadingProgress.style.width = `${progress}%`
-    elements.loadingProgressLabel.textContent = failed ? 'Ошибка' : `${progress}%`
-    elements.retryJob.hidden = !(failed && tab?.jobId)
+    elements.loadingProgressLabel.textContent = failed ? 'Ошибка' : cancelled ? 'Отменено' : `${progress}%`
+    const details = tab?.details || {}
+    const detailParts = []
+    if (Number.isFinite(Number(details.totalPages))) {
+      detailParts.push(`Страниц: ${Number(details.processedPages) || 0} из ${Number(details.totalPages)}`)
+    }
+    if (Number.isFinite(Number(details.batchCount))) detailParts.push(`Пакет: ${Number(details.batchNumber) || 0} из ${Number(details.batchCount)}`)
+    if (Number.isFinite(Number(details.objectCount))) detailParts.push(`Сегментов: ${Number(details.objectCount)}`)
+    elements.loadingProgressDetails.textContent = detailParts.join(' · ')
+    elements.loadingProgressDetails.hidden = !detailParts.length
+    elements.retryJob.hidden = !((failed || cancelled) && tab?.jobId)
     elements.retryJob.disabled = false
+    elements.cancelJob.hidden = !(pending && tab?.jobId)
+    elements.cancelJob.disabled = false
   }
 
   function rememberCurrentDocument() {
@@ -356,7 +373,7 @@
     }
     state.activeTabKey = key
     renderDocumentTabs()
-    if (tab.status === 'failed') {
+    if (tab.status === 'failed' || tab.status === 'cancelled') {
       setView('loading')
       updateLoadingFromTab(tab)
       elements.loadingProgressLabel.textContent = 'Ошибка'
@@ -434,7 +451,7 @@
 
   async function retryFailedJob() {
     const tab = state.tabs.get(state.activeTabKey)
-    if (!tab || tab.status !== 'failed' || !tab.jobId) return
+    if (!tab || !['failed', 'cancelled'].includes(tab.status) || !tab.jobId) return
     elements.retryJob.disabled = true
     try {
       const response = await api(`/api/studio/jobs/${tab.jobId}/retry`, { method: 'POST' })
@@ -457,10 +474,29 @@
     }
   }
 
+  async function cancelActiveJob() {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (!tab || !['queued', 'running'].includes(tab.status) || !tab.jobId) return
+    elements.cancelJob.disabled = true
+    try {
+      const response = await api(`/api/studio/jobs/${tab.jobId}/cancel`, { method: 'POST' })
+      const { job } = await response.json()
+      Object.assign(tab, job, { key: tab.key, jobId: tab.jobId, title: tab.title })
+      updateLoadingFromTab(tab)
+      renderDocumentTabs()
+      scheduleJobsPoll(100)
+    } catch (error) {
+      elements.cancelJob.disabled = false
+      showToast(error.message, true)
+    }
+  }
+
   function scheduleJobsPoll(delay = 1_500) {
     clearTimeout(state.jobsPollTimer)
     state.jobsPollTimer = null
-    if (![...state.tabs.values()].some(tab => tab.status === 'queued' || tab.status === 'running')) return
+    const pendingDocument = [...state.tabs.values()].some(tab => tab.status === 'queued' || tab.status === 'running')
+    const pendingLayout = [...state.layoutReviewJobs.values()].some(job => job.status === 'queued' || job.status === 'running')
+    if (!pendingDocument && !pendingLayout) return
     state.jobsPollTimer = setTimeout(pollJobs, delay)
   }
 
@@ -484,6 +520,25 @@
         tab.error = error.message
       }
     }))
+    const pendingLayouts = [...state.layoutReviewJobs.entries()].filter(([, job]) => job.status === 'queued' || job.status === 'running')
+    await Promise.all(pendingLayouts.map(async ([documentId, previous]) => {
+      try {
+        const response = await api(`/api/studio/jobs/${previous.id}`)
+        const { job } = await response.json()
+        state.layoutReviewJobs.set(documentId, job)
+        if (job.status === 'completed' && state.metadata?.id === documentId) {
+          const documentResponse = await api(`/api/studio/documents/${documentId}`)
+          const documentData = await documentResponse.json()
+          const tab = state.tabs.get(state.activeTabKey)
+          if (tab) tab.documentData = documentData
+          openDocument(documentData)
+          showToast(job.message)
+        } else if (state.metadata?.id === documentId) renderLayoutReviewStatus()
+      } catch (error) {
+        state.layoutReviewJobs.set(documentId, { ...previous, status: 'failed', error: error.message })
+        if (state.metadata?.id === documentId) renderLayoutReviewStatus()
+      }
+    }))
     renderDocumentTabs()
     scheduleJobsPoll()
   }
@@ -503,6 +558,24 @@
         })
       }
       renderDocumentTabs()
+    } catch {}
+  }
+
+  async function loadPendingJobs() {
+    try {
+      const response = await api('/api/studio/jobs')
+      const { jobs } = await response.json()
+      for (const job of Array.isArray(jobs) ? jobs : []) {
+        if (!['queued', 'running'].includes(job?.status) || !/^[a-f0-9]{32}$/.test(job?.id || '')) continue
+        if (job.kind === 'layout-review' && job.documentId) {
+          state.layoutReviewJobs.set(job.documentId, job)
+          continue
+        }
+        if (job.kind !== 'document-analysis') continue
+        state.tabs.set(job.id, { key: job.id, jobId: job.id, title: job.title || 'Документ', ...job })
+      }
+      renderDocumentTabs()
+      scheduleJobsPoll(100)
     } catch {}
   }
 
@@ -664,6 +737,7 @@
     elements.pageCount.textContent = state.scene.pages.length
     elements.sourceLanguage.value = state.scene.sourceLanguage
     elements.targetLanguage.value = state.scene.targetLanguage
+    loadKnowledgeBase().catch(() => {})
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
     const recognition = state.scene.recognition
@@ -673,6 +747,7 @@
     elements.agentStatus.textContent = state.serviceStatus?.translationProviderConfigured
       ? `${recognitionSummary} Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.`
       : `${recognitionSummary} API перевода пока не настроен: доступны ручной перевод и локальная БЗ.`
+    renderLayoutReviewStatus()
     elements.newDocument.hidden = false
     elements.exportDocx.disabled = false
     elements.exportPdf.disabled = false
@@ -682,7 +757,31 @@
     refreshUndoButtons()
   }
 
+  function rebuildClientTables() {
+    const groups = new Map()
+    for (const object of state.scene?.objects || []) {
+      if (object.excluded || object.type !== 'table_cell' || !object.tableId || !Number.isInteger(object.rowIndex) || !Number.isInteger(object.columnIndex)) continue
+      const key = `${object.pageIndex}:${object.tableId}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(object)
+    }
+    state.scene.tables = [...groups.entries()].map(([key, cells]) => {
+      const left = Math.min(...cells.map(cell => cell.x))
+      const top = Math.min(...cells.map(cell => cell.y))
+      const right = Math.max(...cells.map(cell => cell.x + cell.width))
+      const bottom = Math.max(...cells.map(cell => cell.y + cell.height))
+      return {
+        id: key.slice(key.indexOf(':') + 1), pageIndex: cells[0].pageIndex,
+        x: left, y: top, width: right - left, height: bottom - top,
+        rowCount: Math.max(...cells.map(cell => cell.rowIndex + (cell.rowSpan || 1))),
+        columnCount: Math.max(...cells.map(cell => cell.columnIndex + (cell.columnSpan || 1))),
+        cells: cells.map(cell => ({ objectId: cell.id, rowIndex: cell.rowIndex, columnIndex: cell.columnIndex, rowSpan: cell.rowSpan || 1, columnSpan: cell.columnSpan || 1 })),
+      }
+    })
+  }
+
   function renderDocument() {
+    rebuildClientTables()
     renderThumbnails()
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
@@ -748,6 +847,20 @@
           width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
         })
         surface.append(boundary)
+
+        for (const table of state.scene.tables || []) {
+          if (table.pageIndex !== page.index) continue
+          const tableBoundary = document.createElement('div')
+          tableBoundary.className = 'table-structure-boundary'
+          tableBoundary.title = `Структурная таблица: ${table.rowCount} × ${table.columnCount}`
+          Object.assign(tableBoundary.style, {
+            left: `${table.x}px`, top: `${table.y}px`, width: `${table.width}px`, height: `${table.height}px`,
+          })
+          const label = document.createElement('span')
+          label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
+          tableBoundary.append(label)
+          surface.append(tableBoundary)
+        }
 
         for (const object of pageObjects) surface.append(createObjectElement(object))
         const number = document.createElement('span')
@@ -1406,6 +1519,7 @@
         translation: unit.translation,
         sourceLanguage: state.scene.sourceLanguage,
         targetLanguage: state.scene.targetLanguage,
+        glossaryId: state.scene.glossaryId,
         clientRef: unit.id,
         provenance: { documentId: state.metadata.id, objectId: object.id, unitId: unit.id },
       })) }),
@@ -1573,6 +1687,7 @@
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     elements.flexApply.disabled = !onePage || selection.length < 2
     elements.agentNotes.hidden = true
+    elements.tableCellFields.hidden = !selection.length || selection.some(item => item.type !== 'table_cell')
     if (!selection.length) {
       elements.translationText.disabled = false
       elements.translationUnitsCard.hidden = true
@@ -1584,6 +1699,13 @@
     elements.selectionTitle.textContent = selection.length === 1 ? `${typeLabel(first.type)} · стр. ${first.pageIndex + 1}` : `${selection.length} сегмента`
     elements.selectionCount.textContent = selection.length
     setMixedControl(elements.objectType, selection.map(item => item.type))
+    if (!elements.tableCellFields.hidden) {
+      setMixedControl(elements.tableId, selection.map(item => item.tableId || ''))
+      setMixedControl(elements.tableRow, selection.map(item => item.rowIndex ?? 0))
+      setMixedControl(elements.tableColumn, selection.map(item => item.columnIndex ?? 0))
+      setMixedControl(elements.tableRowSpan, selection.map(item => item.rowSpan || 1))
+      setMixedControl(elements.tableColumnSpan, selection.map(item => item.columnSpan || 1))
+    }
     setMixedControl(elements.sourceText, selection.map(item => item.sourceText))
     setMixedControl(elements.translationText, selection.map(item => item.translation))
     elements.translationText.disabled = units.length > 1
@@ -2102,6 +2224,65 @@
     }
   }
 
+  function renderLayoutReviewStatus() {
+    if (!state.metadata) return
+    const job = state.layoutReviewJobs.get(state.metadata.id)
+    const pending = job && ['queued', 'running'].includes(job.status)
+    elements.layoutReview.disabled = Boolean(pending)
+    elements.layoutReviewCancel.hidden = !pending
+    elements.layoutReviewCancel.disabled = false
+    elements.layoutReviewStatus.classList.toggle('is-error', job?.status === 'failed')
+    if (job) {
+      const pageDetail = Number.isFinite(Number(job.details?.totalPages))
+        ? ` · страниц ${Number(job.details?.processedPages) || 0}/${Number(job.details.totalPages)}`
+        : ''
+      elements.layoutReviewStatus.textContent = job.error || `${job.message || 'Сравнение макета'} · ${job.progress || 0}%${pageDetail}`
+      return
+    }
+    const review = state.scene?.layoutReview
+    if (!review?.reviewedAt) {
+      elements.layoutReviewStatus.textContent = 'Сравнение с оригиналом ещё не запускалось.'
+      return
+    }
+    const similarities = review.pageSimilarities || []
+    const average = similarities.length ? Math.round(similarities.reduce((sum, item) => sum + Number(item.similarity || 0), 0) / similarities.length * 100) : null
+    elements.layoutReviewStatus.textContent = `Последняя AI-проверка: ${average == null ? 'готово' : `сходство ${average}%`} · применено ${review.applied?.length || 0} · рекомендаций ${review.recommendations?.length || 0}`
+  }
+
+  async function startLayoutReview() {
+    if (!state.metadata || state.layoutReviewJobs.has(state.metadata.id) && ['queued', 'running'].includes(state.layoutReviewJobs.get(state.metadata.id).status)) return
+    elements.layoutReview.disabled = true
+    try {
+      await saveScene(true)
+      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/layout-review`, { method: 'POST' })
+      const { job } = await response.json()
+      state.layoutReviewJobs.set(state.metadata.id, job)
+      renderLayoutReviewStatus()
+      scheduleJobsPoll(100)
+      showToast('AI-сравнение макета запущено')
+    } catch (error) {
+      elements.layoutReview.disabled = false
+      showToast(error.message, true)
+    }
+  }
+
+  async function cancelLayoutReview() {
+    const documentId = state.metadata?.id
+    const job = documentId ? state.layoutReviewJobs.get(documentId) : null
+    if (!job || !['queued', 'running'].includes(job.status)) return
+    elements.layoutReviewCancel.disabled = true
+    try {
+      const response = await api(`/api/studio/jobs/${job.id}/cancel`, { method: 'POST' })
+      const { job: updated } = await response.json()
+      state.layoutReviewJobs.set(documentId, updated)
+      renderLayoutReviewStatus()
+      scheduleJobsPoll(100)
+    } catch (error) {
+      elements.layoutReviewCancel.disabled = false
+      showToast(error.message, true)
+    }
+  }
+
   async function runQa() {
     if (!state.scene) return
     try {
@@ -2154,7 +2335,13 @@
     if (!activeUnit) return
     elements.memoryResults.innerHTML = '<small>Ищем…</small>'
     try {
-      const response = await api(`/api/studio/knowledge-base/search?query=${encodeURIComponent(activeUnit.sourceText)}&targetLanguage=${encodeURIComponent(state.scene.targetLanguage)}`)
+      const parameters = new URLSearchParams({
+        query: activeUnit.sourceText,
+        sourceLanguage: state.scene.sourceLanguage,
+        targetLanguage: state.scene.targetLanguage,
+        glossaryId: state.scene.glossaryId || '',
+      })
+      const response = await api(`/api/studio/knowledge-base/search?${parameters}`)
       const data = await response.json()
       elements.memoryResults.replaceChildren()
       if (!data.matches.length) {
@@ -2541,11 +2728,31 @@
   function bindInspector() {
     elements.objectType.addEventListener('change', () => applySelectionChange(object => {
       object.type = elements.objectType.value
+      if (object.type === 'table_cell') {
+        object.tableId ||= `manual-table-page-${object.pageIndex + 1}`
+        object.rowIndex = Number.isInteger(object.rowIndex) ? object.rowIndex : 0
+        object.columnIndex = Number.isInteger(object.columnIndex) ? object.columnIndex : 0
+        object.rowSpan ||= 1
+        object.columnSpan ||= 1
+      }
       if (object.type === 'signature') {
         object.translation = servicePlaceholder(object.type, object.sourceText)
         object.translationUnits = []
       } else if (!object.translation) object.translation = servicePlaceholder(object.type, object.sourceText)
     }))
+    elements.tableId.addEventListener('change', () => applySelectionChange(object => { if (object.type === 'table_cell') object.tableId = elements.tableId.value.trim() || `manual-table-page-${object.pageIndex + 1}` }))
+    const tableNumbers = [
+      [elements.tableRow, 'rowIndex', 0, 999],
+      [elements.tableColumn, 'columnIndex', 0, 999],
+      [elements.tableRowSpan, 'rowSpan', 1, 100],
+      [elements.tableColumnSpan, 'columnSpan', 1, 100],
+    ]
+    for (const [control, field, minimum, maximum] of tableNumbers) {
+      control.addEventListener('change', () => {
+        const value = Math.min(maximum, Math.max(minimum, Math.trunc(Number(control.value) || minimum)))
+        applySelectionChange(object => { if (object.type === 'table_cell') object[field] = value })
+      })
+    }
     const bindText = (control, field) => {
       control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
       control.addEventListener('input', () => {
@@ -2634,6 +2841,7 @@
     elements.testAiConnection.addEventListener('click', testAiConnection)
     elements.removeAitunnelKey.addEventListener('click', removeAitunnelKey)
     elements.retryJob.addEventListener('click', retryFailedJob)
+    elements.cancelJob.addEventListener('click', cancelActiveJob)
     elements.zoomOut.addEventListener('click', () => setZoom(state.zoom - .1))
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
@@ -2688,10 +2896,19 @@
     elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
     elements.translationSelectAll.addEventListener('change', () => selectAllTranslationObjects(elements.translationSelectAll.checked))
     elements.translate.addEventListener('click', translateSelection)
+    elements.layoutReview.addEventListener('click', startLayoutReview)
+    elements.layoutReviewCancel.addEventListener('click', cancelLayoutReview)
     elements.qa.addEventListener('click', runQa)
     elements.qaClose.addEventListener('click', () => { elements.qaPanel.hidden = true })
     elements.addObject.addEventListener('click', () => addObject())
     elements.memorySearch.addEventListener('click', findMemory)
+    elements.glossaryAdd.addEventListener('click', createGlossary)
+    elements.glossarySelect.addEventListener('change', () => {
+      if (!state.scene || !elements.glossarySelect.value) return
+      state.scene.glossaryId = elements.glossarySelect.value
+      scheduleSave()
+      elements.memoryResults.innerHTML = '<small>Глоссарий изменён. Выполните новый поиск.</small>'
+    })
     elements.approve.addEventListener('click', approveTranslation)
     elements.translationUnitsSplitSentences.addEventListener('click', splitInternalBySentences)
     elements.translationUnitsSplitSelection.addEventListener('click', splitInternalBySelection)
@@ -2772,6 +2989,60 @@
     }
   }
 
+  async function loadKnowledgeBase() {
+    const statusResponse = await api('/api/studio/knowledge-base/status')
+    const status = await statusResponse.json()
+    elements.knowledgeBaseStatus.classList.toggle('is-error', status.connected === false || !status.persistent)
+    elements.knowledgeBaseStatus.textContent = status.mode === 'postgres-pgvector'
+      ? status.connected === false
+        ? `PostgreSQL недоступен: ${status.error || 'проверьте DATABASE_URL'}`
+        : `PostgreSQL/pgvector · ${status.entries || 0} записей · ${status.vectorSearch ? status.embeddingModel : 'только точный поиск'}`
+      : 'Временная БЗ в памяти · настройте DATABASE_URL для постоянного хранения'
+    elements.glossarySelect.replaceChildren()
+    let glossaries = []
+    try {
+      const glossariesResponse = await api('/api/studio/knowledge-base/glossaries')
+      ;({ glossaries } = await glossariesResponse.json())
+    } catch (error) {
+      elements.knowledgeBaseStatus.classList.add('is-error')
+      elements.knowledgeBaseStatus.textContent = `База знаний недоступна: ${error.message}`
+      const option = document.createElement('option')
+      option.textContent = 'Глоссарии недоступны'
+      elements.glossarySelect.append(option)
+      elements.glossarySelect.disabled = true
+      return
+    }
+    elements.glossarySelect.disabled = false
+    for (const glossary of Array.isArray(glossaries) ? glossaries : []) {
+      const option = document.createElement('option')
+      option.value = glossary.id
+      option.textContent = glossary.domain ? `${glossary.name} · ${glossary.domain}` : glossary.name
+      elements.glossarySelect.append(option)
+    }
+    const selected = state.scene?.glossaryId
+    if (selected && [...elements.glossarySelect.options].some(option => option.value === selected)) elements.glossarySelect.value = selected
+    else if (elements.glossarySelect.value && state.scene) state.scene.glossaryId = elements.glossarySelect.value
+  }
+
+  async function createGlossary() {
+    const name = window.prompt('Название нового глоссария')?.trim()
+    if (!name) return
+    try {
+      const response = await api('/api/studio/knowledge-base/glossaries', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, sourceLanguage: state.scene?.sourceLanguage, targetLanguage: state.scene?.targetLanguage }),
+      })
+      const { glossary } = await response.json()
+      await loadKnowledgeBase()
+      if (state.scene) {
+        state.scene.glossaryId = glossary.id
+        elements.glossarySelect.value = glossary.id
+        scheduleSave()
+      }
+      showToast(`Создан глоссарий «${glossary.name}»`)
+    } catch (error) { showToast(error.message, true) }
+  }
+
   async function restoreDocumentFromUrl() {
     const parameters = new URL(location.href).searchParams
     const id = parameters.get('document')
@@ -2825,6 +3096,7 @@
   bindEvents()
   ;(async () => {
     await loadServiceStatus()
+    await loadPendingJobs()
     await loadDocumentHistory()
     await restoreDocumentFromUrl()
   })()
