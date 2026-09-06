@@ -324,6 +324,13 @@
               <select id="glossary-select" aria-label="Активный глоссарий"><option value="">Загружаем глоссарии…</option></select>
               <button id="glossary-add-button" type="button">＋ Новый</button>
             </div>
+            <label class="memory-card__mode">Использование БЗ
+              <select id="knowledge-base-mode">
+                <option value="suggestions">Только подсказки</option>
+                <option value="priority">БЗ имеет приоритет</option>
+              </select>
+            </label>
+            <small class="memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
             <small id="knowledge-base-status" class="memory-card__status">Проверяем PostgreSQL/pgvector…</small>
             <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
           </div>
@@ -346,6 +353,10 @@
     </main>
 
     <div id="selection-box" class="selection-box" hidden></div>
+    <aside id="knowledge-suggestion-popover" class="knowledge-suggestion-popover" hidden aria-label="Подсказки Базы знаний">
+      <div class="knowledge-suggestion-popover__header"><strong id="knowledge-suggestion-title">Совпадения БЗ</strong><button id="knowledge-suggestion-close" type="button" aria-label="Закрыть">×</button></div>
+      <div id="knowledge-suggestion-list" class="knowledge-suggestion-list"></div>
+    </aside>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="document-library-modal" class="modal-backdrop" hidden>
       <section class="document-library-dialog" role="dialog" aria-modal="true" aria-labelledby="document-library-title">

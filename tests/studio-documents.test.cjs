@@ -184,6 +184,76 @@ test('translation route proposes exact knowledge-base matches without silently a
   assert.equal(result.scene.objects[0].translationUnits[0].status, 'memory-suggested')
 })
 
+test('priority knowledge-base mode preserves the independent AI variant and revises a matched term in context', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-priority-memory-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = 'c'.repeat(32)
+  const directory = path.join(dataDir, id)
+  const sourceText = 'SÜRELİDİR: Bu vekaletname 25/08/2026 tarihine kadar geçerlidir.'
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Priority memory', filename: 'priority.pdf', revision: 1, pageCount: 1, objectCount: 1,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Priority memory', sourceLanguage: 'Turkish', targetLanguage: 'ru', knowledgeBaseMode: 'priority', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'priority-object', pageIndex: 0, type: 'text', readingOrder: 1, sourceText, translation: '', confidence: 1,
+      x: 40, y: 40, width: 500, height: 50, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      originalBounds: { x: 40, y: 40, width: 500, height: 50 },
+    }],
+  }))
+  const prompts = []
+  const runProcess = async (command, args) => {
+    if (args[0] === 'login') return { code: 0, stdout: 'Logged in', stderr: '' }
+    if (args[0] === 'exec') {
+      const outputPath = args[args.indexOf('--output-last-message') + 1]
+      const prompt = args.at(-1)
+      prompts.push(prompt)
+      const unitId = prompt.match(/"id":"([^"]+)"/)?.[1]
+      const revised = prompt.includes('requiredTerms')
+      await fs.promises.writeFile(outputPath, JSON.stringify({ translations: [{
+        id: unitId,
+        translatedText: revised ? 'Имеет срок: доверенность действует до 25.08.2026.' : 'СРОЧНАЯ: доверенность действует до 25.08.2026.',
+      }] }))
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 1, stdout: '', stderr: 'unexpected command' }
+  }
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+  let response = await fetch(`${base}/knowledge-base/entries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceText: 'SÜRELİDİR', translation: 'Имеет срок', sourceLanguage: 'Turkish', targetLanguage: 'ru' }),
+  })
+  assert.equal(response.status, 201)
+  response = await fetch(`${base}/documents/${id}/translate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: ['priority-object'] }),
+  })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  const unit = result.scene.objects[0].translationUnits[0]
+  assert.equal(prompts.length, 2)
+  assert.doesNotMatch(prompts[0], /Имеет срок/)
+  assert.match(prompts[1], /"source":"SÜRELİDİR","translation":"Имеет срок"/)
+  assert.equal(unit.knowledgeMatches[0].matchType, 'exact-fragment')
+  assert.equal(sourceText.slice(unit.knowledgeMatches[0].start, unit.knowledgeMatches[0].end), 'SÜRELİDİR')
+  assert.equal(unit.aiTranslation, 'СРОЧНАЯ: доверенность действует до 25.08.2026.')
+  assert.equal(unit.translation, 'Имеет срок: доверенность действует до 25.08.2026.')
+  assert.equal(unit.activeTranslationSource, 'memory-revised')
+  response = await fetch(`${base}/documents/${id}/translate/apply-memory`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectId: 'priority-object', unitId: unit.id, entryId: unit.knowledgeMatches[0].entryId }),
+  })
+  assert.equal(response.status, 200)
+  const applied = await response.json()
+  assert.equal(applied.source, 'memory-revised')
+  assert.equal(applied.scene.objects[0].translationUnits[0].aiTranslation, unit.aiTranslation)
+})
+
 test('multiple selected segments are translated, persisted, and leave unselected segments untouched', async t => {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-machine-translation-'))
   t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))

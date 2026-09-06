@@ -35,7 +35,9 @@
     flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
     flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
-    glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'),
+    glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'), knowledgeBaseMode: $('#knowledge-base-mode'),
+    knowledgeSuggestionPopover: $('#knowledge-suggestion-popover'), knowledgeSuggestionTitle: $('#knowledge-suggestion-title'),
+    knowledgeSuggestionList: $('#knowledge-suggestion-list'), knowledgeSuggestionClose: $('#knowledge-suggestion-close'),
     knowledgeBaseOpen: $('#knowledge-base-open-button'), knowledgeBaseOpenContext: $('#knowledge-base-open-context-button'), knowledgeBaseModal: $('#knowledge-base-modal'), knowledgeBaseClose: $('#knowledge-base-close'),
     knowledgeBaseQuery: $('#knowledge-base-query'), knowledgeBaseGlossaryFilter: $('#knowledge-base-glossary-filter'), knowledgeBaseSearch: $('#knowledge-base-search-button'),
     knowledgeBaseNew: $('#knowledge-base-new-button'), knowledgeBaseList: $('#knowledge-base-list'), knowledgeBasePrevious: $('#knowledge-base-previous'),
@@ -87,6 +89,7 @@
     knowledgeBaseOffset: 0,
     knowledgeBaseLimit: 25,
     knowledgeBaseTotal: 0,
+    activeKnowledgeSuggestion: null,
   }
 
   function showToast(message, isError = false) {
@@ -750,6 +753,7 @@
     elements.pageCount.textContent = state.scene.pages.length
     elements.sourceLanguage.value = state.scene.sourceLanguage
     elements.targetLanguage.value = state.scene.targetLanguage
+    elements.knowledgeBaseMode.value = state.scene.knowledgeBaseMode === 'priority' ? 'priority' : 'suggestions'
     loadKnowledgeBase().catch(() => {})
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
@@ -794,6 +798,7 @@
   }
 
   function renderDocument() {
+    closeKnowledgeSuggestion()
     rebuildClientTables()
     renderThumbnails()
     elements.gridSize.value = String(currentGridSize())
@@ -1081,12 +1086,147 @@
     return result
   }
 
+  function knowledgeMatchesForObject(object) {
+    const ranges = []
+    let offset = 0
+    for (const unit of ensureObjectTranslationUnits(object)) {
+      for (const match of unit.knowledgeMatches || []) {
+        ranges.push({
+          ...match,
+          unitId: unit.id,
+          start: offset + match.start,
+          end: offset + match.end,
+        })
+      }
+      offset += unit.sourceText.length + String(unit.separatorAfter || '').length
+    }
+    return ranges.filter(match => match.end > match.start && match.start < object.sourceText.length)
+  }
+
+  function closeKnowledgeSuggestion() {
+    elements.knowledgeSuggestionPopover.hidden = true
+    elements.knowledgeSuggestionList.replaceChildren()
+    state.activeKnowledgeSuggestion = null
+  }
+
+  async function applyKnowledgeMatch(objectId, unitId, entryId, button) {
+    if (!state.metadata) return
+    button.disabled = true
+    button.textContent = 'Применяем…'
+    try {
+      checkpoint()
+      const response = await api(`/api/studio/documents/${state.metadata.id}/translate/apply-memory`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectId, unitId, entryId }),
+      })
+      const data = await response.json()
+      state.scene = data.scene
+      closeKnowledgeSuggestion()
+      renderDocument()
+      scheduleSave()
+      showToast(data.source === 'memory' ? 'Применён полный перевод из БЗ' : 'Перевод скорректирован с учётом термина БЗ')
+    } catch (error) {
+      button.disabled = false
+      button.textContent = 'Использовать'
+      showToast(error.message, true)
+    }
+  }
+
+  function showKnowledgeSuggestion(event, objectId, unitId, matchIds) {
+    const object = state.scene?.objects.find(item => item.id === objectId)
+    const unit = object && ensureObjectTranslationUnits(object).find(item => item.id === unitId)
+    const requested = new Set(matchIds)
+    const matches = (unit?.knowledgeMatches || []).filter(match => requested.has(match.id))
+    if (!matches.length) return
+    state.activeKnowledgeSuggestion = { objectId, unitId, matchIds }
+    elements.knowledgeSuggestionTitle.textContent = `БЗ: ${matches[0].sourceText}`
+    elements.knowledgeSuggestionList.replaceChildren()
+    for (const match of matches) {
+      const row = document.createElement('article')
+      row.className = 'knowledge-suggestion'
+      const pair = document.createElement('div')
+      pair.className = 'knowledge-suggestion__pair'
+      const source = document.createElement('span')
+      source.textContent = match.sourceText
+      const arrow = document.createElement('span')
+      arrow.className = 'knowledge-suggestion__arrow'
+      arrow.textContent = '→'
+      const translation = document.createElement('span')
+      translation.textContent = match.translation
+      pair.append(source, arrow, translation)
+      const score = document.createElement('strong')
+      score.className = 'knowledge-suggestion__score'
+      const matchLabel = match.matchType === 'vector'
+        ? 'смысловое'
+        : match.matchType === 'fuzzy'
+          ? 'текстовое'
+          : 'точное'
+      score.textContent = `${Math.round(match.score * 100)}% ${matchLabel}`
+      const actions = document.createElement('div')
+      actions.className = 'knowledge-suggestion__actions'
+      const openEntry = document.createElement('button')
+      openEntry.className = 'button'
+      openEntry.type = 'button'
+      openEntry.textContent = 'Открыть в БЗ'
+      openEntry.addEventListener('click', async () => {
+        closeKnowledgeSuggestion()
+        elements.knowledgeBaseQuery.value = match.sourceText
+        await openKnowledgeBase()
+      })
+      const apply = document.createElement('button')
+      apply.className = 'button button--primary'
+      apply.type = 'button'
+      apply.textContent = 'Использовать'
+      apply.addEventListener('click', () => applyKnowledgeMatch(objectId, unitId, match.entryId, apply))
+      actions.append(openEntry, apply)
+      row.append(pair, score, actions)
+      elements.knowledgeSuggestionList.append(row)
+    }
+    elements.knowledgeSuggestionPopover.hidden = false
+    const rect = event.currentTarget.getBoundingClientRect()
+    const width = Math.min(520, window.innerWidth - 24)
+    const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left))
+    const estimatedHeight = Math.min(440, 92 + matches.length * 86)
+    const below = rect.bottom + 10
+    const top = below + estimatedHeight <= window.innerHeight - 12
+      ? below
+      : Math.max(12, rect.top - estimatedHeight - 10)
+    Object.assign(elements.knowledgeSuggestionPopover.style, { left: `${left}px`, top: `${top}px` })
+  }
+
+  function aiAlternativeForObject(object) {
+    const units = ensureObjectTranslationUnits(object)
+    if (!units.some(unit => unit.aiTranslation && unit.activeTranslationSource !== 'ai')) return ''
+    if (units.some(unit => !unit.aiTranslation)) return ''
+    return units.map((unit, index) => index === units.length - 1
+      ? unit.aiTranslation
+      : `${unit.aiTranslation}${unit.separatorAfter || ' '}`).join('')
+  }
+
+  function useAiAlternative(object) {
+    checkpoint()
+    for (const unit of ensureObjectTranslationUnits(object)) {
+      if (!unit.aiTranslation) continue
+      unit.translation = unit.aiTranslation
+      unit.activeTranslationSource = 'ai'
+      unit.status = 'machine-translated'
+      unit.memoryEntryId = null
+    }
+    translationUnits.syncObjectTranslation(object)
+    object.translationTextStyles = []
+    object.status = 'machine-translated'
+    renderDocument()
+    scheduleSave()
+    showToast('Использован первоначальный перевод ИИ')
+  }
+
   function renderTextContent(content, object, requestedField = null) {
     const field = requestedField || objectOutputField(object)
     const text = requestedField ? String(object[field] || '') : objectOutput(object)
     content.dataset.outputField = field
     const ranges = styleRanges(object, field).filter(range => range.end > range.start && range.start < text.length)
-    if (!ranges.length) {
+    const knowledgeMatches = field === 'sourceText' && state.viewMode === 'segments' ? knowledgeMatchesForObject(object) : []
+    if (!ranges.length && !knowledgeMatches.length) {
       content.textContent = text
       return
     }
@@ -1094,6 +1234,10 @@
     for (const range of ranges) {
       points.add(Math.max(0, Math.min(text.length, range.start)))
       points.add(Math.max(0, Math.min(text.length, range.end)))
+    }
+    for (const match of knowledgeMatches) {
+      points.add(Math.max(0, Math.min(text.length, match.start)))
+      points.add(Math.max(0, Math.min(text.length, match.end)))
     }
     const sorted = [...points].sort((left, right) => left - right)
     const fragment = document.createDocumentFragment()
@@ -1103,17 +1247,29 @@
       if (end <= start) continue
       const value = text.slice(start, end)
       const runStyle = effectiveTextStyle(object, field, start)
-      if (!Object.keys(runStyle).length) {
+      const activeMatches = knowledgeMatches.filter(match => match.start <= start && match.end >= end)
+      if (!Object.keys(runStyle).length && !activeMatches.length) {
         fragment.append(document.createTextNode(value))
         continue
       }
       const span = document.createElement('span')
-      span.dataset.textStyle = 'true'
       span.textContent = value
+      if (Object.keys(runStyle).length) span.dataset.textStyle = 'true'
       if (runStyle.fontSizePx != null) span.style.fontSize = `${runStyle.fontSizePx}px`
       if (runStyle.fontWeight != null) span.style.fontWeight = runStyle.fontWeight
       if (runStyle.fontStyle != null) span.style.fontStyle = runStyle.fontStyle
       if (runStyle.color != null) span.style.color = runStyle.color
+      if (activeMatches.length) {
+        span.classList.add('knowledge-highlight')
+        span.title = 'Найдены варианты в Базе знаний'
+        const unitId = activeMatches[0].unitId
+        const matchIds = activeMatches.map(match => match.id)
+        span.addEventListener('click', event => {
+          event.preventDefault()
+          event.stopPropagation()
+          showKnowledgeSuggestion(event, object.id, unitId, matchIds)
+        })
+      }
       fragment.append(span)
     }
     content.replaceChildren(fragment)
@@ -1217,11 +1373,12 @@
         ensureObjectTranslationUnits(object)
       } else {
         const units = ensureObjectTranslationUnits(object)
-        if (units.length === 1) {
-          units[0].translation = object.translation
-          units[0].status = 'edited'
-          units[0].memorySuggestion = null
-          units[0].memoryEntryId = null
+          if (units.length === 1) {
+            units[0].translation = object.translation
+            units[0].status = 'edited'
+            units[0].activeTranslationSource = 'manual'
+            units[0].memorySuggestion = null
+            units[0].memoryEntryId = null
         }
       }
       object.status = 'edited'
@@ -1239,7 +1396,24 @@
     const resize = document.createElement('span')
     resize.className = 'scene-object__resize'
     resize.addEventListener('pointerdown', event => beginResize(event, object.id))
-    node.append(badge, handle, content, resize)
+    node.append(badge, handle, content)
+    const aiAlternative = requestedField === 'translation' ? aiAlternativeForObject(object) : ''
+    if (aiAlternative && aiAlternative !== object.translation) {
+      const alternative = document.createElement('aside')
+      alternative.className = 'ai-translation-alternative'
+      const label = document.createElement('strong')
+      label.textContent = 'Первоначальный вариант ИИ'
+      const value = document.createElement('p')
+      value.textContent = aiAlternative
+      const use = document.createElement('button')
+      use.className = 'button'
+      use.type = 'button'
+      use.textContent = 'Использовать перевод ИИ'
+      use.addEventListener('click', event => { event.stopPropagation(); useAiAlternative(object) })
+      alternative.append(label, value, use)
+      node.append(alternative)
+    }
+    node.append(resize)
     return node
   }
 
@@ -1516,6 +1690,7 @@
     unit.translation = suggestion.translation
     unit.memoryEntryId = suggestion.entryId || null
     unit.status = 'memory-applied'
+    unit.activeTranslationSource = 'memory'
     translationUnits.syncObjectTranslation(object)
     object.translationTextStyles = []
     object.status = object.translation ? 'memory-applied' : 'partially-translated'
@@ -1607,6 +1782,7 @@
       input.addEventListener('input', () => {
         unit.translation = input.value
         unit.status = 'edited'
+        unit.activeTranslationSource = 'manual'
         unit.memoryEntryId = null
         translationUnits.syncObjectTranslation(object)
         object.translationTextStyles = []
@@ -2372,6 +2548,7 @@
           activeUnit.memoryEntryId = match.id
           activeUnit.memorySuggestion = null
           activeUnit.status = match.matchType === 'exact' ? 'memory-applied' : 'edited'
+          activeUnit.activeTranslationSource = match.matchType === 'exact' ? 'memory' : 'manual'
           translationUnits.syncObjectTranslation(object)
           object.translationTextStyles = []
           renderDocument()
@@ -2782,6 +2959,7 @@
             if (units.length === 1) {
               units[0].translation = control.value
               units[0].status = 'edited'
+              units[0].activeTranslationSource = 'manual'
               units[0].memorySuggestion = null
               units[0].memoryEntryId = null
             }
@@ -2943,6 +3121,14 @@
       scheduleSave()
       elements.memoryResults.innerHTML = '<small>Глоссарий изменён. Выполните новый поиск.</small>'
     })
+    elements.knowledgeBaseMode.addEventListener('change', () => {
+      if (!state.scene) return
+      state.scene.knowledgeBaseMode = elements.knowledgeBaseMode.value === 'priority' ? 'priority' : 'suggestions'
+      scheduleSave()
+      showToast(state.scene.knowledgeBaseMode === 'priority'
+        ? 'БЗ будет приоритетной при следующем переводе'
+        : 'БЗ будет показывать подсказки, не изменяя перевод ИИ')
+    })
     elements.approve.addEventListener('click', approveTranslation)
     elements.translationUnitsSplitSentences.addEventListener('click', splitInternalBySentences)
     elements.translationUnitsSplitSelection.addEventListener('click', splitInternalBySelection)
@@ -2981,6 +3167,7 @@
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        closeKnowledgeSuggestion()
         if (!elements.aiSettingsModal.hidden) closeProviderSettings()
         if (!elements.knowledgeBaseModal.hidden) closeKnowledgeBase()
         elements.documentLibraryModal.hidden = true
@@ -2990,6 +3177,11 @@
         refreshSelection()
         document.activeElement?.blur?.()
       }
+    })
+    document.addEventListener('pointerdown', event => {
+      if (elements.knowledgeSuggestionPopover.hidden) return
+      if (elements.knowledgeSuggestionPopover.contains(event.target) || event.target.closest?.('.knowledge-highlight')) return
+      closeKnowledgeSuggestion()
     })
     window.addEventListener('pagehide', () => {
       clearTimeout(state.jobsPollTimer)

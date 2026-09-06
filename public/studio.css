@@ -348,6 +348,9 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .memory-card button { border: 0; background: transparent; color: var(--blue); cursor: pointer; font-size: 10px; font-weight: 700; }
 .memory-card__glossary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
 .memory-card__glossary select { min-width: 0; height: 30px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 10px; }
+.memory-card__mode { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px; margin-top: 7px; color: var(--muted); font-size: 9px; font-weight: 700; }
+.memory-card__mode select { min-width: 0; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 9px; }
+.memory-card__mode-note { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; line-height: 1.35; }
 .memory-card__status { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; }
 .memory-card__status.is-error { color: #b42318; }
 .memory-results { display: grid; gap: 6px; margin-top: 7px; }
@@ -384,6 +387,23 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .qa-suggestion__buttons button { min-height: 28px; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; font-size: 10px; font-weight: 700; }
 
 .selection-box { position: fixed; z-index: 1000; border: 1px solid var(--blue); background: rgba(49,94,231,.12); pointer-events: none; }
+.knowledge-highlight { position: relative; border-radius: 2px; background: #ffe96a; box-shadow: 0 0 0 1px rgba(185,137,0,.18); cursor: pointer; }
+.knowledge-highlight::after { content: "!"; position: absolute; right: -5px; top: -11px; display: grid; place-items: center; width: 13px; height: 13px; border: 1px solid #fff; border-radius: 50%; background: #b86e00; color: #fff; font: 800 8px/1 Inter, sans-serif; box-shadow: 0 2px 5px rgba(74,48,0,.25); pointer-events: none; }
+.knowledge-suggestion-popover { position: fixed; z-index: 4500; width: min(520px, calc(100vw - 24px)); max-height: min(440px, calc(100vh - 24px)); overflow: auto; padding: 12px; border: 1px solid #d6b34a; border-radius: 11px; background: #fffdf3; box-shadow: 0 18px 50px rgba(16,24,40,.24); }
+.knowledge-suggestion-popover__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: #684c00; font-size: 11px; }
+.knowledge-suggestion-popover__header button { border: 0; background: transparent; color: #7a5a00; cursor: pointer; font-size: 18px; }
+.knowledge-suggestion-list { display: grid; gap: 7px; }
+.knowledge-suggestion { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 9px; border: 1px solid #eadcae; border-radius: 8px; background: #fff; }
+.knowledge-suggestion__pair { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: 7px; font-size: 10px; line-height: 1.4; }
+.knowledge-suggestion__pair span { overflow-wrap: anywhere; white-space: pre-wrap; }
+.knowledge-suggestion__arrow { color: #98a2b3; }
+.knowledge-suggestion__score { color: #805d00; font-size: 9px; font-weight: 800; white-space: nowrap; }
+.knowledge-suggestion__actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; }
+.knowledge-suggestion__actions .button { min-height: 28px; padding: 4px 8px; font-size: 9px; }
+.ai-translation-alternative { display: grid; gap: 5px; margin: 7px 8px 8px; padding: 7px; border: 1px solid #c7d2fe; border-radius: 7px; background: #eef2ff; color: #344054; font: 10px/1.4 Inter, sans-serif; }
+.ai-translation-alternative strong { color: #315ee7; font-size: 9px; }
+.ai-translation-alternative p { margin: 0; white-space: pre-wrap; }
+.ai-translation-alternative .button { justify-self: end; min-height: 26px; padding: 3px 7px; font-size: 8px; }
 .toast { position: fixed; left: 50%; bottom: 24px; z-index: 2000; max-width: min(620px, calc(100vw - 32px)); padding: 11px 16px; border-radius: 10px; background: #172033; color: #fff; box-shadow: 0 10px 35px rgba(16,24,40,.24); opacity: 0; transform: translate(-50%, 14px); transition: .2s; pointer-events: none; font-size: 12px; }
 .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
 .toast.is-error { background: #912018; }

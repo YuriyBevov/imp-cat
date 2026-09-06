@@ -20,7 +20,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'knowledge-base-open-button', 'knowledge-base-open-context-button',
     'knowledge-base-modal', 'knowledge-base-query', 'knowledge-base-glossary-filter', 'knowledge-base-list',
     'knowledge-base-new-button', 'knowledge-base-entry-form', 'knowledge-base-entry-source', 'knowledge-base-entry-translation',
-    'knowledge-base-entry-glossary', 'knowledge-base-previous', 'knowledge-base-next', 'approve-button', 'merge-button', 'split-button',
+    'knowledge-base-entry-glossary', 'knowledge-base-previous', 'knowledge-base-next', 'knowledge-base-mode',
+    'knowledge-suggestion-popover', 'knowledge-suggestion-list', 'approve-button', 'merge-button', 'split-button',
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
@@ -41,6 +42,8 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /function openKnowledgeBase/)
   assert.match(client, /function saveKnowledgeBaseEntry/)
   assert.match(client, /function deleteKnowledgeBaseEntry/)
+  assert.match(client, /function showKnowledgeSuggestion/)
+  assert.match(client, /translate\/apply-memory/)
   assert.match(client, /event\.ctrlKey \|\| event\.metaKey/)
   assert.match(client, /beginMarquee/)
   assert.match(client, /beginDrag/)
@@ -678,5 +681,59 @@ test('knowledge base manager lists, edits, and deletes stored entries', async ()
   dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.ok(requests.some(request => request.options.method === 'DELETE'))
+  dom.window.close()
+})
+
+test('segments view highlights knowledge matches and keeps the AI translation as an alternative', async () => {
+  const id = 'f'.repeat(32)
+  const sourceText = 'SÜRELİDİR: Bu vekaletname geçerlidir.'
+  const scene = {
+    title: 'Knowledge highlights', sourceLanguage: 'Turkish', targetLanguage: 'ru', knowledgeBaseMode: 'priority', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'memory-object', pageIndex: 0, type: 'text', readingOrder: 1, sourceText,
+      translation: 'Имеет срок: доверенность действительна.', confidence: .99,
+      x: 40, y: 80, width: 600, height: 50, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 80, width: 600, height: 50 },
+      translationUnits: [{
+        id: 'memory-unit', sourceText, separatorAfter: '', translation: 'Имеет срок: доверенность действительна.',
+        aiTranslation: 'СРОЧНАЯ: доверенность действительна.', activeTranslationSource: 'memory-revised', status: 'memory-applied',
+        knowledgeMatches: [{
+          id: 'entry-1:0:10:0', entryId: 'entry-1', glossaryId: '00000000-0000-4000-8000-000000000001',
+          sourceText: 'SÜRELİDİR', translation: 'Имеет срок', sourceLanguage: 'Turkish', targetLanguage: 'ru',
+          start: 0, end: 'SÜRELİDİR'.length, score: 1, matchType: 'exact-fragment', fullSegment: false,
+        }],
+      }],
+    }],
+  }
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.fetch = async url => {
+    const value = String(url)
+    if (value.includes('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'postgres-pgvector', connected: true, persistent: true, entries: 1 }) }
+    if (value.includes('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Основной глоссарий' }] }) }
+    if (value.includes('/documents?scope=all')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: true, translationModel: 'test', documentAnalysisMode: 'aitunnel', aiProviderConfigured: true }) }
+    return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
+  }
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 40))
+  dom.window.document.querySelector('#view-segments-button').click()
+  const highlight = dom.window.document.querySelector('.scene-object--source .knowledge-highlight')
+  assert.ok(highlight)
+  assert.equal(highlight.textContent, 'SÜRELİDİR')
+  highlight.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
+  assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, false)
+  assert.match(dom.window.document.querySelector('#knowledge-suggestion-list').textContent, /Имеет срок/)
+  const alternative = dom.window.document.querySelector('.ai-translation-alternative')
+  assert.match(alternative.textContent, /СРОЧНАЯ/)
+  alternative.querySelector('button').click()
+  assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').textContent, 'СРОЧНАЯ: доверенность действительна.')
+  assert.equal(dom.window.document.querySelector('.ai-translation-alternative'), null)
   dom.window.close()
 })

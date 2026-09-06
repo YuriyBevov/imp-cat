@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE IF NOT EXISTS icat_glossaries (
   id text PRIMARY KEY,
@@ -34,3 +35,6 @@ CREATE INDEX IF NOT EXISTS icat_translation_memory_embedding_hnsw
 
 CREATE INDEX IF NOT EXISTS icat_translation_memory_lookup
   ON icat_translation_memory (glossary_id, source_language, target_language, source_canonical);
+
+CREATE INDEX IF NOT EXISTS icat_translation_memory_source_trgm
+  ON icat_translation_memory USING gin (source_canonical gin_trgm_ops);

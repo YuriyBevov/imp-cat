@@ -80,3 +80,33 @@ test('knowledge base supports paginated CRUD and refreshes an edited source embe
   assert.equal(await kb.deleteEntry(entry.id), false)
   assert.equal((await kb.listEntries()).total, 1)
 })
+
+test('knowledge base locates an exact glossary term inside a longer segment', async () => {
+  const kb = createKnowledgeBase({ embeddingProvider })
+  await kb.addMany([{
+    sourceText: 'SÜRELİDİR', translation: 'Имеет срок', sourceLanguage: 'Turkish', targetLanguage: 'ru',
+  }])
+  const text = 'SÜRELİDİR: Bu vekaletname 25/08/2026 tarihine kadar geçerlidir.'
+  const matches = await kb.findMatchesInText(text, 'ru', { sourceLanguage: 'tr' })
+  assert.equal(matches.length, 1)
+  assert.equal(text.slice(matches[0].start, matches[0].end), 'SÜRELİDİR')
+  assert.equal(matches[0].translation, 'Имеет срок')
+  assert.equal(matches[0].score, 1)
+  assert.equal(matches[0].matchType, 'exact-fragment')
+  assert.equal(matches[0].fullSegment, false)
+})
+
+test('knowledge base proposes text-similar variants when there is no exact phrase', async () => {
+  const kb = createKnowledgeBase()
+  await kb.addMany([{
+    sourceText: 'Power of attorney dated 25 August 2025', translation: 'Доверенность от 25 августа 2025 года', sourceLanguage: 'en', targetLanguage: 'ru',
+  }])
+  const sourceText = 'Power of attorney dated 25 August 2026'
+  const matches = await kb.findMatchesInText(sourceText, 'ru', { sourceLanguage: 'English' })
+  assert.equal(matches.length, 1)
+  assert.equal(matches[0].matchType, 'fuzzy')
+  assert.equal(matches[0].sourceText, 'Power of attorney dated 25 August 2025')
+  assert.equal(matches[0].start, 0)
+  assert.equal(matches[0].end, sourceText.length)
+  assert.ok(matches[0].score >= 0.85 && matches[0].score < 1)
+})

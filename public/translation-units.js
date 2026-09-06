@@ -36,11 +36,35 @@
     }
   }
 
+  function normalizeKnowledgeMatch(value, sourceText, index) {
+    if (!value || typeof value !== 'object') return null
+    const translation = cleanText(value.translation).trim()
+    const matchedSource = cleanText(value.sourceText).trim()
+    const start = Math.max(0, Math.min(sourceText.length, Math.trunc(Number(value.start) || 0)))
+    const end = Math.max(start, Math.min(sourceText.length, Math.trunc(Number(value.end) || start)))
+    if (!translation || !matchedSource || end <= start) return null
+    return {
+      id: cleanText(value.id, 200) || `${cleanText(value.entryId, 120)}:${start}:${end}:${index}`,
+      entryId: cleanText(value.entryId || value.id, 120),
+      glossaryId: cleanText(value.glossaryId, 120),
+      sourceText: matchedSource,
+      translation,
+      sourceLanguage: cleanText(value.sourceLanguage, 20),
+      targetLanguage: cleanText(value.targetLanguage, 20),
+      start,
+      end,
+      score: Math.max(0, Math.min(1, Number(value.score) || 0)),
+      matchType: value.matchType === 'exact' ? 'exact' : value.matchType === 'vector' ? 'vector' : value.matchType === 'fuzzy' ? 'fuzzy' : 'exact-fragment',
+      fullSegment: Boolean(value.fullSegment),
+    }
+  }
+
   function normalizeUnit(value, objectId, index) {
     const sourceText = cleanText(value?.sourceText)
     const translation = cleanText(value?.translation)
     const suggestion = normalizeSuggestion(value?.memorySuggestion)
     const allowedStatuses = new Set(['new', 'memory-suggested', 'memory-applied', 'machine-translated', 'edited', 'approved'])
+    const allowedSources = new Set(['ai', 'memory', 'memory-revised', 'manual'])
     return {
       id: cleanText(value?.id, 120) || unitId(objectId, index, sourceText),
       sourceText,
@@ -49,6 +73,13 @@
       status: allowedStatuses.has(value?.status) ? value.status : translation ? 'edited' : suggestion ? 'memory-suggested' : 'new',
       memorySuggestion: suggestion,
       memoryEntryId: cleanText(value?.memoryEntryId, 120) || null,
+      knowledgeMatches: Array.isArray(value?.knowledgeMatches)
+        ? value.knowledgeMatches.slice(0, 100).map((match, matchIndex) => normalizeKnowledgeMatch(match, sourceText, matchIndex)).filter(Boolean)
+        : [],
+      aiTranslation: cleanText(value?.aiTranslation),
+      activeTranslationSource: allowedSources.has(value?.activeTranslationSource)
+        ? value.activeTranslationSource
+        : translation ? 'manual' : null,
     }
   }
 
@@ -113,6 +144,9 @@
         status: old?.status || 'new',
         memorySuggestion: old?.memorySuggestion || null,
         memoryEntryId: old?.memoryEntryId || null,
+        knowledgeMatches: old?.knowledgeMatches || [],
+        aiTranslation: old?.aiTranslation || '',
+        activeTranslationSource: old?.activeTranslationSource || null,
       }, object.id, units.length))
     }
     if (pendingWhitespace && units.length) units[units.length - 1].separatorAfter += pendingWhitespace
