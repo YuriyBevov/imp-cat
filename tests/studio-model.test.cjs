@@ -184,6 +184,7 @@ test('normalizeScene preserves internal translation units and derives the export
 
 test('parseJsonArray accepts plain and fenced provider responses', () => {
   assert.deepEqual(parseJsonArray('[{"id":"1","translatedText":"Да"}]')[0], { id: '1', translatedText: 'Да' })
+  assert.equal(parseJsonArray('{"revisions":[{"id":"3","translatedText":"Исправлено"}]}')[0].id, '3')
   assert.equal(parseJsonArray('```json\n[{"id":"2","translatedText":"Нет"}]\n```')[0].id, '2')
   assert.throws(() => parseJsonArray('not json'), /некорректный JSON/)
 })

@@ -218,6 +218,12 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .studio-page--segments .scene-object--source { background: #f8fafc; border-style: solid; }
 .studio-page--segments .scene-object--translation { background: #fff; }
 .studio-page--segments .scene-object--translation.is-untranslated .scene-object__content:empty::before { content: "Введите перевод…"; color: #98a2b3; font-style: italic; pointer-events: none; }
+.segment-ai-instruction { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 0 8px 8px; padding-top: 7px; border-top: 1px solid #e5e7eb; font: 9px/1.35 Inter, sans-serif; text-align: left; }
+.segment-ai-instruction textarea { grid-column: 1 / -1; width: 100%; min-height: 46px; padding: 6px 7px; resize: vertical; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; color: var(--ink); font: inherit; }
+.segment-ai-instruction__presets { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 5px; }
+.segment-ai-instruction__presets select { min-width: 0; height: 30px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
+.segment-ai-instruction button { align-self: end; min-height: 30px; padding: 5px 8px; border: 1px solid #a5b4fc; border-radius: 6px; background: #eef2ff; color: #315ee7; cursor: pointer; font: 750 9px/1 Inter, sans-serif; }
+.segment-ai-instruction button:disabled { opacity: .45; cursor: wait; }
 .studio-page--segments .scene-object__badge { position: static; display: inline-flex !important; margin: -1px 0 0 -1px; border-radius: 4px 0 4px 0; }
 .studio-page--segments .scene-object__handle, .studio-page--segments .scene-object__resize { display: none !important; }
 
@@ -258,6 +264,16 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .translation-batch-controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #fff; font-size: 10px; font-weight: 700; }
 .translation-batch-controls input { width: 15px; height: 15px; margin: 0; accent-color: #fff; }
 .translation-batch-controls small { color: #cdd8f8; font-size: 9px; }
+.translation-instruction-card { display: grid; gap: 6px; margin: 0 0 9px; padding: 8px; border: 1px solid rgba(255,255,255,.18); border-radius: 8px; background: rgba(255,255,255,.06); }
+.translation-instruction-card label { color: #fff; font-size: 10px; font-weight: 700; }
+.translation-instruction-card textarea { width: 100%; min-height: 58px; padding: 7px; resize: vertical; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; background: rgba(255,255,255,.96); color: var(--ink); font: 10px/1.4 Inter, sans-serif; }
+.instruction-preset-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.instruction-preset-picker select { min-width: 0; height: 30px; padding: 4px 6px; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; background: rgba(255,255,255,.96); color: var(--ink); font-size: 9px; }
+.instruction-preset-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.instruction-preset-picker .button, .instruction-preset-actions .button { min-height: 30px; padding: 5px 7px; border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.08); color: #fff; font-size: 9px; }
+.instruction-preset-actions .button--danger { color: #fecaca; }
+.translation-instruction-card__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.translation-instruction-card__actions .button { min-height: 30px; padding: 5px 6px; border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.08); color: #fff; font-size: 9px; }
 .agent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .agent-actions #reanalyze-button { grid-column: 1 / -1; }
 .agent-actions .button { min-height: 33px; padding: 5px 7px; border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.08); color: #fff; font-size: 10px; }
@@ -443,6 +459,7 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .knowledge-base-entry-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 13px; border: 1px solid #cbd5e1; border-radius: 10px; background: #f8fafc; }
 .knowledge-base-entry-form > label, .knowledge-base-entry-form__meta label { display: grid; gap: 5px; color: #475467; font-size: 10px; font-weight: 750; }
 .knowledge-base-entry-form textarea { min-height: 88px; resize: vertical; line-height: 1.4; }
+.knowledge-base-entry-form__note { grid-column: 1 / -1; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .knowledge-base-entry-form__meta { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(180px, 1fr) 150px 150px; gap: 8px; }
 .knowledge-base-entry-form .settings-dialog__actions { grid-column: 1 / -1; }
 .knowledge-base-list { min-height: 140px; display: grid; align-content: start; gap: 8px; overflow: auto; }

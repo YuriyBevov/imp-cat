@@ -19,6 +19,9 @@
     agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewCancel: $('#layout-review-cancel-button'), layoutReviewStatus: $('#layout-review-status'),
     translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
+    globalTranslationInstruction: $('#translation-global-instruction'), reviseSelected: $('#revise-selected-button'), reviseDocument: $('#revise-document-button'),
+    instructionPresetSelect: $('#instruction-preset-select'), instructionPresetApply: $('#instruction-preset-apply'),
+    instructionPresetSave: $('#instruction-preset-save'), instructionPresetDelete: $('#instruction-preset-delete'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
@@ -90,6 +93,7 @@
     knowledgeBaseLimit: 25,
     knowledgeBaseTotal: 0,
     activeKnowledgeSuggestion: null,
+    instructionPresets: [],
   }
 
   function showToast(message, isError = false) {
@@ -754,6 +758,7 @@
     elements.sourceLanguage.value = state.scene.sourceLanguage
     elements.targetLanguage.value = state.scene.targetLanguage
     elements.knowledgeBaseMode.value = state.scene.knowledgeBaseMode === 'priority' ? 'priority' : 'suggestions'
+    elements.globalTranslationInstruction.value = state.scene.globalTranslationInstruction || ''
     loadKnowledgeBase().catch(() => {})
     elements.gridSize.value = String(currentGridSize())
     elements.gridSnap.checked = gridSnapEnabled()
@@ -1030,6 +1035,8 @@
     elements.translationSelectAll.indeterminate = selectedCount > 0 && selectedCount < total
     elements.translationSelectionCount.textContent = `Выбрано: ${selectedCount} из ${total}`
     elements.translate.disabled = selectedCount === 0
+    elements.reviseSelected.disabled = selectedCount === 0
+    elements.reviseDocument.disabled = total === 0
     elements.translate.textContent = selectedCount === total && total > 0
       ? `Перевести весь документ (${total})`
       : `Перевести выбранные (${selectedCount})`
@@ -1317,6 +1324,140 @@
       : []
   }
 
+  function populateInstructionPresetSelect(select) {
+    if (!select) return
+    const current = select.value
+    const placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = state.instructionPresets.length ? 'Готовые инструкции…' : 'Готовых инструкций пока нет'
+    select.replaceChildren(placeholder)
+    for (const preset of state.instructionPresets) {
+      const option = document.createElement('option')
+      option.value = preset.id
+      option.textContent = preset.title
+      option.title = preset.instruction
+      select.append(option)
+    }
+    select.value = state.instructionPresets.some(preset => preset.id === current) ? current : ''
+  }
+
+  function refreshInstructionPresetControls() {
+    for (const select of document.querySelectorAll('[data-instruction-preset-select], #instruction-preset-select')) {
+      populateInstructionPresetSelect(select)
+      const container = select.closest('.instruction-preset-picker, .segment-ai-instruction__presets')
+      const apply = container?.querySelector('[data-instruction-preset-apply], #instruction-preset-apply')
+      if (apply) apply.disabled = !select.value
+    }
+    elements.instructionPresetDelete.disabled = !elements.instructionPresetSelect.value
+  }
+
+  async function loadInstructionPresets() {
+    const response = await api('/api/studio/translation-instructions')
+    const data = await response.json()
+    state.instructionPresets = Array.isArray(data.presets) ? data.presets : []
+    refreshInstructionPresetControls()
+  }
+
+  function appendInstruction(current, addition, maximum) {
+    const existing = String(current || '').trim()
+    const next = String(addition || '').trim()
+    if (!next || existing === next || existing.split(/\n+/).some(value => value.trim() === next)) return existing.slice(0, maximum)
+    return `${existing}${existing ? '\n' : ''}${next}`.slice(0, maximum)
+  }
+
+  function applyInstructionPreset(select, input, maximum) {
+    const preset = state.instructionPresets.find(item => item.id === select.value)
+    if (!preset) return showToast('Выберите готовую инструкцию', true)
+    input.value = appendInstruction(input.value, preset.instruction, maximum)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    showToast(`Добавлена инструкция «${preset.title}»`)
+  }
+
+  async function saveInstructionPreset(instruction, select = null) {
+    const value = String(instruction || '').trim()
+    if (!value) return showToast('Сначала введите комментарий для ИИ', true)
+    try {
+      const response = await api('/api/studio/translation-instructions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction: value }),
+      })
+      const result = await response.json()
+      const existingIndex = state.instructionPresets.findIndex(preset => preset.id === result.preset.id)
+      if (existingIndex >= 0) state.instructionPresets.splice(existingIndex, 1)
+      state.instructionPresets.unshift(result.preset)
+      refreshInstructionPresetControls()
+      if (select) {
+        select.value = result.preset.id
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      showToast(result.created ? 'Инструкция сохранена в готовые' : 'Такая инструкция уже есть в наборе')
+    } catch (error) { showToast(error.message, true) }
+  }
+
+  async function deleteSelectedInstructionPreset() {
+    const preset = state.instructionPresets.find(item => item.id === elements.instructionPresetSelect.value)
+    if (!preset || !confirm(`Удалить готовую инструкцию «${preset.title}»?`)) return
+    try {
+      await api(`/api/studio/translation-instructions/${encodeURIComponent(preset.id)}`, { method: 'DELETE' })
+      state.instructionPresets = state.instructionPresets.filter(item => item.id !== preset.id)
+      refreshInstructionPresetControls()
+      showToast('Готовая инструкция удалена')
+    } catch (error) { showToast(error.message, true) }
+  }
+
+  function createSegmentInstructionControl(object) {
+    const control = document.createElement('div')
+    control.className = 'segment-ai-instruction'
+    control.addEventListener('pointerdown', event => event.stopPropagation())
+    const input = document.createElement('textarea')
+    input.rows = 2
+    input.maxLength = 5000
+    input.value = object.translationInstruction || ''
+    input.placeholder = 'Комментарий для ИИ по этому сегменту…'
+    input.setAttribute('aria-label', `Комментарий для ИИ к сегменту ${object.readingOrder || object.id}`)
+    input.addEventListener('pointerdown', event => event.stopPropagation())
+    input.addEventListener('input', () => {
+      object.translationInstruction = input.value.slice(0, 5000)
+      scheduleSave()
+    })
+    const presetControls = document.createElement('div')
+    presetControls.className = 'segment-ai-instruction__presets'
+    const presetSelect = document.createElement('select')
+    presetSelect.dataset.instructionPresetSelect = 'true'
+    presetSelect.setAttribute('aria-label', `Готовая инструкция для сегмента ${object.readingOrder || object.id}`)
+    populateInstructionPresetSelect(presetSelect)
+    const addPreset = document.createElement('button')
+    addPreset.type = 'button'
+    addPreset.dataset.instructionPresetApply = 'true'
+    addPreset.textContent = 'Добавить'
+    addPreset.disabled = true
+    presetSelect.addEventListener('change', () => { addPreset.disabled = !presetSelect.value })
+    addPreset.addEventListener('click', event => {
+      event.preventDefault()
+      applyInstructionPreset(presetSelect, input, 5000)
+    })
+    const savePreset = document.createElement('button')
+    savePreset.type = 'button'
+    savePreset.textContent = 'Сохранить'
+    savePreset.addEventListener('click', event => {
+      event.preventDefault()
+      saveInstructionPreset(input.value, presetSelect)
+    })
+    presetControls.append(presetSelect, addPreset, savePreset)
+    const apply = document.createElement('button')
+    apply.type = 'button'
+    apply.textContent = 'Исправить ИИ'
+    apply.disabled = !String(object.translation || '').trim()
+    apply.addEventListener('pointerdown', event => event.stopPropagation())
+    apply.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      reviseTranslations([object.id], 'selection', apply)
+    })
+    control.append(input, presetControls, apply)
+    return control
+  }
+
   function createObjectElement(object, requestedField = null) {
     const displayField = requestedField || objectOutputField(object)
     const editField = requestedField || 'translation'
@@ -1397,6 +1538,9 @@
     resize.className = 'scene-object__resize'
     resize.addEventListener('pointerdown', event => beginResize(event, object.id))
     node.append(badge, handle, content)
+    if (requestedField === 'translation' && state.viewMode === 'segments' && isTranslatableType(object.type)) {
+      node.append(createSegmentInstructionControl(object))
+    }
     const aiAlternative = requestedField === 'translation' ? aiAlternativeForObject(object) : ''
     if (aiAlternative && aiAlternative !== object.translation) {
       const alternative = document.createElement('aside')
@@ -1679,6 +1823,7 @@
       'memory-suggested': '100% из БЗ',
       'memory-applied': 'Применено из БЗ',
       'machine-translated': 'Переведено ИИ',
+      'ai-revised': 'Исправлено ИИ',
       edited: 'Изменено',
       approved: 'В БЗ',
     })[unit.status] || 'Не переведено'
@@ -2413,6 +2558,52 @@
     }
   }
 
+  async function reviseTranslations(requestedIds = [], scope = 'selection', trigger = null) {
+    if (!state.scene || !state.metadata) return
+    const objectIds = scope === 'document' ? [] : requestedIds
+    const requested = new Set(objectIds)
+    const hasSegmentInstruction = state.scene.objects.some(object => (
+      String(object.translationInstruction || '').trim() && (scope === 'document' || requested.has(object.id))
+    ))
+    const globalInstruction = String(elements.globalTranslationInstruction.value || '').trim()
+    if (!globalInstruction && !hasSegmentInstruction) {
+      return showToast('Добавьте общий комментарий или комментарий к сегменту', true)
+    }
+    state.scene.globalTranslationInstruction = globalInstruction
+    const previousLabel = trigger?.textContent
+    if (trigger) {
+      trigger.disabled = true
+      trigger.textContent = 'Исправляем…'
+    }
+    elements.reviseSelected.disabled = true
+    elements.reviseDocument.disabled = true
+    elements.agentStatus.textContent = scope === 'document'
+      ? 'ИИ исправляет перевод всего документа по комментариям…'
+      : `ИИ исправляет выбранные сегменты: ${objectIds.length}…`
+    try {
+      await saveScene(true)
+      const response = await api(`/api/studio/documents/${state.metadata.id}/translate/revise`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectIds, scope, globalInstruction }),
+      })
+      const data = await response.json()
+      checkpoint()
+      state.scene = data.scene
+      renderDocument()
+      elements.agentStatus.textContent = data.message
+      showToast(data.message)
+    } catch (error) {
+      if (trigger) {
+        trigger.disabled = false
+        trigger.textContent = previousLabel
+      }
+      elements.agentStatus.textContent = 'Корректировка по комментариям не выполнена.'
+      showToast(error.message, true)
+    } finally {
+      refreshTranslationSelectionControls()
+    }
+  }
+
   function renderLayoutReviewStatus() {
     if (!state.metadata) return
     const job = state.layoutReviewJobs.get(state.metadata.id)
@@ -3108,6 +3299,25 @@
     elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
     elements.translationSelectAll.addEventListener('change', () => selectAllTranslationObjects(elements.translationSelectAll.checked))
     elements.translate.addEventListener('click', translateSelection)
+    elements.globalTranslationInstruction.addEventListener('input', () => {
+      if (!state.scene) return
+      state.scene.globalTranslationInstruction = elements.globalTranslationInstruction.value.slice(0, 10000)
+      scheduleSave()
+    })
+    elements.instructionPresetSelect.addEventListener('change', () => {
+      const selected = Boolean(elements.instructionPresetSelect.value)
+      elements.instructionPresetApply.disabled = !selected
+      elements.instructionPresetDelete.disabled = !selected
+    })
+    elements.instructionPresetApply.addEventListener('click', () => {
+      applyInstructionPreset(elements.instructionPresetSelect, elements.globalTranslationInstruction, 10000)
+    })
+    elements.instructionPresetSave.addEventListener('click', () => {
+      saveInstructionPreset(elements.globalTranslationInstruction.value, elements.instructionPresetSelect)
+    })
+    elements.instructionPresetDelete.addEventListener('click', deleteSelectedInstructionPreset)
+    elements.reviseSelected.addEventListener('click', () => reviseTranslations([...state.translationSelected], 'selection', elements.reviseSelected))
+    elements.reviseDocument.addEventListener('click', () => reviseTranslations([], 'document', elements.reviseDocument))
     elements.layoutReview.addEventListener('click', startLayoutReview)
     elements.layoutReviewCancel.addEventListener('click', cancelLayoutReview)
     elements.qa.addEventListener('click', runQa)
@@ -3479,7 +3689,7 @@
 
   bindEvents()
   ;(async () => {
-    await loadServiceStatus()
+    await Promise.all([loadServiceStatus(), loadInstructionPresets().catch(() => {})])
     await loadPendingJobs()
     await loadDocumentHistory()
     await restoreDocumentFromUrl()

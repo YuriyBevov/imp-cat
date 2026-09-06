@@ -63,7 +63,7 @@
     const sourceText = cleanText(value?.sourceText)
     const translation = cleanText(value?.translation)
     const suggestion = normalizeSuggestion(value?.memorySuggestion)
-    const allowedStatuses = new Set(['new', 'memory-suggested', 'memory-applied', 'machine-translated', 'edited', 'approved'])
+    const allowedStatuses = new Set(['new', 'memory-suggested', 'memory-applied', 'machine-translated', 'ai-revised', 'edited', 'approved'])
     const allowedSources = new Set(['ai', 'memory', 'memory-revised', 'manual'])
     return {
       id: cleanText(value?.id, 120) || unitId(objectId, index, sourceText),

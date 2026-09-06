@@ -155,6 +155,24 @@
             <label><input id="translation-select-all" type="checkbox" /> <span>Выбрать все переводимые сегменты</span></label>
             <small id="translation-selection-count">Выбрано: 0</small>
           </div>
+          <div class="translation-instruction-card">
+            <label for="translation-global-instruction">Общий комментарий для ИИ</label>
+            <textarea id="translation-global-instruction" rows="3" maxlength="10000" placeholder="Например: переводи все имена в документе; все печати не включай в сборку"></textarea>
+            <div class="instruction-preset-picker">
+              <select id="instruction-preset-select" aria-label="Готовые инструкции">
+                <option value="">Готовые инструкции…</option>
+              </select>
+              <button id="instruction-preset-apply" class="button" type="button" disabled>Добавить</button>
+            </div>
+            <div class="instruction-preset-actions">
+              <button id="instruction-preset-save" class="button" type="button">Сохранить текущую</button>
+              <button id="instruction-preset-delete" class="button button--danger" type="button" disabled>Удалить из набора</button>
+            </div>
+            <div class="translation-instruction-card__actions">
+              <button id="revise-selected-button" class="button" type="button" disabled>Исправить выбранные</button>
+              <button id="revise-document-button" class="button" type="button">Исправить весь документ</button>
+            </div>
+          </div>
           <div class="agent-actions">
             <button id="analyze-button" class="button button--primary" type="button">Проверить структуру</button>
             <button id="reanalyze-button" class="button" type="button">Повторить анализ исходника</button>
@@ -384,6 +402,7 @@
           <input id="knowledge-base-entry-id" type="hidden" />
           <label>Исходный текст<textarea id="knowledge-base-entry-source" rows="4" maxlength="100000" required></textarea></label>
           <label>Перевод<textarea id="knowledge-base-entry-translation" rows="4" maxlength="100000" required></textarea></label>
+          <small class="knowledge-base-entry-form__note">Исходный текст и перевод сохраняются в нижнем регистре. При применении регистр перевода восстанавливается по написанию исходника в документе.</small>
           <div class="knowledge-base-entry-form__meta">
             <label>Глоссарий<select id="knowledge-base-entry-glossary" required></select></label>
             <label>Язык оригинала<input id="knowledge-base-entry-source-language" maxlength="20" value="auto" required /></label>

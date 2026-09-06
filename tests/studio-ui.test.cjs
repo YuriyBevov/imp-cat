@@ -15,7 +15,8 @@ test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
     'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
-    'translation-select-all', 'translation-selection-count',
+    'translation-select-all', 'translation-selection-count', 'translation-global-instruction', 'revise-selected-button', 'revise-document-button',
+    'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'auto-layout-button', 'layout-review-button', 'layout-review-cancel-button', 'layout-review-status', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'knowledge-base-open-button', 'knowledge-base-open-context-button',
     'knowledge-base-modal', 'knowledge-base-query', 'knowledge-base-glossary-filter', 'knowledge-base-list',
@@ -44,6 +45,10 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /function deleteKnowledgeBaseEntry/)
   assert.match(client, /function showKnowledgeSuggestion/)
   assert.match(client, /translate\/apply-memory/)
+  assert.match(client, /translate\/revise/)
+  assert.match(client, /function reviseTranslations/)
+  assert.match(client, /function saveInstructionPreset/)
+  assert.match(client, /\/api\/studio\/translation-instructions/)
   assert.match(client, /event\.ctrlKey \|\| event\.metaKey/)
   assert.match(client, /beginMarquee/)
   assert.match(client, /beginDrag/)
@@ -71,6 +76,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /setDocumentArchived/)
   assert.match(client, /deleteLibraryDocument/)
   assert.match(client, /segment-translation-row/)
+  assert.match(styles, /segment-ai-instruction/)
   assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)
@@ -332,9 +338,17 @@ test('segments view follows visual order and supports partial or full batch tran
     ],
   }
   const translationRequests = []
+  const instructionPresetRequests = []
+  const instructionPreset = { id: 'preset-1', title: 'Имена', instruction: 'Передавай имена транслитерацией.' }
   dom.window.fetch = async (url, options = {}) => {
     const value = String(url)
     if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
+    if (value.endsWith('/translation-instructions') && options.method === 'POST') {
+      const request = JSON.parse(options.body)
+      instructionPresetRequests.push(request)
+      return { ok: true, json: async () => ({ created: true, preset: { id: 'preset-2', title: request.instruction, instruction: request.instruction } }) }
+    }
+    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [instructionPreset] }) }
     if (value.endsWith(`/documents/${id}/scene`) && options.method === 'PUT') {
       return { ok: true, json: async () => ({ metadata: { id, revision: 2 } }) }
     }
@@ -353,6 +367,23 @@ test('segments view follows visual order and supports partial or full batch tran
   const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object--source')].map(node => node.dataset.id)
   assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right', 'signature'])
   assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 5)
+  assert.equal(dom.window.document.querySelectorAll('.segment-ai-instruction textarea').length, 5)
+  const globalPresetSelect = dom.window.document.querySelector('#instruction-preset-select')
+  globalPresetSelect.value = instructionPreset.id
+  globalPresetSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  dom.window.document.querySelector('#instruction-preset-apply').click()
+  assert.equal(dom.window.document.querySelector('#translation-global-instruction').value, instructionPreset.instruction)
+  const segmentInstruction = dom.window.document.querySelector('.segment-ai-instruction')
+  const segmentPresetSelect = segmentInstruction.querySelector('[data-instruction-preset-select]')
+  segmentPresetSelect.value = instructionPreset.id
+  segmentPresetSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  segmentInstruction.querySelector('[data-instruction-preset-apply]').click()
+  assert.equal(segmentInstruction.querySelector('textarea').value, instructionPreset.instruction)
+  segmentInstruction.querySelector('textarea').value = 'Сохраняй номера без изменений.'
+  segmentInstruction.querySelector('textarea').dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  ;[...segmentInstruction.querySelectorAll('button')].find(button => button.textContent === 'Сохранить').click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(instructionPresetRequests[0].instruction, 'Сохраняй номера без изменений.')
   const checkboxes = [...dom.window.document.querySelectorAll('[data-translation-select]')]
   const selectAll = dom.window.document.querySelector('#translation-select-all')
   const translate = dom.window.document.querySelector('#translate-button')
