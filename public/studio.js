@@ -36,7 +36,7 @@
     flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'),
-    knowledgeBaseOpen: $('#knowledge-base-open-button'), knowledgeBaseModal: $('#knowledge-base-modal'), knowledgeBaseClose: $('#knowledge-base-close'),
+    knowledgeBaseOpen: $('#knowledge-base-open-button'), knowledgeBaseOpenContext: $('#knowledge-base-open-context-button'), knowledgeBaseModal: $('#knowledge-base-modal'), knowledgeBaseClose: $('#knowledge-base-close'),
     knowledgeBaseQuery: $('#knowledge-base-query'), knowledgeBaseGlossaryFilter: $('#knowledge-base-glossary-filter'), knowledgeBaseSearch: $('#knowledge-base-search-button'),
     knowledgeBaseNew: $('#knowledge-base-new-button'), knowledgeBaseList: $('#knowledge-base-list'), knowledgeBasePrevious: $('#knowledge-base-previous'),
     knowledgeBaseNext: $('#knowledge-base-next'), knowledgeBasePageSummary: $('#knowledge-base-page-summary'),
@@ -2844,6 +2844,7 @@
       if (event.target === elements.documentLibraryModal) elements.documentLibraryModal.hidden = true
     })
     elements.knowledgeBaseOpen.addEventListener('click', openKnowledgeBase)
+    elements.knowledgeBaseOpenContext.addEventListener('click', openKnowledgeBase)
     elements.knowledgeBaseClose.addEventListener('click', closeKnowledgeBase)
     elements.knowledgeBaseModal.addEventListener('pointerdown', event => { if (event.target === elements.knowledgeBaseModal) closeKnowledgeBase() })
     elements.knowledgeBaseSearch.addEventListener('click', () => loadKnowledgeBaseEntries(true))
