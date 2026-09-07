@@ -21,7 +21,9 @@
     translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
     globalTranslationInstruction: $('#translation-global-instruction'), reviseSelected: $('#revise-selected-button'), reviseDocument: $('#revise-document-button'),
     instructionPresetSelect: $('#instruction-preset-select'), instructionPresetApply: $('#instruction-preset-apply'),
-    instructionPresetSave: $('#instruction-preset-save'), instructionPresetDelete: $('#instruction-preset-delete'),
+    instructionPresetSave: $('#instruction-preset-save'), instructionPresetEdit: $('#instruction-preset-edit'), instructionPresetDelete: $('#instruction-preset-delete'),
+    instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
+    instructionPresetEditSave: $('#instruction-preset-edit-save'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
     selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
@@ -49,6 +51,11 @@
     knowledgeBaseEntrySource: $('#knowledge-base-entry-source'), knowledgeBaseEntryTranslation: $('#knowledge-base-entry-translation'),
     knowledgeBaseEntryGlossary: $('#knowledge-base-entry-glossary'), knowledgeBaseEntrySourceLanguage: $('#knowledge-base-entry-source-language'),
     knowledgeBaseEntryTargetLanguage: $('#knowledge-base-entry-target-language'), knowledgeBaseEntryCancel: $('#knowledge-base-entry-cancel'),
+    instructionLibraryButton: $('#instruction-library-button'), instructionLibraryModal: $('#instruction-library-modal'),
+    instructionLibraryClose: $('#instruction-library-close'), instructionLibraryQuery: $('#instruction-library-query'),
+    instructionLibraryNew: $('#instruction-library-new'), instructionLibraryList: $('#instruction-library-list'),
+    instructionLibraryForm: $('#instruction-library-form'), instructionLibraryId: $('#instruction-library-id'), instructionLibraryText: $('#instruction-library-text'),
+    instructionLibraryFormCancel: $('#instruction-library-form-cancel'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
@@ -1334,7 +1341,7 @@
     for (const preset of state.instructionPresets) {
       const option = document.createElement('option')
       option.value = preset.id
-      option.textContent = preset.title
+      option.textContent = preset.instruction.length > 90 ? `${preset.instruction.slice(0, 87)}…` : preset.instruction
       option.title = preset.instruction
       select.append(option)
     }
@@ -1348,7 +1355,9 @@
       const apply = container?.querySelector('[data-instruction-preset-apply], #instruction-preset-apply')
       if (apply) apply.disabled = !select.value
     }
-    elements.instructionPresetDelete.disabled = !elements.instructionPresetSelect.value
+    const hasGlobalSelection = Boolean(elements.instructionPresetSelect.value)
+    elements.instructionPresetEdit.disabled = !hasGlobalSelection
+    elements.instructionPresetDelete.disabled = !hasGlobalSelection
   }
 
   async function loadInstructionPresets() {
@@ -1356,6 +1365,116 @@
     const data = await response.json()
     state.instructionPresets = Array.isArray(data.presets) ? data.presets : []
     refreshInstructionPresetControls()
+  }
+
+  function closeInstructionLibraryForm() {
+    elements.instructionLibraryForm.hidden = true
+    elements.instructionLibraryForm.reset()
+    elements.instructionLibraryId.value = ''
+  }
+
+  function showInstructionLibraryForm(preset = null) {
+    elements.instructionLibraryForm.hidden = false
+    elements.instructionLibraryId.value = preset?.id || ''
+    elements.instructionLibraryText.value = preset?.instruction || ''
+    elements.instructionLibraryText.focus()
+  }
+
+  function renderInstructionLibrary() {
+    const query = elements.instructionLibraryQuery.value.trim().toLocaleLowerCase('ru-RU')
+    const presets = query
+      ? state.instructionPresets.filter(preset => preset.instruction.toLocaleLowerCase('ru-RU').includes(query))
+      : state.instructionPresets
+    elements.instructionLibraryList.replaceChildren()
+    if (!presets.length) {
+      const empty = document.createElement('div')
+      empty.className = 'document-library-empty'
+      empty.textContent = state.instructionPresets.length
+        ? 'Инструкции не найдены. Измените поисковый запрос.'
+        : 'Готовых инструкций пока нет. Создайте первую инструкцию.'
+      elements.instructionLibraryList.append(empty)
+      return
+    }
+    for (const preset of presets) {
+      const row = document.createElement('article')
+      row.className = 'instruction-library-entry'
+      row.dataset.presetId = preset.id
+      const content = document.createElement('div')
+      content.className = 'instruction-library-entry__content'
+      const instruction = document.createElement('p')
+      instruction.textContent = preset.instruction
+      const meta = document.createElement('small')
+      meta.textContent = preset.updatedAt ? `Изменено ${new Date(preset.updatedAt).toLocaleString('ru-RU')}` : 'Готовая инструкция'
+      content.append(instruction, meta)
+      const actions = document.createElement('div')
+      actions.className = 'instruction-library-entry__actions'
+      const edit = document.createElement('button')
+      edit.type = 'button'
+      edit.className = 'button'
+      edit.textContent = 'Изменить'
+      edit.addEventListener('click', () => showInstructionLibraryForm(preset))
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'button button--danger'
+      remove.textContent = 'Удалить'
+      remove.addEventListener('click', () => deleteInstructionPreset(preset))
+      actions.append(edit, remove)
+      row.append(content, actions)
+      elements.instructionLibraryList.append(row)
+    }
+  }
+
+  async function openInstructionLibrary() {
+    elements.instructionLibraryModal.hidden = false
+    elements.instructionLibraryList.innerHTML = '<small>Загружаем инструкции…</small>'
+    try {
+      await loadInstructionPresets()
+      renderInstructionLibrary()
+    } catch (error) {
+      elements.instructionLibraryList.innerHTML = `<div class="document-library-empty">${escapeHtml(error.message)}</div>`
+    }
+  }
+
+  function closeInstructionLibrary() {
+    elements.instructionLibraryModal.hidden = true
+    closeInstructionLibraryForm()
+  }
+
+  async function saveInstructionLibraryEntry(event) {
+    event.preventDefault()
+    const id = elements.instructionLibraryId.value
+    const instruction = elements.instructionLibraryText.value.trim()
+    if (!instruction) return showToast('Введите текст инструкции', true)
+    try {
+      const response = await api(id
+        ? `/api/studio/translation-instructions/${encodeURIComponent(id)}`
+        : '/api/studio/translation-instructions', {
+        method: id ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction }),
+      })
+      const result = await response.json()
+      const preset = result.preset
+      state.instructionPresets = [preset, ...state.instructionPresets.filter(item => item.id !== preset.id)]
+      refreshInstructionPresetControls()
+      closeInstructionLibraryForm()
+      renderInstructionLibrary()
+      showToast(id ? 'Готовая инструкция обновлена' : result.created ? 'Готовая инструкция создана' : 'Такая инструкция уже существует')
+    } catch (error) { showToast(error.message, true) }
+  }
+
+  async function deleteInstructionPreset(preset) {
+    const label = preset?.instruction.length > 80 ? `${preset.instruction.slice(0, 77)}…` : preset?.instruction
+    if (!preset || !confirm(`Удалить готовую инструкцию «${label}»?`)) return
+    try {
+      await api(`/api/studio/translation-instructions/${encodeURIComponent(preset.id)}`, { method: 'DELETE' })
+      state.instructionPresets = state.instructionPresets.filter(item => item.id !== preset.id)
+      if (elements.instructionLibraryId.value === preset.id) closeInstructionLibraryForm()
+      closeInstructionPresetEditor()
+      refreshInstructionPresetControls()
+      if (!elements.instructionLibraryModal.hidden) renderInstructionLibrary()
+      showToast('Готовая инструкция удалена')
+    } catch (error) { showToast(error.message, true) }
   }
 
   function appendInstruction(current, addition, maximum) {
@@ -1370,7 +1489,7 @@
     if (!preset) return showToast('Выберите готовую инструкцию', true)
     input.value = appendInstruction(input.value, preset.instruction, maximum)
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    showToast(`Добавлена инструкция «${preset.title}»`)
+    showToast('Готовая инструкция добавлена')
   }
 
   async function saveInstructionPreset(instruction, select = null) {
@@ -1394,15 +1513,44 @@
     } catch (error) { showToast(error.message, true) }
   }
 
+  function closeInstructionPresetEditor() {
+    elements.instructionPresetEditor.hidden = true
+    elements.instructionPresetText.value = ''
+  }
+
+  function openInstructionPresetEditor() {
+    const preset = state.instructionPresets.find(item => item.id === elements.instructionPresetSelect.value)
+    if (!preset) return showToast('Выберите готовую инструкцию', true)
+    elements.instructionPresetText.value = preset.instruction
+    elements.instructionPresetEditor.hidden = false
+    elements.instructionPresetText.focus()
+  }
+
+  async function updateSelectedInstructionPreset() {
+    const id = elements.instructionPresetSelect.value
+    const instruction = elements.instructionPresetText.value.trim()
+    if (!id) return showToast('Выберите готовую инструкцию', true)
+    if (!instruction) return showToast('Введите текст инструкции', true)
+    elements.instructionPresetEditSave.disabled = true
+    try {
+      const response = await api(`/api/studio/translation-instructions/${encodeURIComponent(id)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instruction }),
+      })
+      const { preset } = await response.json()
+      state.instructionPresets = [preset, ...state.instructionPresets.filter(item => item.id !== preset.id)]
+      refreshInstructionPresetControls()
+      elements.instructionPresetSelect.value = preset.id
+      elements.instructionPresetSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      closeInstructionPresetEditor()
+      showToast('Готовая инструкция обновлена')
+    } catch (error) { showToast(error.message, true) }
+    finally { elements.instructionPresetEditSave.disabled = false }
+  }
+
   async function deleteSelectedInstructionPreset() {
     const preset = state.instructionPresets.find(item => item.id === elements.instructionPresetSelect.value)
-    if (!preset || !confirm(`Удалить готовую инструкцию «${preset.title}»?`)) return
-    try {
-      await api(`/api/studio/translation-instructions/${encodeURIComponent(preset.id)}`, { method: 'DELETE' })
-      state.instructionPresets = state.instructionPresets.filter(item => item.id !== preset.id)
-      refreshInstructionPresetControls()
-      showToast('Готовая инструкция удалена')
-    } catch (error) { showToast(error.message, true) }
+    await deleteInstructionPreset(preset)
   }
 
   function createSegmentInstructionControl(object) {
@@ -3224,6 +3372,13 @@
     elements.knowledgeBaseNew.addEventListener('click', () => showKnowledgeBaseEntryForm())
     elements.knowledgeBaseEntryCancel.addEventListener('click', closeKnowledgeBaseEntryForm)
     elements.knowledgeBaseEntryForm.addEventListener('submit', saveKnowledgeBaseEntry)
+    elements.instructionLibraryButton.addEventListener('click', openInstructionLibrary)
+    elements.instructionLibraryClose.addEventListener('click', closeInstructionLibrary)
+    elements.instructionLibraryModal.addEventListener('pointerdown', event => { if (event.target === elements.instructionLibraryModal) closeInstructionLibrary() })
+    elements.instructionLibraryQuery.addEventListener('input', renderInstructionLibrary)
+    elements.instructionLibraryNew.addEventListener('click', () => showInstructionLibraryForm())
+    elements.instructionLibraryFormCancel.addEventListener('click', closeInstructionLibraryForm)
+    elements.instructionLibraryForm.addEventListener('submit', saveInstructionLibraryEntry)
     elements.knowledgeBasePrevious.addEventListener('click', () => {
       state.knowledgeBaseOffset = Math.max(0, state.knowledgeBaseOffset - state.knowledgeBaseLimit)
       loadKnowledgeBaseEntries()
@@ -3307,7 +3462,9 @@
     elements.instructionPresetSelect.addEventListener('change', () => {
       const selected = Boolean(elements.instructionPresetSelect.value)
       elements.instructionPresetApply.disabled = !selected
+      elements.instructionPresetEdit.disabled = !selected
       elements.instructionPresetDelete.disabled = !selected
+      if (!elements.instructionPresetEditor.hidden) closeInstructionPresetEditor()
     })
     elements.instructionPresetApply.addEventListener('click', () => {
       applyInstructionPreset(elements.instructionPresetSelect, elements.globalTranslationInstruction, 10000)
@@ -3315,7 +3472,10 @@
     elements.instructionPresetSave.addEventListener('click', () => {
       saveInstructionPreset(elements.globalTranslationInstruction.value, elements.instructionPresetSelect)
     })
+    elements.instructionPresetEdit.addEventListener('click', openInstructionPresetEditor)
     elements.instructionPresetDelete.addEventListener('click', deleteSelectedInstructionPreset)
+    elements.instructionPresetEditCancel.addEventListener('click', closeInstructionPresetEditor)
+    elements.instructionPresetEditSave.addEventListener('click', updateSelectedInstructionPreset)
     elements.reviseSelected.addEventListener('click', () => reviseTranslations([...state.translationSelected], 'selection', elements.reviseSelected))
     elements.reviseDocument.addEventListener('click', () => reviseTranslations([], 'document', elements.reviseDocument))
     elements.layoutReview.addEventListener('click', startLayoutReview)
@@ -3378,8 +3538,10 @@
       }
       if (event.key === 'Escape') {
         closeKnowledgeSuggestion()
+        closeInstructionPresetEditor()
         if (!elements.aiSettingsModal.hidden) closeProviderSettings()
         if (!elements.knowledgeBaseModal.hidden) closeKnowledgeBase()
+        if (!elements.instructionLibraryModal.hidden) closeInstructionLibrary()
         elements.documentLibraryModal.hidden = true
         state.selected.clear()
         state.lastTextSelection = null

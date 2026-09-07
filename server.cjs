@@ -25,6 +25,18 @@ const onlyofficeDownloadUrl = process.env.ONLYOFFICE_DOWNLOAD_URL || onlyofficeB
 const onlyofficeAppInternalUrl = process.env.ONLYOFFICE_INTERNAL_APP_URL || 'http://host.docker.internal:3100'
 const onlyofficeJwtSecret = process.env.ONLYOFFICE_JWT_SECRET || 'icat-onlyoffice-local-secret-change-me'
 const segmentIndexVersion = 2
+const productDocumentation = Object.freeze({
+  documentation: {
+    title: 'Документация',
+    description: 'Актуальная архитектура, требования и критерии приёмки ICAT.',
+    filename: 'TECHNICAL_SPECIFICATION.md',
+  },
+  'user-guide': {
+    title: 'Руководство пользователя',
+    description: 'Пошаговая работа с приложением и назначение элементов интерфейса.',
+    filename: 'USER_GUIDE.md',
+  },
+})
 
 fs.mkdirSync(onlyofficeDir, { recursive: true })
 
@@ -33,10 +45,37 @@ app.use(express.json({ limit: '20mb' }))
 app.use('/vendor/docx-preview', express.static(path.join(rootDir, 'node_modules', 'docx-preview', 'dist')))
 app.use('/vendor/jszip', express.static(path.join(rootDir, 'node_modules', 'jszip', 'dist')))
 app.get('/', (request, response) => response.sendFile(path.join(publicDir, 'studio.html')))
+app.get('/documentation', (request, response) => response.sendFile(path.join(publicDir, 'docs.html')))
+app.get('/user-guide', (request, response) => response.sendFile(path.join(publicDir, 'docs.html')))
 app.use(express.static(publicDir))
 
 app.get('/api/health', (request, response) => {
   response.json({ status: 'ok' })
+})
+
+app.get('/api/docs/:slug', async (request, response, next) => {
+  try {
+    const document = productDocumentation[request.params.slug]
+    if (!document) {
+      const error = new Error('Страница документации не найдена')
+      error.status = 404
+      throw error
+    }
+    const sourcePath = path.join(rootDir, document.filename)
+    const [markdown, statistics] = await Promise.all([
+      fs.promises.readFile(sourcePath, 'utf8'),
+      fs.promises.stat(sourcePath),
+    ])
+    response.set('Cache-Control', 'no-store').json({
+      slug: request.params.slug,
+      title: document.title,
+      description: document.description,
+      updatedAt: statistics.mtime.toISOString(),
+      markdown,
+    })
+  } catch (error) {
+    next(error)
+  }
 })
 
 app.get('/api/sample', (request, response) => {

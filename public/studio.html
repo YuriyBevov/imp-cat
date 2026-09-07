@@ -17,8 +17,11 @@
         <span id="document-status">Загрузите PDF или изображение</span>
       </div>
       <div class="appbar__actions">
+        <a class="button appbar__help-link" href="/documentation" target="_blank" rel="noopener">Документация</a>
+        <a class="button appbar__help-link" href="/user-guide" target="_blank" rel="noopener">Руководство</a>
         <button id="document-library-button" class="button" type="button">Документы</button>
         <button id="knowledge-base-open-button" class="button" type="button">База знаний</button>
+        <button id="instruction-library-button" class="button" type="button">AI-инструкции</button>
         <button id="ai-settings-button" class="button" type="button">AI-провайдер</button>
         <button id="undo-button" class="icon-button" type="button" title="Отменить (Cmd/Ctrl+Z)" disabled>↶</button>
         <button id="redo-button" class="icon-button" type="button" title="Повторить" disabled>↷</button>
@@ -166,7 +169,16 @@
             </div>
             <div class="instruction-preset-actions">
               <button id="instruction-preset-save" class="button" type="button">Сохранить текущую</button>
+              <button id="instruction-preset-edit" class="button" type="button" disabled>Редактировать</button>
               <button id="instruction-preset-delete" class="button button--danger" type="button" disabled>Удалить из набора</button>
+            </div>
+            <div id="instruction-preset-editor" class="instruction-preset-editor" hidden>
+              <label for="instruction-preset-text">Инструкция</label>
+              <textarea id="instruction-preset-text" rows="4" maxlength="10000"></textarea>
+              <div>
+                <button id="instruction-preset-edit-cancel" class="button" type="button">Отмена</button>
+                <button id="instruction-preset-edit-save" class="button" type="button">Сохранить изменения</button>
+              </div>
             </div>
             <div class="translation-instruction-card__actions">
               <button id="revise-selected-button" class="button" type="button" disabled>Исправить выбранные</button>
@@ -419,6 +431,28 @@
           <span id="knowledge-base-page-summary">0 записей</span>
           <button id="knowledge-base-next" class="button" type="button">Далее →</button>
         </div>
+      </section>
+    </div>
+    <div id="instruction-library-modal" class="modal-backdrop" hidden>
+      <section class="instruction-library-dialog" role="dialog" aria-modal="true" aria-labelledby="instruction-library-title">
+        <div class="settings-dialog__header">
+          <div><p class="eyebrow">Правила перевода</p><h2 id="instruction-library-title">Готовые AI-инструкции</h2></div>
+          <button id="instruction-library-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <p class="settings-dialog__intro">Шаблоны доступны во всех документах. Изменение шаблона не переписывает комментарии, уже добавленные в документы.</p>
+        <div class="instruction-library-toolbar">
+          <input id="instruction-library-query" type="search" placeholder="Найти по тексту инструкции…" aria-label="Поиск по AI-инструкциям" />
+          <button id="instruction-library-new" class="button button--primary" type="button">＋ Новая инструкция</button>
+        </div>
+        <form id="instruction-library-form" class="instruction-library-form" hidden>
+          <input id="instruction-library-id" type="hidden" />
+          <label>Инструкция<textarea id="instruction-library-text" rows="6" maxlength="10000" required></textarea></label>
+          <div class="settings-dialog__actions">
+            <button id="instruction-library-form-cancel" class="button" type="button">Отмена</button>
+            <button class="button button--primary" type="submit">Сохранить инструкцию</button>
+          </div>
+        </form>
+        <div id="instruction-library-list" class="instruction-library-list"><small>Загружаем инструкции…</small></div>
       </section>
     </div>
     <div id="ai-settings-modal" class="modal-backdrop" hidden>

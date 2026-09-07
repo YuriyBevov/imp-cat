@@ -10,6 +10,11 @@ const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
 const translationUnits = fs.readFileSync(path.join(root, 'public/translation-units.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
 const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
+const userGuide = fs.readFileSync(path.join(root, 'USER_GUIDE.md'), 'utf8')
+const technicalSpecification = fs.readFileSync(path.join(root, 'TECHNICAL_SPECIFICATION.md'), 'utf8')
+const docsHtml = fs.readFileSync(path.join(root, 'public/docs.html'), 'utf8')
+const docsClient = fs.readFileSync(path.join(root, 'public/docs.js'), 'utf8')
+const agentsGuide = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
 
 test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
@@ -17,11 +22,16 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'translation-select-all', 'translation-selection-count', 'translation-global-instruction', 'revise-selected-button', 'revise-document-button',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
+    'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
+    'instruction-preset-edit-cancel', 'instruction-preset-edit-save',
     'auto-layout-button', 'layout-review-button', 'layout-review-cancel-button', 'layout-review-status', 'qa-button', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'knowledge-base-open-button', 'knowledge-base-open-context-button',
     'knowledge-base-modal', 'knowledge-base-query', 'knowledge-base-glossary-filter', 'knowledge-base-list',
     'knowledge-base-new-button', 'knowledge-base-entry-form', 'knowledge-base-entry-source', 'knowledge-base-entry-translation',
     'knowledge-base-entry-glossary', 'knowledge-base-previous', 'knowledge-base-next', 'knowledge-base-mode',
+    'instruction-library-button', 'instruction-library-modal', 'instruction-library-close', 'instruction-library-query',
+    'instruction-library-new', 'instruction-library-list', 'instruction-library-form', 'instruction-library-id',
+    'instruction-library-text', 'instruction-library-form-cancel',
     'knowledge-suggestion-popover', 'knowledge-suggestion-list', 'approve-button', 'merge-button', 'split-button',
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
@@ -80,6 +90,58 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)
+  assert.match(html, /href="\/documentation"/)
+  assert.match(html, /href="\/user-guide"/)
+})
+
+test('user guide documents the complete interface and links from README', () => {
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
+  assert.match(readme, /\[USER_GUIDE\.md\]\(USER_GUIDE\.md\)/)
+  for (const label of [
+    'Документация', 'Руководство', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
+    'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Макет', 'Сегменты',
+    'Проверить структуру', 'Повторить анализ исходника', 'Перевести выбранные', 'Исправить наложения',
+    'AI: сравнить и исправить макет', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
+    'Сохранить изменения', 'Исправить выбранные', 'Исправить весь документ', 'Добавить пустой сегмент',
+    'Разбить по предложениям', 'Вынести выделенное в отдельную часть', 'Применить все 100% совпадения',
+    'Применить расстановку', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные',
+    'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
+  ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})
+
+test('documentation pages render the maintained Markdown sources from the interface', async () => {
+  assert.match(server, /app\.get\('\/documentation'/)
+  assert.match(server, /app\.get\('\/user-guide'/)
+  assert.match(server, /app\.get\('\/api\/docs\/:slug'/)
+  assert.match(server, /TECHNICAL_SPECIFICATION\.md/)
+  assert.match(server, /USER_GUIDE\.md/)
+  assert.match(server, /Cache-Control', 'no-store'/)
+  assert.match(agentsGuide, /Любое изменение пользовательского поведения/)
+  assert.match(agentsGuide, /Любое изменение архитектуры/)
+  assert.ok(technicalSpecification.length > 1_000)
+
+  const dom = new JSDOM(docsHtml.replace('<script src="/docs.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/user-guide',
+  })
+  dom.window.fetch = async url => {
+    assert.equal(String(url), '/api/docs/user-guide')
+    return {
+      ok: true,
+      json: async () => ({
+        title: 'Руководство пользователя',
+        description: 'Актуальная справка',
+        updatedAt: '2026-09-07T10:00:00.000Z',
+        markdown: '# Руководство\n\n## Первый раздел\n\n| Кнопка | Действие |\n| --- | --- |\n| **Документы** | Открыть список |',
+      }),
+    }
+  }
+  dom.window.eval(docsClient)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(dom.window.document.querySelector('#docs-title').textContent, 'Руководство пользователя')
+  assert.equal(dom.window.document.querySelectorAll('#docs-toc a').length, 1)
+  assert.equal(dom.window.document.querySelectorAll('#docs-content table').length, 1)
+  assert.match(dom.window.document.querySelector('#docs-content').textContent, /Документы/)
+  dom.window.close()
 })
 
 test('studio keeps an independently zoomable source beside editable page objects', () => {
@@ -339,14 +401,20 @@ test('segments view follows visual order and supports partial or full batch tran
   }
   const translationRequests = []
   const instructionPresetRequests = []
-  const instructionPreset = { id: 'preset-1', title: 'Имена', instruction: 'Передавай имена транслитерацией.' }
+  const instructionPresetPatchRequests = []
+  const instructionPreset = { id: 'preset-1', instruction: 'Передавай имена транслитерацией.' }
   dom.window.fetch = async (url, options = {}) => {
     const value = String(url)
     if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
     if (value.endsWith('/translation-instructions') && options.method === 'POST') {
       const request = JSON.parse(options.body)
       instructionPresetRequests.push(request)
-      return { ok: true, json: async () => ({ created: true, preset: { id: 'preset-2', title: request.instruction, instruction: request.instruction } }) }
+      return { ok: true, json: async () => ({ created: true, preset: { id: 'preset-2', instruction: request.instruction } }) }
+    }
+    if (value.endsWith('/translation-instructions/preset-1') && options.method === 'PATCH') {
+      const request = JSON.parse(options.body)
+      instructionPresetPatchRequests.push(request)
+      return { ok: true, json: async () => ({ preset: { id: 'preset-1', ...request } }) }
     }
     if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [instructionPreset] }) }
     if (value.endsWith(`/documents/${id}/scene`) && options.method === 'PUT') {
@@ -379,6 +447,14 @@ test('segments view follows visual order and supports partial or full batch tran
   segmentPresetSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   segmentInstruction.querySelector('[data-instruction-preset-apply]').click()
   assert.equal(segmentInstruction.querySelector('textarea').value, instructionPreset.instruction)
+  dom.window.document.querySelector('#instruction-preset-edit').click()
+  assert.equal(dom.window.document.querySelector('#instruction-preset-editor').hidden, false)
+  dom.window.document.querySelector('#instruction-preset-text').value = 'Передавай имена по стандарту ISO 9.'
+  dom.window.document.querySelector('#instruction-preset-edit-save').click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.deepEqual(instructionPresetPatchRequests[0], { instruction: 'Передавай имена по стандарту ISO 9.' })
+  assert.equal(dom.window.document.querySelector('#instruction-preset-editor').hidden, true)
+  assert.equal(dom.window.document.querySelector('#instruction-preset-select').selectedOptions[0].textContent, 'Передавай имена по стандарту ISO 9.')
   segmentInstruction.querySelector('textarea').value = 'Сохраняй номера без изменений.'
   segmentInstruction.querySelector('textarea').dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   ;[...segmentInstruction.querySelectorAll('button')].find(button => button.textContent === 'Сохранить').click()
@@ -712,6 +788,74 @@ test('knowledge base manager lists, edits, and deletes stored entries', async ()
   dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.ok(requests.some(request => request.options.method === 'DELETE'))
+  dom.window.close()
+})
+
+test('AI instruction library lists, searches, creates, edits, and deletes presets', async () => {
+  const preset = {
+    id: 'preset-1', instruction: 'Передавай имена транслитерацией.',
+    createdAt: '2026-09-07T08:00:00.000Z', updatedAt: '2026-09-07T08:00:00.000Z',
+  }
+  let presets = [preset]
+  const requests = []
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    const method = options.method || 'GET'
+    requests.push({ value, method, body: options.body ? JSON.parse(options.body) : null })
+    if (value.endsWith('/translation-instructions') && method === 'GET') return { ok: true, json: async () => ({ presets }) }
+    if (value.endsWith('/translation-instructions') && method === 'POST') {
+      const created = { id: 'preset-2', ...JSON.parse(options.body), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+      presets = [created, ...presets]
+      return { ok: true, json: async () => ({ preset: created, created: true }) }
+    }
+    if (value.endsWith('/translation-instructions/preset-1') && method === 'PATCH') {
+      const updated = { ...preset, ...JSON.parse(options.body), updatedAt: new Date().toISOString() }
+      presets = [updated, ...presets.filter(item => item.id !== preset.id)]
+      return { ok: true, json: async () => ({ preset: updated }) }
+    }
+    if (value.includes('/translation-instructions/') && method === 'DELETE') {
+      const id = value.split('/').at(-1)
+      presets = presets.filter(item => item.id !== id)
+      return { ok: true, status: 204, json: async () => ({}) }
+    }
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
+    if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.confirm = () => true
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  dom.window.document.querySelector('#instruction-library-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(dom.window.document.querySelector('#instruction-library-modal').hidden, false)
+  assert.equal(dom.window.document.querySelectorAll('.instruction-library-entry').length, 1)
+  dom.window.document.querySelector('.instruction-library-entry__actions .button').click()
+  dom.window.document.querySelector('#instruction-library-text').value = 'Передавай имена по стандарту ISO 9.'
+  dom.window.document.querySelector('#instruction-library-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.ok(requests.some(request => request.method === 'PATCH' && request.body.instruction === 'Передавай имена по стандарту ISO 9.'))
+  assert.match(dom.window.document.querySelector('.instruction-library-entry p').textContent, /стандарту ISO 9/)
+
+  dom.window.document.querySelector('#instruction-library-new').click()
+  dom.window.document.querySelector('#instruction-library-text').value = 'Сохраняй номера без изменений.'
+  dom.window.document.querySelector('#instruction-library-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(dom.window.document.querySelectorAll('.instruction-library-entry').length, 2)
+
+  const query = dom.window.document.querySelector('#instruction-library-query')
+  query.value = 'номера'
+  query.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(dom.window.document.querySelectorAll('.instruction-library-entry').length, 1)
+  assert.match(dom.window.document.querySelector('.instruction-library-entry p').textContent, /номера/)
+  dom.window.document.querySelector('.instruction-library-entry__actions .button--danger').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(dom.window.document.querySelectorAll('.instruction-library-entry').length, 0)
+  assert.ok(requests.some(request => request.method === 'DELETE' && request.value.endsWith('/preset-2')))
   dom.window.close()
 })
 

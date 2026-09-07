@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Документация · ICAT Translation Studio</title>
+    <link rel="stylesheet" href="/docs.css" />
+  </head>
+  <body>
+    <header class="docs-appbar">
+      <a class="docs-brand" href="/" aria-label="Вернуться в ICAT Translation Studio">
+        <span class="docs-brand__mark">IC</span>
+        <span><strong>ICAT</strong><small>Translation Studio</small></span>
+      </a>
+      <nav class="docs-tabs" aria-label="Разделы справки">
+        <a data-doc-link="documentation" href="/documentation">Документация</a>
+        <a data-doc-link="user-guide" href="/user-guide">Руководство пользователя</a>
+      </nav>
+      <a class="docs-back" href="/">← Вернуться в редактор</a>
+    </header>
+
+    <div class="docs-shell">
+      <aside class="docs-sidebar">
+        <p class="docs-sidebar__label">На этой странице</p>
+        <nav id="docs-toc" class="docs-toc" aria-label="Оглавление"></nav>
+      </aside>
+      <main class="docs-main">
+        <header class="docs-heading">
+          <p class="docs-eyebrow">Справочный центр</p>
+          <h1 id="docs-title">Загрузка документации…</h1>
+          <p id="docs-description"></p>
+          <small id="docs-updated"></small>
+        </header>
+        <article id="docs-content" class="docs-content" aria-live="polite">
+          <p class="docs-loading">Загружаем актуальную версию…</p>
+        </article>
+      </main>
+    </div>
+    <script src="/docs.js"></script>
+  </body>
+</html>

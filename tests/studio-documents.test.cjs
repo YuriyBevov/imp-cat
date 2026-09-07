@@ -164,7 +164,7 @@ test('ready AI instructions support persistent CRUD without automatic duplicates
   assert.equal(response.status, 201)
   const created = await response.json()
   assert.equal(created.created, true)
-  assert.equal(created.preset.title, 'Все имена передавать транслитерацией.')
+  assert.equal(Object.hasOwn(created.preset, 'title'), false)
 
   response = await fetch(`${firstBase}/translation-instructions`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -175,16 +175,17 @@ test('ready AI instructions support persistent CRUD without automatic duplicates
 
   response = await fetch(`${firstBase}/translation-instructions/${created.preset.id}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: 'Транслитерация имён' }),
+    body: JSON.stringify({ instruction: 'Имена передавать транслитерацией по ISO 9.' }),
   })
   assert.equal(response.status, 200)
-  assert.equal((await response.json()).preset.title, 'Транслитерация имён')
+  const updated = (await response.json()).preset
+  assert.equal(updated.instruction, 'Имена передавать транслитерацией по ISO 9.')
 
   const secondBase = await listen(createApp(), t)
   response = await fetch(`${secondBase}/translation-instructions`)
   const restored = await response.json()
   assert.equal(restored.presets.length, 1)
-  assert.equal(restored.presets[0].title, 'Транслитерация имён')
+  assert.equal(restored.presets[0].instruction, 'Имена передавать транслитерацией по ISO 9.')
 
   response = await fetch(`${secondBase}/translation-instructions/${created.preset.id}`, { method: 'DELETE' })
   assert.equal(response.status, 204)
