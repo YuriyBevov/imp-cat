@@ -95,14 +95,19 @@
           <button id="source-zoom-fit" class="icon-button icon-button--compact" type="button" title="Вписать оригинал" aria-label="Вписать оригинал">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg>
           </button>
+          <button id="source-preview-open" class="icon-button icon-button--compact" type="button" title="Открыть оригинал на весь экран" aria-label="Открыть оригинал на весь экран">
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fullscreen"></use></svg>
+          </button>
         </div>
       </section>
 
       <section class="workbench">
         <div class="workbench-toolbar">
+          <div class="workbench-toolbar__source-toggle">
+            <button id="source-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть оригинал" aria-label="Скрыть оригинал" aria-expanded="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
+          </div>
           <div class="app-container workbench-toolbar__inner">
             <div class="toolbar-group view-controls" aria-label="Режим отображения документа">
-            <button id="source-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть оригинал" aria-label="Скрыть оригинал" aria-expanded="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
             <button id="view-layout-button" class="icon-button icon-button--compact is-active" type="button" title="Макет" aria-label="Макет" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button>
             <button id="view-segments-button" class="icon-button icon-button--compact" type="button" title="Сегменты" aria-label="Сегменты" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button>
           </div>
@@ -122,43 +127,10 @@
               </select>
             </label>
           </div>
-          <div class="toolbar-group formatting" aria-label="Форматирование сегмента">
-            <div class="control-row">
-              <label class="font-family-control">
-                <span class="visually-hidden">Шрифт</span>
-                <select id="toolbar-font-family" aria-label="Шрифт">
-                  <option value="">—</option>
-                  <option value="Arial" selected>Arial</option>
-                  <option value="Aptos">Aptos</option>
-                  <option value="Calibri">Calibri</option>
-                  <option value="Cambria">Cambria</option>
-                  <option value="Times New Roman">Times New Roman</option>
-                  <option value="Georgia">Georgia</option>
-                  <option value="Verdana">Verdana</option>
-                  <option value="Tahoma">Tahoma</option>
-                  <option value="Courier New">Courier New</option>
-                </select>
-              </label>
-              <button class="icon-button icon-button--compact format-button" data-format="bold" type="button" title="Полужирный" aria-label="Полужирный"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button>
-              <button class="icon-button icon-button--compact format-button" data-format="italic" type="button" title="Курсив" aria-label="Курсив"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-italic"></use></svg></button>
-              <button class="icon-button icon-button--compact format-button" data-format="left" type="button" title="По левому краю" aria-label="По левому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-left"></use></svg></button>
-              <button class="icon-button icon-button--compact format-button" data-format="center" type="button" title="По центру" aria-label="По центру"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-center"></use></svg></button>
-              <button class="icon-button icon-button--compact format-button" data-format="right" type="button" title="По правому краю" aria-label="По правому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-right"></use></svg></button>
-              <button class="icon-button icon-button--compact format-button" data-format="justify" type="button" title="По ширине" aria-label="По ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-justify"></use></svg></button>
-              <div class="font-size-stepper" role="group" aria-label="Размер шрифта">
-                <button id="toolbar-font-size-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить размер шрифта на 1" aria-label="Уменьшить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
-                <span class="font-size-stepper__field">
-                  <input id="toolbar-font-size-value" class="font-size-stepper__value" type="number" min="10" max="80" step="1" placeholder="—" aria-label="Размер шрифта" />
-                  <span class="font-size-stepper__unit" aria-hidden="true">px</span>
-                </span>
-                <button id="toolbar-font-size-increase" class="icon-button icon-button--compact" type="button" title="Увеличить размер шрифта на 1" aria-label="Увеличить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
-              </div>
-              <label class="color-picker" title="Цвет текста">
-                <input id="toolbar-text-color" type="color" value="#000000" aria-label="Цвет текста" />
-                <span class="color-picker__swatch" aria-hidden="true"></span>
-              </label>
-            </div>
-            <label class="control-scope-toggle"><input id="format-all-segments" type="checkbox" /> <span>Применить ко всем сегментам</span></label>
+            <div class="toolbar-group inspector-controls" aria-label="Правая панель">
+              <button id="inspector-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть инспектор" aria-label="Скрыть инспектор" aria-controls="inspector-panel" aria-expanded="true">
+                <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-sidebar-right"></use></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -167,15 +139,22 @@
         </div>
       </section>
 
-      <aside class="inspector-panel">
+      <aside id="inspector-panel" class="inspector-panel" aria-label="Инспектор документа">
+        <div class="inspector-panel__body">
         <div class="agent-card">
-          <div class="agent-card__title"><span class="agent-dot"></span><strong>Агент-переводчик</strong></div>
-          <p id="agent-status">Документ распознан и структурирован агентом.</p>
-          <div class="translation-batch-controls">
-            <label><input id="translation-select-all" type="checkbox" /> <span>Выбрать все переводимые сегменты</span></label>
+          <div class="agent-card__title inspector-scope--segments"><span class="agent-dot"></span><strong>Агент-переводчик</strong></div>
+          <p id="agent-status" class="inspector-scope--segments">Документ распознан и структурирован агентом.</p>
+          <div class="agent-card__title inspector-scope--layout"><span class="agent-dot"></span><strong>Расстановка макета</strong></div>
+          <p class="inspector-scope--layout">Настройте положение и размеры сегментов, затем проверьте макет.</p>
+          <div class="translation-batch-controls inspector-scope--segments">
+            <label class="base-checkbox base-checkbox--inverse">
+              <input id="translation-select-all" class="base-checkbox__input" type="checkbox" />
+              <span class="base-checkbox__control" aria-hidden="true"></span>
+              <span class="base-checkbox__label">Выбрать все переводимые сегменты</span>
+            </label>
             <small id="translation-selection-count">Выбрано: 0</small>
           </div>
-          <div class="translation-instruction-card">
+          <div class="translation-instruction-card inspector-scope--segments">
             <label for="translation-global-instruction">Общий комментарий для ИИ</label>
             <textarea id="translation-global-instruction" rows="3" maxlength="10000" placeholder="Например: переводи все имена в документе; все печати не включай в сборку"></textarea>
             <div class="instruction-preset-picker">
@@ -202,19 +181,21 @@
               <button id="revise-document-button" class="button" type="button">Исправить весь документ</button>
             </div>
           </div>
-          <div class="agent-actions">
+          <div class="agent-actions inspector-scope--segments">
             <button id="analyze-button" class="button button--primary" type="button">Проверить структуру</button>
             <button id="reanalyze-button" class="button" type="button">Повторить анализ исходника</button>
             <button id="translate-button" class="button" type="button" disabled>Перевести выбранные</button>
+          </div>
+          <div class="agent-actions inspector-scope--layout">
             <button id="auto-layout-button" class="button" type="button">Исправить наложения</button>
             <button id="layout-review-button" class="button" type="button">AI: сравнить и исправить макет</button>
             <button id="layout-review-cancel-button" class="button button--danger" type="button" hidden>Отменить сравнение</button>
             <button id="qa-button" class="button" type="button">Финальная проверка</button>
           </div>
-          <small id="layout-review-status" class="layout-review-status">Сравнение с оригиналом ещё не запускалось.</small>
+          <small id="layout-review-status" class="layout-review-status inspector-scope--layout">Сравнение с оригиналом ещё не запускалось.</small>
         </div>
 
-        <section class="language-card">
+        <section class="language-card inspector-scope--segments">
           <label>Язык исходника
             <select id="source-language"><option value="auto">Определить автоматически</option><option value="tr">Турецкий</option><option value="en">Английский</option><option value="de">Немецкий</option><option value="ru">Русский</option></select>
           </label>
@@ -228,7 +209,7 @@
           <div>⌁</div>
           <h2>Выберите сегмент</h2>
           <p>Кликните по текстовому блоку на странице. Cmd/Ctrl + клик добавляет блоки к выделению.</p>
-          <button id="add-object-button" class="button" type="button">Добавить пустой сегмент</button>
+          <button id="add-object-button" class="button inspector-scope--segments" type="button">Добавить пустой сегмент</button>
         </section>
 
         <section id="object-inspector" class="object-inspector" hidden>
@@ -236,29 +217,29 @@
             <div><p class="eyebrow">Выделение</p><h2 id="selection-title">Сегмент</h2></div>
             <span id="selection-count">1</span>
           </div>
-          <label>Тип содержимого
+          <label class="inspector-scope--segments">Тип содержимого
             <select id="object-type">
               <option value="text">Текст</option><option value="table">Таблица</option><option value="table_cell">Ячейка таблицы</option>
               <option value="stamp">Штамп</option><option value="seal">Печать</option><option value="signature">Подпись</option>
               <option value="handwriting">Рукописный текст</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
             </select>
           </label>
-          <section id="table-cell-fields" class="table-cell-fields" hidden>
+          <section id="table-cell-fields" class="table-cell-fields inspector-scope--segments" hidden>
             <label>ID таблицы<input id="table-id" type="text" maxlength="120" /></label>
             <label>Строка<input id="table-row" type="number" min="0" max="999" step="1" /></label>
             <label>Колонка<input id="table-column" type="number" min="0" max="999" step="1" /></label>
             <label>Строк занимает<input id="table-row-span" type="number" min="1" max="100" step="1" /></label>
             <label>Колонок занимает<input id="table-column-span" type="number" min="1" max="100" step="1" /></label>
           </section>
-          <label>Распознанный исходник
+          <label class="inspector-scope--segments">Распознанный исходник
             <textarea id="source-text" rows="6" spellcheck="true"></textarea>
           </label>
-          <div class="confidence-row"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
-          <p id="agent-notes" class="agent-notes" hidden></p>
-          <label>Перевод / обозначение
+          <div class="confidence-row inspector-scope--segments"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
+          <p id="agent-notes" class="agent-notes inspector-scope--segments" hidden></p>
+          <label class="inspector-scope--segments">Перевод / обозначение
             <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
           </label>
-          <section id="translation-units-card" class="translation-units-card" hidden>
+          <section id="translation-units-card" class="translation-units-card inspector-scope--segments" hidden>
             <div class="translation-units-card__heading">
               <div><strong>Термины и части сегмента</strong><small>Внешний блок на странице останется единым</small></div>
               <span id="translation-units-count">0</span>
@@ -276,20 +257,69 @@
             <div id="translation-units-list" class="translation-units-list"></div>
             <button id="translation-units-apply-exact" class="button" type="button">Применить все 100% совпадения</button>
           </section>
-          <div class="object-grid">
-            <label>Шрифт, px<input id="font-size" type="number" min="10" max="80" step="1" /></label>
-            <label>Интервал<input id="line-height" type="number" min="0.8" max="3" step="0.05" /></label>
-            <label>X<input id="object-x" type="number" step="1" /></label>
-            <label>Y<input id="object-y" type="number" step="1" /></label>
-            <label>Ширина<input id="object-width" type="number" min="12" step="1" /></label>
-            <label>Высота<input id="object-height" type="number" min="12" step="1" /></label>
+          <div class="layout-card typography-card inspector-scope--layout">
+            <div class="layout-card__heading">
+              <strong>Типографика</strong>
+              <small>оформление выбранного текста</small>
+            </div>
+            <label class="typography-card__field">
+              <span class="layout-card__label">Шрифт</span>
+              <select id="toolbar-font-family" aria-label="Шрифт">
+                <option value="">—</option>
+                <option value="Arial" selected>Arial</option>
+                <option value="Aptos">Aptos</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Cambria">Cambria</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Courier New">Courier New</option>
+              </select>
+            </label>
+            <span class="layout-card__label">Начертание и выравнивание</span>
+            <div class="typography-card__buttons">
+              <button class="icon-button icon-button--compact format-button" data-format="bold" type="button" title="Полужирный" aria-label="Полужирный"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="italic" type="button" title="Курсив" aria-label="Курсив"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-italic"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="left" type="button" title="По левому краю" aria-label="По левому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-left"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="center" type="button" title="По центру" aria-label="По центру"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-center"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="right" type="button" title="По правому краю" aria-label="По правому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-right"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="justify" type="button" title="По ширине" aria-label="По ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-justify"></use></svg></button>
+            </div>
+            <div class="typography-card__settings">
+              <label>
+                <span class="layout-card__label">Размер шрифта, px</span>
+                <span class="font-size-stepper" role="group" aria-label="Размер шрифта">
+                  <button id="toolbar-font-size-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить размер шрифта на 1" aria-label="Уменьшить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+                  <span class="font-size-stepper__field">
+                    <input id="toolbar-font-size-value" class="font-size-stepper__value" type="number" min="10" max="80" step="1" placeholder="—" aria-label="Размер шрифта" />
+                  </span>
+                  <button id="toolbar-font-size-increase" class="icon-button icon-button--compact" type="button" title="Увеличить размер шрифта на 1" aria-label="Увеличить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+                </span>
+              </label>
+              <label>
+                <span class="layout-card__label">Высота строки</span>
+                <input id="line-height" type="number" min="0.8" max="3" step="0.05" aria-label="Высота строки" />
+              </label>
+              <label>
+                <span class="layout-card__label">Цвет</span>
+                <span class="color-picker" title="Цвет текста">
+                  <input id="toolbar-text-color" type="color" value="#000000" aria-label="Цвет текста" />
+                  <span class="color-picker__swatch" aria-hidden="true"></span>
+                </span>
+              </label>
+            </div>
+            <div class="typography-card__scope">
+              <label class="control-scope-toggle"><input id="format-all-segments" type="checkbox" /> <span>Применить ко всем выбранным</span></label>
+              <button id="typography-select-all" class="button" type="button">Выбрать все сегменты</button>
+            </div>
           </div>
-          <div class="fit-size-actions" aria-label="Подгонка размера сегмента">
-            <button id="fit-content-width-button" type="button">Ширина по тексту</button>
-            <button id="fit-content-height-button" type="button">Высота по тексту</button>
-            <button id="fit-content-both-button" type="button">Оба размера</button>
+          <div class="fit-size-actions inspector-scope--layout" aria-label="Подгонка размера сегмента">
+            <button id="fit-content-width-button" class="icon-button icon-button--compact" type="button" title="Ширина по тексту" aria-label="Ширина по тексту"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
+            <button id="fit-content-height-button" class="icon-button icon-button--compact" type="button" title="Высота по тексту" aria-label="Высота по тексту"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-height"></use></svg></button>
+            <button id="fit-content-both-button" class="icon-button icon-button--compact" type="button" title="Оба размера по тексту" aria-label="Оба размера по тексту"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-both"></use></svg></button>
           </div>
-          <div class="layout-card">
+          <div class="layout-card inspector-scope--layout">
             <div class="layout-card__heading">
               <strong>Расположение</strong>
               <small>для выбранных на одной странице</small>
@@ -365,7 +395,7 @@
               <button id="flex-apply-button" class="button" type="button">Применить расстановку</button>
             </div>
           </div>
-          <div class="memory-card">
+          <div class="memory-card inspector-scope--segments">
             <div><strong>Векторная база знаний</strong><span class="memory-card__actions"><button id="memory-search-button" type="button">Найти похожие</button><button id="knowledge-base-open-context-button" type="button">Открыть БЗ</button></span></div>
             <div class="memory-card__glossary">
               <select id="glossary-select" aria-label="Активный глоссарий"><option value="">Загружаем глоссарии…</option></select>
@@ -381,12 +411,14 @@
             <small id="knowledge-base-status" class="memory-card__status">Проверяем PostgreSQL/pgvector…</small>
             <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
           </div>
-          <div class="object-actions">
+          <div class="object-actions inspector-scope--segments">
             <button id="approve-button" class="button button--primary" type="button">Добавить переведённые единицы в БЗ</button>
             <button id="merge-button" class="button" type="button" disabled>Объединить выбранные</button>
             <button id="split-button" class="button" type="button">Вынести текст в отдельный блок</button>
-            <button id="reset-position-button" class="button" type="button">Вернуть исходное положение</button>
             <button id="exclude-button" class="button button--danger" type="button">Исключить из сборки</button>
+          </div>
+          <div class="object-actions inspector-scope--layout">
+            <button id="reset-position-button" class="button" type="button">Вернуть исходное положение</button>
           </div>
         </section>
 
@@ -396,10 +428,29 @@
           <div id="qa-summary" class="qa-summary"></div>
           <div id="qa-list" class="qa-list"></div>
         </section>
+        </div>
       </aside>
     </main>
 
     <div id="selection-box" class="selection-box" hidden></div>
+    <div id="source-preview-lightbox" class="source-preview-lightbox" role="dialog" aria-modal="true" aria-labelledby="source-preview-lightbox-title" hidden>
+      <header class="source-preview-lightbox__header">
+        <strong id="source-preview-lightbox-title">Оригинал документа</strong>
+        <button id="source-preview-lightbox-close" class="icon-button icon-button--ghost" type="button" title="Закрыть полноэкранный просмотр" aria-label="Закрыть полноэкранный просмотр"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+      </header>
+      <div id="source-preview-lightbox-viewport" class="source-preview-lightbox__viewport">
+        <div id="source-preview-lightbox-canvas" class="source-preview-lightbox__canvas"></div>
+      </div>
+      <div class="source-preview-lightbox__controls" aria-label="Управление полноэкранным просмотром">
+        <button id="source-preview-lightbox-previous" class="icon-button" type="button" title="Предыдущая страница" aria-label="Предыдущая страница"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
+        <button id="source-preview-lightbox-zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+        <output id="source-preview-lightbox-zoom-output" aria-live="polite">100%</output>
+        <button id="source-preview-lightbox-zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+        <button id="source-preview-lightbox-zoom-100" class="compact-button" type="button" title="Масштаб 100%">100%</button>
+        <button id="source-preview-lightbox-fit" class="icon-button" type="button" title="Вписать страницу" aria-label="Вписать страницу"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button>
+        <button id="source-preview-lightbox-next" class="icon-button" type="button" title="Следующая страница" aria-label="Следующая страница"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
+      </div>
+    </div>
     <aside id="knowledge-suggestion-popover" class="knowledge-suggestion-popover" hidden aria-label="Подсказки Базы знаний">
       <div class="knowledge-suggestion-popover__header"><strong id="knowledge-suggestion-title">Совпадения БЗ</strong><button id="knowledge-suggestion-close" class="icon-button icon-button--small icon-button--ghost icon-button--warning" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
       <div id="knowledge-suggestion-list" class="knowledge-suggestion-list"></div>

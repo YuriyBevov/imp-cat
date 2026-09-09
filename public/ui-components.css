@@ -31,6 +31,7 @@
 .source-preview-demo__lines span:nth-child(5) { width: 64%; }
 .source-preview-demo > .source-preview-controls { bottom: 12px; }
 .component-control-demo { display: flex; align-items: center; min-height: 88px; padding: 18px; border: 1px solid #e6eaf0; border-radius: 10px; background: #fafbfc; }
+.component-checkbox-demo { gap: 24px; color: #344054; font-size: 12px; font-weight: 650; }
 .component-select-demo { width: 180px; }
 .icon-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .icon-sample { min-height: 86px; display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid #e6eaf0; border-radius: 10px; background: #fafbfc; }

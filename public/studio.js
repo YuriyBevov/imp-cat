@@ -14,10 +14,16 @@
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     viewLayout: $('#view-layout-button'), viewSegments: $('#view-segments-button'), sourcePanelToggle: $('#source-panel-toggle'),
+    inspectorPanel: $('#inspector-panel'), inspectorPanelToggle: $('#inspector-panel-toggle'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
     gridSize: $('#grid-size'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
-    sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
+    sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'), sourcePreviewOpen: $('#source-preview-open'),
+    sourceLightbox: $('#source-preview-lightbox'), sourceLightboxTitle: $('#source-preview-lightbox-title'), sourceLightboxClose: $('#source-preview-lightbox-close'),
+    sourceLightboxViewport: $('#source-preview-lightbox-viewport'), sourceLightboxCanvas: $('#source-preview-lightbox-canvas'),
+    sourceLightboxPrevious: $('#source-preview-lightbox-previous'), sourceLightboxNext: $('#source-preview-lightbox-next'),
+    sourceLightboxZoomOut: $('#source-preview-lightbox-zoom-out'), sourceLightboxZoomIn: $('#source-preview-lightbox-zoom-in'),
+    sourceLightboxZoomActual: $('#source-preview-lightbox-zoom-100'), sourceLightboxFit: $('#source-preview-lightbox-fit'), sourceLightboxZoomOutput: $('#source-preview-lightbox-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewCancel: $('#layout-review-cancel-button'), layoutReviewStatus: $('#layout-review-status'),
@@ -35,11 +41,10 @@
     translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
     translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
     translationUnitsApplyExact: $('#translation-units-apply-exact'), translationSelectionPreview: $('#translation-selection-preview'),
-    fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
-    objectWidth: $('#object-width'), objectHeight: $('#object-height'),
+    lineHeight: $('#line-height'),
     toolbarFontSizeDecrease: $('#toolbar-font-size-decrease'), toolbarFontSizeValue: $('#toolbar-font-size-value'), toolbarFontSizeIncrease: $('#toolbar-font-size-increase'),
     toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
-    formatAllSegments: $('#format-all-segments'),
+    formatAllSegments: $('#format-all-segments'), typographySelectAll: $('#typography-select-all'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
     alignmentScope: $('#alignment-scope'),
     flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
@@ -75,6 +80,7 @@
     scene: null,
     zoom: .8,
     sourceZoom: .5,
+    sourceLightboxZoom: 1,
     sourceRenderedPage: null,
     selected: new Set(),
     translationSelected: new Set(),
@@ -90,6 +96,7 @@
     focusedTranslationUnitId: null,
     viewMode: 'layout',
     sourceCollapsed: false,
+    inspectorOpen: true,
     sourcePanCleanup: null,
     pendingWorkbenchZoom: null,
     pendingSourceZoom: null,
@@ -868,10 +875,35 @@
         list.className = 'segments-list'
         const columnHeadings = document.createElement('div')
         columnHeadings.className = 'segments-column-headings'
-        columnHeadings.innerHTML = '<span aria-hidden="true"></span><span>Распознанный исходник</span><span>Перевод</span>'
+        const selectPage = document.createElement('button')
+        selectPage.className = 'compact-button segments-select-all'
+        selectPage.type = 'button'
+        selectPage.textContent = 'Все'
+        selectPage.title = `Выбрать все сегменты страницы ${page.index + 1}`
+        selectPage.setAttribute('aria-label', selectPage.title)
+        selectPage.setAttribute('aria-pressed', 'false')
+        selectPage.dataset.pageIndex = String(page.index)
+        selectPage.addEventListener('pointerdown', event => event.stopPropagation())
+        selectPage.addEventListener('click', event => {
+          event.stopPropagation()
+          togglePageSegmentSelection(page.index)
+        })
+        const sourceHeading = document.createElement('span')
+        sourceHeading.textContent = 'Распознанный исходник'
+        const translationHeading = document.createElement('span')
+        translationHeading.textContent = 'Перевод'
+        columnHeadings.append(selectPage, sourceHeading, translationHeading)
         for (const object of visualReadingOrder(pageObjects)) {
           const row = document.createElement('div')
           row.className = 'segment-translation-row'
+          row.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || event.target !== row) return
+            event.stopPropagation()
+            if (!state.selected.has(object.id) && !state.translationSelected.has(object.id)) return
+            state.selected.delete(object.id)
+            state.selected.add(object.id)
+            refreshSelection()
+          })
           const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
           if (selectable) {
             const selector = document.createElement('label')
@@ -879,12 +911,19 @@
             selector.title = 'Добавить сегмент в пакет перевода'
             const checkbox = document.createElement('input')
             checkbox.type = 'checkbox'
+            checkbox.className = 'segment-translation-selector__input'
             checkbox.dataset.translationSelect = object.id
             checkbox.checked = state.translationSelected.has(object.id)
             checkbox.setAttribute('aria-label', `Выбрать сегмент ${object.readingOrder || object.id} для перевода`)
-            checkbox.addEventListener('pointerdown', event => event.stopPropagation())
-            checkbox.addEventListener('change', () => setTranslationObjectSelected(object.id, checkbox.checked))
-            selector.append(checkbox)
+            selector.addEventListener('pointerdown', event => event.stopPropagation())
+            checkbox.addEventListener('change', () => {
+              changeTranslationSegmentSelection(object.id, checkbox, selector)
+            })
+            const label = document.createElement('span')
+            label.className = 'segment-translation-selector__label'
+            label.textContent = 'Выбрать'
+            label.setAttribute('aria-hidden', 'true')
+            selector.append(checkbox, label)
             row.append(selector)
           } else {
             const placeholder = document.createElement('span')
@@ -893,6 +932,7 @@
             row.append(placeholder)
           }
           row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
+          row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
           row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
           list.append(row)
         }
@@ -1021,6 +1061,94 @@
     setSourceZoom((elements.sourcePreviewScroll.clientWidth - 56) / page.widthPx)
   }
 
+  function renderSourceLightbox() {
+    if (!state.scene || elements.sourceLightbox.hidden) return
+    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    elements.sourceLightboxCanvas.replaceChildren()
+    const shell = document.createElement('div')
+    shell.className = 'source-preview-lightbox__page-shell'
+    const surface = document.createElement('div')
+    surface.className = 'source-preview-lightbox__page'
+    surface.style.width = `${page.widthPx}px`
+    surface.style.height = `${page.heightPx}px`
+    if (page.imageUrl) {
+      const image = document.createElement('img')
+      image.src = page.imageUrl
+      image.alt = `Оригинал страницы ${page.index + 1}`
+      image.draggable = false
+      const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+      Object.assign(image.style, {
+        left: `${sourceFrame.x}px`, top: `${sourceFrame.y}px`,
+        width: `${sourceFrame.width}px`, height: `${sourceFrame.height}px`,
+      })
+      surface.append(image)
+    } else {
+      const empty = document.createElement('span')
+      empty.className = 'source-preview-lightbox__empty'
+      empty.textContent = 'Пустая добавленная страница'
+      surface.append(empty)
+    }
+    shell.append(surface)
+    elements.sourceLightboxCanvas.append(shell)
+    elements.sourceLightboxTitle.textContent = `${state.scene.title || 'Оригинал документа'} · страница ${page.index + 1} из ${state.scene.pages.length}`
+    elements.sourceLightboxPrevious.disabled = state.activePage <= 0
+    elements.sourceLightboxNext.disabled = state.activePage >= state.scene.pages.length - 1
+    applySourceLightboxZoom()
+  }
+
+  function applySourceLightboxZoom() {
+    if (!state.scene || elements.sourceLightbox.hidden) return
+    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const shell = elements.sourceLightboxCanvas.querySelector('.source-preview-lightbox__page-shell')
+    const surface = shell?.querySelector('.source-preview-lightbox__page')
+    if (!shell || !surface) return
+    shell.style.width = `${page.widthPx * state.sourceLightboxZoom}px`
+    shell.style.height = `${page.heightPx * state.sourceLightboxZoom}px`
+    surface.style.transform = `scale(${state.sourceLightboxZoom})`
+    elements.sourceLightboxZoomOutput.value = `${Math.round(state.sourceLightboxZoom * 100)}%`
+  }
+
+  function setSourceLightboxZoom(nextZoom) {
+    state.sourceLightboxZoom = Math.min(4, Math.max(.15, nextZoom))
+    applySourceLightboxZoom()
+  }
+
+  function fitSourceLightbox() {
+    if (!state.scene || elements.sourceLightbox.hidden) return
+    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const viewportWidth = elements.sourceLightboxViewport.clientWidth || window.innerWidth || page.widthPx
+    const viewportHeight = elements.sourceLightboxViewport.clientHeight || window.innerHeight || page.heightPx
+    setSourceLightboxZoom(Math.min(2, (viewportWidth - 96) / page.widthPx, (viewportHeight - 96) / page.heightPx))
+  }
+
+  function openSourceLightbox() {
+    if (!state.scene) return
+    state.sourceLightboxZoom = 1
+    elements.sourceLightbox.hidden = false
+    document.body.classList.add('is-source-lightbox-open')
+    renderSourceLightbox()
+    requestAnimationFrame(fitSourceLightbox)
+    elements.sourceLightboxClose.focus()
+  }
+
+  function closeSourceLightbox() {
+    if (elements.sourceLightbox.hidden) return
+    elements.sourceLightbox.hidden = true
+    document.body.classList.remove('is-source-lightbox-open')
+    elements.sourcePreviewOpen.focus()
+  }
+
+  function stepSourceLightbox(delta) {
+    if (!state.scene) return
+    const next = Math.min(state.scene.pages.length - 1, Math.max(0, state.activePage + delta))
+    if (next === state.activePage) return
+    state.activePage = next
+    renderThumbnails()
+    renderSourcePreview()
+    renderSourceLightbox()
+    requestAnimationFrame(fitSourceLightbox)
+  }
+
   function stopSourcePan() {
     state.sourcePanCleanup?.()
   }
@@ -1102,15 +1230,18 @@
     controls.dataset.pageIndex = page.index
 
     const add = document.createElement('button')
-    add.className = 'button button--with-icon page-actions__add'
+    add.className = 'icon-button icon-button--compact icon-button--dashed icon-button--accent page-actions__add'
     add.type = 'button'
-    add.innerHTML = `${iconMarkup('plus')}<span>Добавить пустую страницу ниже</span>`
+    add.innerHTML = iconMarkup('plus')
+    add.title = 'Добавить пустую страницу ниже'
+    add.setAttribute('aria-label', 'Добавить пустую страницу ниже')
     add.addEventListener('click', () => insertBlankPage(page.index))
 
     const remove = document.createElement('button')
-    remove.className = 'button button--with-icon page-actions__delete'
+    remove.className = 'icon-button icon-button--compact icon-button--dashed icon-button--danger page-actions__delete'
     remove.type = 'button'
-    remove.innerHTML = `${iconMarkup('trash')}<span>Удалить пустую страницу</span>`
+    remove.innerHTML = iconMarkup('trash')
+    remove.setAttribute('aria-label', 'Удалить пустую страницу')
     const onlyPage = state.scene.pages.length <= 1
     const empty = isScenePageEmpty(page.index)
     remove.disabled = onlyPage || !empty
@@ -1173,18 +1304,82 @@
       checkbox.checked = state.translationSelected.has(checkbox.dataset.translationSelect)
       checkbox.closest('.segment-translation-row')?.classList.toggle('is-translation-selected', checkbox.checked)
     }
+    for (const button of elements.canvas.querySelectorAll('.segments-select-all')) {
+      const pageIndex = Number(button.dataset.pageIndex)
+      const pageCandidates = candidates.filter(object => object.pageIndex === pageIndex)
+      const allSelected = pageCandidates.length > 0 && pageCandidates.every(object => state.translationSelected.has(object.id))
+      const label = `${allSelected ? 'Снять выбор со всех' : 'Выбрать все'} сегментов страницы ${pageIndex + 1}`
+      button.classList.toggle('is-active', allSelected)
+      button.setAttribute('aria-pressed', String(allSelected))
+      button.setAttribute('aria-label', label)
+      button.title = label
+    }
   }
 
-  function setTranslationObjectSelected(objectId, selected) {
-    if (selected) state.translationSelected.add(objectId)
-    else state.translationSelected.delete(objectId)
+  function changeTranslationSegmentSelection(objectId, checkbox, selector) {
+    const wasPrimary = primarySelectedObject()?.id === objectId
+
+    if (!checkbox.checked && wasPrimary) {
+      state.translationSelected.delete(objectId)
+      state.selected.delete(objectId)
+      if (state.lastTextSelection?.objectId === objectId) state.lastTextSelection = null
+      refreshTranslationSelectionControls()
+      refreshSelection()
+      return
+    }
+
+    // A selected, but inactive row needs one click to become primary. Only a
+    // second click on that primary row removes it from the group.
+    state.translationSelected.add(objectId)
+    checkbox.checked = true
+    focusTranslationSegment(objectId, selector)
     refreshTranslationSelectionControls()
   }
 
+  function togglePageSegmentSelection(pageIndex) {
+    const objects = visualReadingOrder(state.scene?.objects.filter(object => object.pageIndex === pageIndex && !object.excluded) || [])
+    const candidates = objects.filter(object => isTranslatableType(object.type) && hasTranslationSource(object))
+    const allSelected = candidates.length > 0 && candidates.every(object => state.translationSelected.has(object.id))
+    for (const object of objects) {
+      if (allSelected) state.selected.delete(object.id)
+      else state.selected.add(object.id)
+    }
+    for (const object of candidates) {
+      if (allSelected) state.translationSelected.delete(object.id)
+      else state.translationSelected.add(object.id)
+    }
+    state.activePage = pageIndex
+    state.lastTextSelection = null
+    refreshSelection()
+    refreshTranslationSelectionControls()
+  }
+
+  function focusTranslationSegment(objectId, selector) {
+    const object = state.scene?.objects.find(item => item.id === objectId)
+    if (!object) return
+    state.activePage = object.pageIndex
+    state.selected.delete(objectId)
+    state.selected.add(objectId)
+    refreshSelection()
+    selector.closest('.segment-translation-row')
+      ?.querySelector('.scene-object--source .scene-object__content')
+      ?.focus({ preventScroll: true })
+  }
+
   function selectAllTranslationObjects(selected) {
-    state.translationSelected = selected
-      ? new Set(translationCandidates().map(object => object.id))
-      : new Set()
+    const candidateIds = translationCandidates().map(object => object.id)
+    const previousPrimaryId = primarySelectedObject()?.id
+    state.translationSelected = selected ? new Set(candidateIds) : new Set()
+    if (selected) {
+      for (const id of candidateIds) state.selected.add(id)
+      if (previousPrimaryId && state.selected.has(previousPrimaryId)) {
+        state.selected.delete(previousPrimaryId)
+        state.selected.add(previousPrimaryId)
+      }
+    } else {
+      for (const id of candidateIds) state.selected.delete(id)
+    }
+    refreshSelection()
     refreshTranslationSelectionControls()
   }
 
@@ -1743,6 +1938,7 @@
     if (editField === 'translation' && !object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
     if (object.confidence < .76) node.classList.add('is-low-confidence')
     if (state.selected.has(object.id)) node.classList.add('is-selected')
+    if (primarySelectedObject()?.id === object.id) node.classList.add('is-primary-selected')
     node.dataset.id = object.id
     node.dataset.type = object.type
     positionObjectNode(node, object)
@@ -1767,6 +1963,7 @@
     handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
+    content.tabIndex = 0
     const hasMultipleTranslationUnits = editField === 'translation' && isTranslatableType(object.type) && ensureObjectTranslationUnits(object).length > 1
     content.contentEditable = hasMultipleTranslationUnits ? 'false' : 'true'
     if (hasMultipleTranslationUnits) content.title = 'Этот сегмент разбит на внутренние единицы. Редактируйте их в правой панели.'
@@ -1775,6 +1972,11 @@
     renderTextContent(content, object, displayField)
     content.addEventListener('focus', () => {
       if (!state.selected.has(object.id)) selectOnly(object.id)
+      else if (primarySelectedObject()?.id !== object.id) {
+        state.selected.delete(object.id)
+        state.selected.add(object.id)
+        refreshSelection()
+      }
       if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
     })
     for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
@@ -2096,6 +2298,18 @@
     elements.sourcePanelToggle.setAttribute('aria-expanded', String(!state.sourceCollapsed))
   }
 
+  function setInspectorOpen(open) {
+    state.inspectorOpen = Boolean(open)
+    if (!state.inspectorOpen && elements.inspectorPanel.contains(document.activeElement)) elements.inspectorPanelToggle.focus()
+    elements.studioView.classList.toggle('is-inspector-collapsed', !state.inspectorOpen)
+    const label = state.inspectorOpen ? 'Скрыть инспектор' : 'Показать инспектор'
+    elements.inspectorPanelToggle.title = label
+    elements.inspectorPanelToggle.setAttribute('aria-label', label)
+    elements.inspectorPanelToggle.setAttribute('aria-expanded', String(state.inspectorOpen))
+    elements.inspectorPanelToggle.classList.toggle('is-active', state.inspectorOpen)
+    elements.inspectorPanel.setAttribute('aria-hidden', String(!state.inspectorOpen))
+  }
+
   function setZoom(nextZoom, anchorEvent) {
     const next = Math.min(2.5, Math.max(.25, nextZoom))
     if (next === state.zoom) return
@@ -2139,6 +2353,12 @@
     return state.scene?.objects.filter(object => state.selected.has(object.id)) || []
   }
 
+  function primarySelectedObject() {
+    const selectedIds = [...state.selected]
+    const id = selectedIds[selectedIds.length - 1]
+    return id ? state.scene?.objects.find(object => object.id === id) || null : null
+  }
+
   function selectOnly(id) {
     state.selected = new Set(id ? [id] : [])
     if (!id || state.lastTextSelection?.objectId !== id) state.lastTextSelection = null
@@ -2148,11 +2368,29 @@
   function selectFromPointer(event, id) {
     if (event.button !== 0 || event.target.closest('.scene-object__handle, .scene-object__resize')) return
     event.stopPropagation()
+    if (state.viewMode === 'segments' && state.translationSelected.has(id)) {
+      const currentPrimaryId = primarySelectedObject()?.id
+      for (const selectedId of state.translationSelected) state.selected.add(selectedId)
+      if (currentPrimaryId && state.selected.has(currentPrimaryId)) {
+        state.selected.delete(currentPrimaryId)
+        state.selected.add(currentPrimaryId)
+      }
+    }
     if (event.metaKey || event.ctrlKey) {
-      if (state.selected.has(id)) state.selected.delete(id)
-      else state.selected.add(id)
+      if (!state.selected.has(id)) {
+        state.selected.add(id)
+      } else if (primarySelectedObject()?.id === id) {
+        event.preventDefault()
+        state.selected.delete(id)
+      } else {
+        state.selected.delete(id)
+        state.selected.add(id)
+      }
     } else if (!state.selected.has(id)) {
       state.selected = new Set([id])
+    } else {
+      state.selected.delete(id)
+      state.selected.add(id)
     }
     const object = state.scene.objects.find(item => item.id === id)
     if (object) state.activePage = object.pageIndex
@@ -2360,8 +2598,18 @@
   }
 
   function refreshSelection() {
-    for (const node of elements.canvas.querySelectorAll('.scene-object')) node.classList.toggle('is-selected', state.selected.has(node.dataset.id))
+    const primaryId = primarySelectedObject()?.id || null
+    for (const node of elements.canvas.querySelectorAll('.scene-object')) {
+      node.classList.toggle('is-selected', state.selected.has(node.dataset.id))
+      node.classList.toggle('is-primary-selected', node.dataset.id === primaryId)
+    }
+    for (const row of elements.canvas.querySelectorAll('.segment-translation-row')) {
+      const objectId = row.querySelector('[data-translation-select]')?.dataset.translationSelect
+        || row.querySelector('.scene-object')?.dataset.id
+      row.classList.toggle('is-primary-selected', Boolean(objectId) && objectId === primaryId)
+    }
     const selection = selectedObjects()
+    elements.studioView.classList.toggle('is-inspector-empty', state.viewMode === 'segments' && selection.length === 0)
     elements.emptyInspector.hidden = selection.length > 0
     elements.objectInspector.hidden = selection.length === 0
     elements.merge.disabled = selection.length < 2 || new Set(selection.map(item => item.pageIndex)).size !== 1
@@ -2402,12 +2650,6 @@
       elements.agentNotes.textContent = first.agentNotes
       elements.agentNotes.hidden = false
     }
-    setMixedControl(elements.fontSize, selection.map(item => item.style.fontSizePx))
-    setMixedControl(elements.lineHeight, selection.map(item => item.style.lineHeight))
-    setMixedControl(elements.objectX, selection.map(item => Math.round(item.x)))
-    setMixedControl(elements.objectY, selection.map(item => Math.round(item.y)))
-    setMixedControl(elements.objectWidth, selection.map(item => Math.round(item.width)))
-    setMixedControl(elements.objectHeight, selection.map(item => Math.round(item.height)))
     renderTranslationUnits(selection)
   }
 
@@ -2736,6 +2978,10 @@
     event.stopPropagation()
     state.lastTextSelection = null
     if (!state.selected.has(id)) state.selected = new Set([id])
+    else {
+      state.selected.delete(id)
+      state.selected.add(id)
+    }
     const historyLength = state.history.length
     checkpoint()
     refreshSelection()
@@ -2770,7 +3016,6 @@
         if (node) positionObjectNode(node, object)
       }
       markPageDropTarget(pageSurfaceAtPoint(current.clientX, current.clientY))
-      refreshInspectorCoordinates()
     }
     const finish = current => {
       const destination = pageSurfaceAtPoint(current.clientX, current.clientY)
@@ -2857,6 +3102,9 @@
     event.stopPropagation()
     const object = state.scene.objects.find(item => item.id === id)
     if (!object) return
+    state.selected.delete(id)
+    state.selected.add(id)
+    refreshSelection()
     const handle = event.currentTarget
     const historyLength = state.history.length
     checkpoint()
@@ -2869,7 +3117,6 @@
       object.height = constrainObjectHeight(object, start.height + (current.clientY - start.y) / state.zoom, object.width)
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (node) positionObjectNode(node, object)
-      refreshInspectorCoordinates()
     }
     const finish = () => { scheduleSave() }
     const cancel = () => {
@@ -2878,19 +3125,8 @@
       refreshUndoButtons()
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (node) positionObjectNode(node, object)
-      refreshInspectorCoordinates()
     }
     startPointerAction(event, handle, action, { move: update, commit: finish, cancel })
-  }
-
-  function refreshInspectorCoordinates() {
-    const selection = selectedObjects()
-    if (selection.length !== 1) return
-    const object = selection[0]
-    elements.objectX.value = Math.round(object.x)
-    elements.objectY.value = Math.round(object.y)
-    elements.objectWidth.value = Math.round(object.width)
-    elements.objectHeight.value = Math.round(object.height)
   }
 
   function checkpoint() {
@@ -3493,24 +3729,39 @@
   }
 
   function selectedTextRange() {
-    const objects = selectedObjects()
-    if (objects.length !== 1) return null
-    const liveContent = [...elements.canvas.querySelectorAll(`[data-id="${CSS.escape(objects[0].id)}"] .scene-object__content`)]
-      .find(content => getTextSelection(content, objects[0].id))
-    const liveRange = liveContent ? getTextSelection(liveContent, objects[0].id) : null
+    const object = primarySelectedObject()
+    if (!object) return null
+    const liveContent = [...elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"] .scene-object__content`)]
+      .find(content => getTextSelection(content, object.id))
+    const liveRange = liveContent ? getTextSelection(liveContent, object.id) : null
     const range = liveRange && liveRange.end > liveRange.start ? liveRange : state.lastTextSelection
-    if (!range || range.objectId !== objects[0].id || range.end <= range.start) return null
-    const field = range.field || objectOutputField(objects[0])
-    const text = String(objects[0][field] || '')
-    return { object: objects[0], field, start: Math.max(0, Math.min(text.length, range.start)), end: Math.max(0, Math.min(text.length, range.end)) }
+    if (!range || range.objectId !== object.id || range.end <= range.start) return null
+    const field = range.field || objectOutputField(object)
+    const text = String(object[field] || '')
+    return { object, field, start: Math.max(0, Math.min(text.length, range.start)), end: Math.max(0, Math.min(text.length, range.end)) }
   }
 
   function allFormattingObjects() {
     return (state.scene?.objects || []).filter(canFitObjectToText)
   }
 
+  function selectAllFormattingSegments() {
+    const objects = allFormattingObjects()
+    if (!objects.length) return showToast('В документе нет сегментов для форматирования', true)
+    const primaryId = primarySelectedObject()?.id
+    const ids = objects.map(object => object.id).filter(id => id !== primaryId)
+    if (primaryId && objects.some(object => object.id === primaryId)) ids.push(primaryId)
+    state.selected = new Set(ids)
+    state.lastTextSelection = null
+    refreshSelection()
+    showToast(`Выбрано сегментов: ${objects.length}`)
+  }
+
   function formattingTargetObjects() {
-    return elements.formatAllSegments?.checked ? allFormattingObjects() : selectedObjects()
+    const selected = selectedObjects().filter(canFitObjectToText)
+    if (elements.formatAllSegments?.checked) return selected
+    const primary = primarySelectedObject()
+    return primary && canFitObjectToText(primary) ? [primary] : []
   }
 
   function clampFontSize(value) {
@@ -3573,6 +3824,13 @@
     elements.toolbarTextColor.value = uniformColor || '#000000'
     picker?.style.setProperty('--color-picker-value', uniformColor || '#000000')
     picker?.classList.toggle('is-mixed', colors.length > 0 && !uniformColor)
+    const lineHeights = objects.map(object => Number(object.style.lineHeight) || 1.2)
+    elements.lineHeight.disabled = !lineHeights.length
+    if (lineHeights.length) setMixedControl(elements.lineHeight, lineHeights)
+    else {
+      elements.lineHeight.value = '1.2'
+      elements.lineHeight.placeholder = ''
+    }
   }
 
   function setFormattingFontFamily(fontFamily) {
@@ -3580,7 +3838,7 @@
     if (!family) return refreshFormattingToolbar()
     const applyAll = Boolean(elements.formatAllSegments?.checked)
     const objects = formattingTargetObjects()
-    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     if (!applyAll && selectedTextRange()) {
       applySelectedTextStyle({ fontFamily: family })
       return
@@ -3595,7 +3853,7 @@
     const normalized = normalizeTextColor(color)
     const applyAll = Boolean(elements.formatAllSegments?.checked)
     const objects = formattingTargetObjects()
-    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     if (!applyAll && selectedTextRange()) {
       applySelectedTextStyle({ color: normalized })
       return
@@ -3609,7 +3867,7 @@
   function setFormattingFontSize(value) {
     const applyAll = Boolean(elements.formatAllSegments?.checked)
     const objects = formattingTargetObjects()
-    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     const size = clampFontSize(value)
     const selection = applyAll ? null : selectedTextRange()
     if (selection) {
@@ -3622,10 +3880,18 @@
     }, true, true, objects)
   }
 
+  function setFormattingLineHeight(value) {
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    const lineHeight = Math.min(3, Math.max(.8, Number(value) || 1.2))
+    applySelectionChange(object => { object.style.lineHeight = lineHeight }, true, true, objects)
+  }
+
   function changeFormattingFontSize(delta) {
     const applyAll = Boolean(elements.formatAllSegments?.checked)
     const objects = formattingTargetObjects()
-    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     const selection = applyAll ? null : selectedTextRange()
     if (selection) {
       const effective = effectiveTextStyle(selection.object, selection.field, selection.start)
@@ -3651,7 +3917,7 @@
   function applyFormatting(action) {
     const applyAll = Boolean(elements.formatAllSegments?.checked)
     const objects = formattingTargetObjects()
-    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     const textSelection = applyAll ? null : selectedTextRange()
     if (textSelection && ['bold', 'italic'].includes(action)) {
       const current = effectiveTextStyle(textSelection.object, textSelection.field, textSelection.start)
@@ -3817,28 +4083,6 @@
     for (const eventName of ['select', 'keyup', 'pointerup', 'focus']) {
       elements.sourceText.addEventListener(eventName, refreshTranslationSelectionPreview)
     }
-    const numeric = [
-      [elements.fontSize, (object, value) => { object.style.fontSizePx = clampFontSize(value) }, true],
-      [elements.lineHeight, (object, value) => { object.style.lineHeight = value }, true],
-      [elements.objectX, (object, value) => {
-        const page = state.scene.pages[object.pageIndex]
-        object.x = Math.min(page.contentBounds.x + page.contentBounds.width - object.width, Math.max(page.contentBounds.x, snapCoordinate(value, page, 'x')))
-      }, false],
-      [elements.objectY, (object, value) => {
-        const page = state.scene.pages[object.pageIndex]
-        object.y = Math.min(page.contentBounds.y + page.contentBounds.height - object.height, Math.max(page.contentBounds.y, snapCoordinate(value, page, 'y')))
-      }, false],
-      [elements.objectWidth, (object, value) => {
-        const page = state.scene.pages[object.pageIndex]
-        object.width = Math.min(page.contentBounds.x + page.contentBounds.width - object.x, Math.max(12, value))
-        object.height = Math.max(object.height, minimumObjectHeight(object, object.width))
-      }, false],
-      [elements.objectHeight, (object, value) => { object.height = constrainObjectHeight(object, value, object.width) }, false],
-    ]
-    for (const [control, apply, fitContent] of numeric) control.addEventListener('change', () => {
-      const value = Number(control.value)
-      if (Number.isFinite(value)) applySelectionChange(object => apply(object, value), true, fitContent)
-    })
   }
 
   function renderSelectedText(field) {
@@ -3916,6 +4160,7 @@
     elements.viewLayout.addEventListener('click', () => setDocumentView('layout'))
     elements.viewSegments.addEventListener('click', () => setDocumentView('segments'))
     elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
+    elements.inspectorPanelToggle.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen))
     elements.canvasScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
@@ -3937,6 +4182,23 @@
     elements.sourceZoomIn.addEventListener('click', () => setSourceZoom(state.sourceZoom + .1))
     elements.sourceZoomActual.addEventListener('click', () => setSourceZoom(1))
     elements.sourceZoomFit.addEventListener('click', fitSourceWidth)
+    elements.sourcePreviewOpen.addEventListener('click', openSourceLightbox)
+    elements.sourceLightboxClose.addEventListener('click', closeSourceLightbox)
+    elements.sourceLightboxPrevious.addEventListener('click', () => stepSourceLightbox(-1))
+    elements.sourceLightboxNext.addEventListener('click', () => stepSourceLightbox(1))
+    elements.sourceLightboxZoomOut.addEventListener('click', () => setSourceLightboxZoom(state.sourceLightboxZoom - .1))
+    elements.sourceLightboxZoomIn.addEventListener('click', () => setSourceLightboxZoom(state.sourceLightboxZoom + .1))
+    elements.sourceLightboxZoomActual.addEventListener('click', () => setSourceLightboxZoom(1))
+    elements.sourceLightboxFit.addEventListener('click', fitSourceLightbox)
+    elements.sourceLightbox.addEventListener('pointerdown', event => {
+      if (event.target === elements.sourceLightbox || event.target === elements.sourceLightboxViewport) closeSourceLightbox()
+    })
+    elements.sourceLightboxViewport.addEventListener('wheel', event => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      event.preventDefault()
+      const factor = Math.exp(-normalizedWheelDelta(event) * .0015)
+      setSourceLightboxZoom(state.sourceLightboxZoom * factor)
+    }, { passive: false })
     elements.sourcePreviewScroll.addEventListener('pointerdown', beginSourcePan)
     elements.sourcePreviewScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
@@ -4041,6 +4303,8 @@
       elements.toolbarTextColor.closest('.color-picker')?.style.setProperty('--color-picker-value', elements.toolbarTextColor.value)
     })
     elements.toolbarTextColor.addEventListener('change', () => setFormattingColor(elements.toolbarTextColor.value))
+    elements.lineHeight.addEventListener('change', () => setFormattingLineHeight(elements.lineHeight.value))
+    elements.typographySelectAll.addEventListener('click', selectAllFormattingSegments)
     elements.formatAllSegments.addEventListener('change', refreshFormattingToolbar)
     document.querySelectorAll('.format-button').forEach(button => button.addEventListener('click', () => applyFormatting(button.dataset.format)))
     const setAppbarMenuOpen = open => {
@@ -4055,12 +4319,25 @@
       if (event.target.closest('a, button')) setAppbarMenuOpen(false)
     })
     document.addEventListener('keydown', event => {
+      if (!elements.sourceLightbox.hidden && event.key === 'ArrowLeft') {
+        event.preventDefault()
+        stepSourceLightbox(-1)
+      }
+      if (!elements.sourceLightbox.hidden && event.key === 'ArrowRight') {
+        event.preventDefault()
+        stepSourceLightbox(1)
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        if (!elements.sourceLightbox.hidden) {
+          closeSourceLightbox()
+          return
+        }
         setAppbarMenuOpen(false)
+        if (state.inspectorOpen) setInspectorOpen(false)
         cancelPointerAction()
         stopSourcePan()
         closeKnowledgeSuggestion()
