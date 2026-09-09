@@ -1,0 +1,133 @@
+.ui-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.app-container {
+  width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+  padding-inline: var(--app-gutter, 12px);
+}
+
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; margin: -1px !important; padding: 0 !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; border: 0 !important; white-space: nowrap !important; }
+
+.button--with-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  line-height: 0;
+  transition: border-color .15s, background .15s, color .15s, transform .15s;
+}
+
+.icon-button:hover { border-color: #94a3b8; background: #f8fafc; }
+.icon-button:active { transform: translateY(1px); }
+.icon-button:disabled { cursor: not-allowed; opacity: .45; }
+.icon-button[aria-pressed="true"] { color: #315ee7; border-color: #315ee7; background: #eef2ff; }
+.icon-button .ui-icon { width: 17px; height: 17px; }
+
+.icon-button--compact { width: 28px; height: 28px; border-radius: 6px; }
+.icon-button--compact .ui-icon { width: 15px; height: 15px; }
+.icon-button--small { width: 26px; height: 26px; }
+.icon-button--small .ui-icon { width: 14px; height: 14px; }
+.icon-button--tiny { width: 20px; height: 20px; border-radius: 5px; }
+.icon-button--tiny .ui-icon { width: 12px; height: 12px; }
+.icon-button--dashed { border-style: dashed; }
+.icon-button--accent { color: var(--blue, var(--segment, #315ee7)); }
+.icon-button--muted { color: #98a2b3; }
+.icon-button--warning { color: #7a5a00; }
+.icon-button--ghost { border-color: transparent; background: transparent; }
+.icon-button--ghost:hover { border-color: transparent; background: rgba(148,163,184,.18); }
+.icon-button--filled { color: #fff; border-color: var(--blue, var(--segment, #315ee7)); background: var(--blue, var(--segment, #315ee7)); }
+.icon-button--filled:hover { color: #fff; border-color: var(--blue-dark, #2449b8); background: var(--blue-dark, #2449b8); }
+.icon-button--shadow { box-shadow: 0 2px 7px rgba(15,23,42,.12); }
+.icon-button--toggle[aria-expanded="true"] { color: #315ee7; border-color: #aebcf5; background: #eef2ff; }
+
+.font-size-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.font-size-stepper__field {
+  width: 32px;
+  min-width: 32px;
+  height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+}
+
+.font-size-stepper .font-size-stepper__value {
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  min-height: 18px;
+  padding: 0 2px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: center;
+}
+.font-size-stepper__value::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.font-size-stepper__unit { color: #667085; font-size: 8px; line-height: 8px; text-align: center; }
+
+.base-select__native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+}
+.base-select-root { min-width: 0; width: 100%; }
+.base-select { width: 100%; min-height: 30px; display: inline-flex; align-items: center; justify-content: space-between; gap: 7px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #344054; font: inherit; font-size: 10px; line-height: 1.2; text-align: left; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+.base-select:hover { border-color: #94a3b8; }
+.base-select:focus-visible, .base-select[data-state="open"] { outline: 0; border-color: var(--blue, #315ee7); box-shadow: 0 0 0 2px rgba(49,94,231,.12); }
+.base-select:disabled { cursor: not-allowed; opacity: .55; }
+.base-select__value { min-width: 48px; flex: 1 1 auto; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; }
+.base-select__value--placeholder { color: #98a2b3; }
+.base-select__icon, .base-select__leading-icon { width: 16px; height: 16px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; color: #667085; }
+.base-select__icon { transition: transform .15s, color .15s; }
+.base-select__icon .ui-icon, .base-select__leading-icon .ui-icon { width: 14px; height: 14px; }
+.base-select[data-state="open"] .base-select__icon { color: #344054; transform: rotate(180deg); }
+.base-select__content { position: fixed; z-index: 6000; max-height: min(280px, calc(100vh - 24px)); overflow: hidden; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 16px 40px rgba(15,23,42,.18); }
+.base-select__viewport { display: grid; gap: 2px; max-height: inherit; padding: 4px; overflow-y: auto; }
+.base-select__group-label { padding: 7px 8px 4px; color: #98a2b3; font-size: 9px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.base-select__item { width: 100%; min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; color: #667085; font: inherit; font-size: 10px; line-height: 1.25; text-align: left; cursor: pointer; outline: 0; }
+.base-select__item:hover, .base-select__item[data-highlighted="true"] { color: #101828; background: #f2f4f7; }
+.base-select__item[data-state="checked"] { color: #101828; font-weight: 650; }
+.base-select__item:disabled { cursor: not-allowed; opacity: .45; }
+.base-select__indicator { width: 15px; height: 15px; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; color: var(--blue, #315ee7); }
+.base-select__indicator .ui-icon { width: 14px; height: 14px; }

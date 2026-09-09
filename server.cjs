@@ -47,6 +47,7 @@ app.use('/vendor/jszip', express.static(path.join(rootDir, 'node_modules', 'jszi
 app.get('/', (request, response) => response.sendFile(path.join(publicDir, 'studio.html')))
 app.get('/documentation', (request, response) => response.sendFile(path.join(publicDir, 'docs.html')))
 app.get('/user-guide', (request, response) => response.sendFile(path.join(publicDir, 'docs.html')))
+app.get('/ui-components', (request, response) => response.sendFile(path.join(publicDir, 'ui-components.html')))
 app.use(express.static(publicDir))
 
 app.get('/api/health', (request, response) => {

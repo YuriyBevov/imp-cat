@@ -61,7 +61,7 @@ def text_runs(item: dict, text: str) -> list[dict]:
         run = {"text": text[start:end]}
         for candidate in valid_ranges:
             if candidate["start"] <= start < candidate["end"]:
-                for key in ("fontSizePx", "fontWeight", "fontStyle", "color"):
+                for key in ("fontFamily", "fontSizePx", "fontWeight", "fontStyle", "color"):
                     if key in candidate:
                         run[key] = candidate[key]
         comparable = {key: value for key, value in run.items() if key != "text"}
@@ -79,6 +79,12 @@ def normalize_scene(scene: dict) -> dict:
             "index": index,
             "widthPx": float(page.get("widthPx", 794)),
             "heightPx": float(page.get("heightPx", 1123)),
+            "contentBounds": {
+                "x": float((page.get("contentBounds") or {}).get("x", 40)),
+                "y": float((page.get("contentBounds") or {}).get("y", 40)),
+                "width": float((page.get("contentBounds") or {}).get("width", float(page.get("widthPx", 794)) - 80)),
+                "height": float((page.get("contentBounds") or {}).get("height", float(page.get("heightPx", 1123)) - 80)),
+            },
         }
         for index, page in enumerate(scene.get("pages", []))
     ]
@@ -204,7 +210,15 @@ def parse_color(value: str) -> tuple[float, float, float]:
 def run_font(segment: dict, run: dict) -> tuple[str, float]:
     bold = float(run.get("fontWeight", segment["fontWeight"])) >= 600
     italic = run.get("fontStyle", segment["fontStyle"]) == "italic"
-    name = FONT_NAMES[(bold, italic)] if FONT_NAMES[(bold, italic)] in pdfmetrics.getRegisteredFontNames() else "Helvetica"
+    family = str(run.get("fontFamily", segment.get("fontFamily", "Arial")))
+    if family in {"Times New Roman", "Cambria", "Georgia"}:
+        name = "Times-BoldItalic" if bold and italic else "Times-Bold" if bold else "Times-Italic" if italic else "Times-Roman"
+    elif family == "Courier New":
+        name = "Courier-BoldOblique" if bold and italic else "Courier-Bold" if bold else "Courier-Oblique" if italic else "Courier"
+    else:
+        name = FONT_NAMES[(bold, italic)] if FONT_NAMES[(bold, italic)] in pdfmetrics.getRegisteredFontNames() else (
+            "Helvetica-BoldOblique" if bold and italic else "Helvetica-Bold" if bold else "Helvetica-Oblique" if italic else "Helvetica"
+        )
     return name, max(4.5, float(run.get("fontSizePx", segment["fontSizePx"])) * 0.75)
 
 

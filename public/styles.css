@@ -241,24 +241,6 @@ button {
   gap: 5px;
 }
 
-.editor-toolbar__row button {
-  min-width: 32px;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid #d5dcea;
-  border-radius: 7px;
-  color: #334155;
-  background: white;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.editor-toolbar__row button[aria-pressed="true"] {
-  border-color: #2563eb;
-  color: #1d4ed8;
-  background: #dbeafe;
-}
-
 .editor-toolbar__row button:disabled,
 .editor-toolbar__size select:disabled {
   cursor: not-allowed;
@@ -327,17 +309,7 @@ button {
   gap: 8px;
 }
 
-.zoom-control button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--ink);
-  background: #fff;
-  cursor: pointer;
-  font-size: 18px;
-}
+.zoom-control .icon-button { justify-self: center; }
 
 .zoom-control input {
   width: 100%;
@@ -901,21 +873,6 @@ button {
 .icat-segment.is-selected .icat-segment__tools,
 .icat-segment:focus-within .icat-segment__tools {
   opacity: 1;
-}
-
-.icat-segment__button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 1px solid #d5dcea;
-  border-radius: 5px;
-  color: #334155;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.12);
-  cursor: pointer;
-  font-weight: 900;
 }
 
 .icat-segment__drag {

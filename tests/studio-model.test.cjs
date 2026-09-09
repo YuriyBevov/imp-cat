@@ -9,6 +9,7 @@ const {
   fitAgentFontSizePx,
   findMemoryMatches,
   formatServiceTranslation,
+  pageContentBounds,
   validateScene,
 } = require('../lib/studio-model.cjs')
 const { createTranslationBatches, normalizeScene, parseJsonArray } = require('../lib/studio.cjs')
@@ -32,6 +33,7 @@ function analysisFixture() {
 test('buildScene preserves page ratio, groups body lines, and classifies service labels', () => {
   const scene = buildScene(analysisFixture(), { documentId: 'a'.repeat(32), title: 'Fixture' })
   assert.equal(scene.gridSize, 8)
+  assert.equal(scene.gridDensity, 'xs')
   assert.equal(scene.snapToGrid, true)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
@@ -40,6 +42,7 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.match(scene.objects[1].sourceText, /First line[\s\S]*continues/)
   assert.equal(scene.objects[2].type, 'signature')
   assert.equal(scene.objects[2].translation, '/Подпись/')
+  assert.deepEqual(scene.pages[0].contentBounds, pageContentBounds(scene.pages[0].widthPx, scene.pages[0].heightPx))
 })
 
 test('structural table model groups positioned cells by page and table id', () => {
@@ -152,19 +155,22 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   input.pages[0].imageUrl = 'https://invalid.example/source.png'
   input.objects[0].style.fontFamily = 'Times New Roman'
   input.objects[0].style.color = 'javascript:red'
+  input.snapToGrid = false
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
   assert.equal(normalized.objects[0].style.color, '#000000')
-  assert.equal(normalized.objects[0].style.fontFamily, 'Arial')
+  assert.equal(normalized.objects[0].style.fontFamily, 'Times New Roman')
   assert.equal(normalized.gridSize, 8)
+  assert.equal(normalized.gridDensity, 'xs')
+  assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(normalized.pages[0].widthPx, normalized.pages[0].heightPx))
   assert.equal(normalized.snapToGrid, true)
 })
 
 test('normalizeScene preserves safe inline text styles', () => {
   const input = buildScene(analysisFixture(), { documentId: '9'.repeat(32) })
-  input.objects[0].sourceTextStyles = [{ start: 0, end: 5, fontSizePx: 22, fontWeight: 700, color: '#ff0000' }]
+  input.objects[0].sourceTextStyles = [{ start: 0, end: 5, fontFamily: 'Cambria', fontSizePx: 22, fontWeight: 700, color: '#ff0000' }]
   const normalized = normalizeScene(input, '8'.repeat(32), 'Title')
-  assert.deepEqual(normalized.objects[0].sourceTextStyles[0], { start: 0, end: 5, fontSizePx: 22, fontWeight: 700 })
+  assert.deepEqual(normalized.objects[0].sourceTextStyles[0], { start: 0, end: 5, fontSizePx: 22, fontWeight: 700, fontFamily: 'Cambria', color: '#FF0000' })
 })
 
 test('normalizeScene preserves internal translation units and derives the exported translation', () => {

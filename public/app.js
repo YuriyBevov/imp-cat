@@ -7,6 +7,7 @@ const MAX_PARKING_HEIGHT = 4000;
 const MAX_PARKING_WIDTH = 2000;
 const PARKING_HEADER_HEIGHT = 64;
 const HISTORY_LIMIT = 100;
+const iconMarkup = (name) => `<svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-${name}"></use></svg>`;
 
 const state = {
   title: "Новый документ",
@@ -1164,17 +1165,17 @@ function createSegmentElement(segment) {
 
   const dragButton = document.createElement("button");
   dragButton.type = "button";
-  dragButton.className = "icat-segment__button icat-segment__drag";
+  dragButton.className = "icon-button icon-button--small icon-button--shadow icat-segment__drag";
   dragButton.title = "Переместить сегмент";
   dragButton.setAttribute("aria-label", "Переместить сегмент");
-  dragButton.textContent = "⠿";
+  dragButton.innerHTML = iconMarkup("grip-vertical");
 
   const menuButton = document.createElement("button");
   menuButton.type = "button";
-  menuButton.className = "icat-segment__button icat-segment__more";
+  menuButton.className = "icon-button icon-button--small icon-button--shadow icat-segment__more";
   menuButton.title = "Действия с сегментом";
   menuButton.setAttribute("aria-label", "Открыть меню сегмента");
-  menuButton.textContent = "⋮";
+  menuButton.innerHTML = iconMarkup("more-vertical");
 
   tools.append(dragButton, menuButton);
 
@@ -1870,12 +1871,12 @@ function attachResizeBehavior(segment, handle) {
         state.viewScale,
       );
       segment.width = clamp(
-        snapUp(origin.width + deltaX),
+        origin.width + deltaX,
         MIN_SEGMENT_WIDTH,
         surface.width - segment.x,
       );
       segment.height = clamp(
-        snapUp(origin.height + deltaY),
+        origin.height + deltaY,
         MIN_SEGMENT_HEIGHT,
         surface.height - segment.y,
       );
@@ -2181,7 +2182,7 @@ function setGridSize(value) {
   elements.gridSize.value = String(state.gridSize);
   elements.workspace.style.setProperty("--grid-size", `${state.gridSize}px`);
   elements.workspace.style.setProperty("--major-grid-size", `${majorGridSize}px`);
-  elements.gridHint.textContent = `Сетка отображается только на листах. Шаг ${state.gridSize} px применяется при перемещении и изменении размера.`;
+  elements.gridHint.textContent = `Сетка отображается только на листах. Шаг ${state.gridSize} px применяется только к координатам перемещения.`;
   for (const segment of state.segments) renderSegmentPosition(segment);
   updateSelectedDetails();
 }
@@ -2677,10 +2678,6 @@ function formatGeometry(value) {
 
 function snap(value) {
   return Math.round(value / state.gridSize) * state.gridSize;
-}
-
-function snapUp(value) {
-  return Math.ceil(value / state.gridSize) * state.gridSize;
 }
 
 function clamp(value, minimum, maximum) {

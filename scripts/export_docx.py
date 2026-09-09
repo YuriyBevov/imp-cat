@@ -90,10 +90,18 @@ def namespaced_attr(node: etree._Element, prefix: str, name: str, value: object)
 def configure_section(section, page: dict) -> None:
     section.page_width = Twips(px_to_twips(page["widthPx"]))
     section.page_height = Twips(px_to_twips(page["heightPx"]))
-    section.top_margin = Twips(0)
-    section.right_margin = Twips(0)
-    section.bottom_margin = Twips(0)
-    section.left_margin = Twips(0)
+    bounds = page.get("contentBounds") or {}
+    left = max(0, float(bounds.get("x", 0)))
+    top = max(0, float(bounds.get("y", 0)))
+    right = max(0, float(page["widthPx"]) - left - float(bounds.get("width", page["widthPx"])))
+    bottom = max(0, float(page["heightPx"]) - top - float(bounds.get("height", page["heightPx"])))
+    # Page dimensions must stay positive, while a legitimate zero margin must
+    # remain exactly zero instead of being promoted to one twip by px_to_twips.
+    margin_twips = lambda value: max(0, round(float(value) * PX_TO_TWIPS))
+    section.top_margin = Twips(margin_twips(top))
+    section.right_margin = Twips(margin_twips(right))
+    section.bottom_margin = Twips(margin_twips(bottom))
+    section.left_margin = Twips(margin_twips(left))
     section.header_distance = Twips(0)
     section.footer_distance = Twips(0)
 

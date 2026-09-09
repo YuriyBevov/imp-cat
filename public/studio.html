@@ -4,44 +4,46 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ICAT Translation Studio</title>
+    <link rel="stylesheet" href="/ui-kit.css" />
     <link rel="stylesheet" href="/studio.css" />
   </head>
   <body>
     <header class="appbar">
-      <a class="brand" href="/" aria-label="ICAT Translation Studio">
-        <span class="brand__mark">IC</span>
-        <span><strong>ICAT</strong><small>Translation Studio</small></span>
-      </a>
-      <div class="document-heading">
-        <strong id="document-title">Новый перевод</strong>
-        <span id="document-status">Загрузите PDF или изображение</span>
-      </div>
-      <div class="appbar__actions">
-        <a class="button appbar__help-link" href="/documentation" target="_blank" rel="noopener">Документация</a>
-        <a class="button appbar__help-link" href="/user-guide" target="_blank" rel="noopener">Руководство</a>
-        <button id="document-library-button" class="button" type="button">Документы</button>
-        <button id="knowledge-base-open-button" class="button" type="button">База знаний</button>
-        <button id="instruction-library-button" class="button" type="button">AI-инструкции</button>
-        <button id="ai-settings-button" class="button" type="button">AI-провайдер</button>
-        <button id="undo-button" class="icon-button" type="button" title="Отменить (Cmd/Ctrl+Z)" disabled>↶</button>
-        <button id="redo-button" class="icon-button" type="button" title="Повторить" disabled>↷</button>
-        <button id="new-document-button" class="button" type="button" hidden>Другой документ</button>
-        <button id="export-docx-button" class="button button--primary" type="button" disabled>Скачать DOCX</button>
-        <button id="export-pdf-button" class="button" type="button" disabled>Скачать PDF</button>
+      <div class="app-container appbar__inner">
+        <a class="brand" href="/" aria-label="ICAT Translation Studio">
+          <span class="brand__mark">IC</span>
+          <span><strong>ICAT</strong><small>Translation Studio</small></span>
+        </a>
+        <div class="document-heading">
+          <strong id="document-title">Новый перевод</strong>
+          <span id="document-status">Загрузите PDF или изображение</span>
+        </div>
+        <div id="appbar-menu" class="appbar-menu">
+          <button id="appbar-menu-button" class="icon-button icon-button--toggle" type="button" aria-label="Открыть меню действий" aria-controls="appbar-actions-menu" aria-expanded="false">
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-menu"></use></svg>
+          </button>
+          <div id="appbar-actions-menu" class="appbar__actions" role="menu" hidden>
+            <a class="button appbar__help-link" href="/documentation" target="_blank" rel="noopener" role="menuitem">Документация</a>
+            <a class="button appbar__help-link" href="/user-guide" target="_blank" rel="noopener" role="menuitem">Руководство</a>
+            <a class="button appbar__help-link" href="/ui-components" target="_blank" rel="noopener" role="menuitem">Компоненты</a>
+            <button id="document-library-button" class="button" type="button" role="menuitem">Документы</button>
+            <button id="knowledge-base-open-button" class="button" type="button" role="menuitem">База знаний</button>
+            <button id="instruction-library-button" class="button" type="button" role="menuitem">AI-инструкции</button>
+            <button id="ai-settings-button" class="button" type="button" role="menuitem">AI-провайдер</button>
+            <button id="undo-button" class="button button--with-icon" type="button" title="Отменить (Cmd/Ctrl+Z)" role="menuitem" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-undo"></use></svg><span>Отменить</span></button>
+            <button id="redo-button" class="button button--with-icon" type="button" title="Повторить" role="menuitem" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-redo"></use></svg><span>Повторить</span></button>
+            <button id="new-document-button" class="button" type="button" role="menuitem" hidden>Другой документ</button>
+            <button id="export-docx-button" class="button button--primary" type="button" role="menuitem" disabled>Скачать DOCX</button>
+            <button id="export-pdf-button" class="button" type="button" role="menuitem" disabled>Скачать PDF</button>
+          </div>
+        </div>
       </div>
     </header>
 
-    <nav class="workflow" aria-label="Этапы работы">
-      <button class="workflow__step is-active" data-stage="source"><span>1</span>Исходник</button>
-      <button class="workflow__step" data-stage="structure"><span>2</span>Структура</button>
-      <button class="workflow__step" data-stage="translation"><span>3</span>Перевод</button>
-      <button class="workflow__step" data-stage="layout"><span>4</span>Верстка</button>
-      <button class="workflow__step" data-stage="qa"><span>5</span>Проверка</button>
-    </nav>
-
     <nav id="document-tabs" class="document-tabs" aria-label="Открытые документы" hidden>
-      <div id="document-tabs-list" class="document-tabs__list"></div>
-      <button id="add-document-tab" class="document-tabs__add" type="button" title="Добавить документы">＋</button>
+      <div class="app-container document-tabs__inner">
+        <div id="document-tabs-list" class="document-tabs__list"></div>
+      </div>
     </nav>
 
     <main id="upload-view" class="upload-view">
@@ -78,72 +80,87 @@
 
     <main id="studio-view" class="studio" hidden>
       <aside class="pages-panel">
-        <div class="panel-heading">
-          <span>Страницы</span>
-          <strong id="page-count">0</strong>
-        </div>
         <div id="page-thumbnails" class="page-thumbnails"></div>
       </aside>
 
       <section class="source-preview-panel" aria-label="Оригинал документа">
-        <div class="source-preview-toolbar">
-          <strong>Оригинал</strong>
-          <div>
-            <button id="source-zoom-out" class="icon-button" type="button" title="Уменьшить оригинал">−</button>
-            <output id="source-zoom-output">50%</output>
-            <button id="source-zoom-in" class="icon-button" type="button" title="Увеличить оригинал">+</button>
-            <button id="source-zoom-fit" class="compact-button" type="button">Вписать</button>
-          </div>
-        </div>
         <div id="source-preview-scroll" class="source-preview-scroll">
           <div id="source-preview-canvas" class="source-preview-canvas"></div>
         </div>
-        <small class="source-preview-hint">Оригинал выбранной страницы · Cmd/Ctrl + колесо — зум</small>
+        <div class="source-preview-controls" aria-label="Масштаб оригинала">
+          <button id="source-zoom-out" class="icon-button icon-button--compact" type="button" title="Уменьшить оригинал" aria-label="Уменьшить оригинал"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+          <output id="source-zoom-output" aria-live="polite">50%</output>
+          <button id="source-zoom-in" class="icon-button icon-button--compact" type="button" title="Увеличить оригинал" aria-label="Увеличить оригинал"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+          <button id="source-zoom-100" class="compact-button source-preview-controls__actual" type="button" title="Масштаб 100%">100%</button>
+          <button id="source-zoom-fit" class="icon-button icon-button--compact" type="button" title="Вписать оригинал" aria-label="Вписать оригинал">
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg>
+          </button>
+        </div>
       </section>
 
       <section class="workbench">
         <div class="workbench-toolbar">
-          <div class="toolbar-group view-controls" aria-label="Режим отображения документа">
-            <button id="view-layout-button" class="compact-button is-active" type="button" aria-pressed="true">Макет</button>
-            <button id="view-segments-button" class="compact-button" type="button" aria-pressed="false">Сегменты</button>
-            <button id="source-panel-toggle" class="compact-button" type="button" aria-expanded="true">Скрыть оригинал</button>
+          <div class="app-container workbench-toolbar__inner">
+            <div class="toolbar-group view-controls" aria-label="Режим отображения документа">
+            <button id="source-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть оригинал" aria-label="Скрыть оригинал" aria-expanded="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
+            <button id="view-layout-button" class="icon-button icon-button--compact is-active" type="button" title="Макет" aria-label="Макет" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button>
+            <button id="view-segments-button" class="icon-button icon-button--compact" type="button" title="Сегменты" aria-label="Сегменты" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button>
           </div>
           <div class="toolbar-group">
-            <button id="zoom-out" class="icon-button" type="button" title="Уменьшить">−</button>
+            <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
             <output id="zoom-output">80%</output>
-            <button id="zoom-in" class="icon-button" type="button" title="Увеличить">+</button>
-            <button id="zoom-fit" class="compact-button" type="button">По ширине</button>
+            <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+            <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
+            <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
           </div>
           <div class="toolbar-group grid-controls" aria-label="Настройки сетки">
-            <label><input id="grid-snap" type="checkbox" checked /> Привязка</label>
-            <label>Сетка
-              <select id="grid-size" title="Размер ячейки сетки">
-                <option value="4">4 px</option><option value="8" selected>8 px</option><option value="12">12 px</option>
-                <option value="16">16 px</option><option value="24">24 px</option><option value="32">32 px</option>
-                <option value="48">48 px</option><option value="64">64 px</option><option value="96">96 px</option>
+            <label class="grid-size-control">
+              <span class="visually-hidden">Размер сетки</span>
+              <select id="grid-size" data-select-icon="grid" title="Плотность сетки" aria-label="Плотность сетки">
+                <option value="xs" selected>XS</option><option value="sm">SM</option><option value="md">MD</option>
+                <option value="lg">LG</option><option value="xl">XL</option><option value="xxl">XXL</option>
               </select>
             </label>
           </div>
           <div class="toolbar-group formatting" aria-label="Форматирование сегмента">
-            <button class="format-button" data-format="bold" type="button" title="Полужирный"><strong>B</strong></button>
-            <button class="format-button" data-format="italic" type="button" title="Курсив"><em>I</em></button>
-            <button class="format-button" data-format="left" type="button" title="По левому краю">⇤</button>
-            <button class="format-button" data-format="center" type="button" title="По центру">≡</button>
-            <button class="format-button" data-format="right" type="button" title="По правому краю">⇥</button>
-            <button class="format-button" data-format="justify" type="button" title="По ширине">☰</button>
-            <select id="toolbar-font-size" title="Размер шрифта">
-              <option value="9">9</option><option value="10">10</option><option value="11">11</option>
-              <option value="12" selected>12</option><option value="14">14</option><option value="16">16</option>
-              <option value="18">18</option><option value="20">20</option><option value="24">24</option><option value="28">28</option>
-            </select>
+            <div class="control-row">
+              <label class="font-family-control">
+                <span class="visually-hidden">Шрифт</span>
+                <select id="toolbar-font-family" aria-label="Шрифт">
+                  <option value="">—</option>
+                  <option value="Arial" selected>Arial</option>
+                  <option value="Aptos">Aptos</option>
+                  <option value="Calibri">Calibri</option>
+                  <option value="Cambria">Cambria</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Verdana">Verdana</option>
+                  <option value="Tahoma">Tahoma</option>
+                  <option value="Courier New">Courier New</option>
+                </select>
+              </label>
+              <button class="icon-button icon-button--compact format-button" data-format="bold" type="button" title="Полужирный" aria-label="Полужирный"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="italic" type="button" title="Курсив" aria-label="Курсив"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-italic"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="left" type="button" title="По левому краю" aria-label="По левому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-left"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="center" type="button" title="По центру" aria-label="По центру"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-center"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="right" type="button" title="По правому краю" aria-label="По правому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-right"></use></svg></button>
+              <button class="icon-button icon-button--compact format-button" data-format="justify" type="button" title="По ширине" aria-label="По ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-justify"></use></svg></button>
+              <div class="font-size-stepper" role="group" aria-label="Размер шрифта">
+                <button id="toolbar-font-size-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить размер шрифта на 1" aria-label="Уменьшить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+                <span class="font-size-stepper__field">
+                  <input id="toolbar-font-size-value" class="font-size-stepper__value" type="number" min="10" max="80" step="1" placeholder="—" aria-label="Размер шрифта" />
+                  <span class="font-size-stepper__unit" aria-hidden="true">px</span>
+                </span>
+                <button id="toolbar-font-size-increase" class="icon-button icon-button--compact" type="button" title="Увеличить размер шрифта на 1" aria-label="Увеличить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              </div>
+              <label class="color-picker" title="Цвет текста">
+                <input id="toolbar-text-color" type="color" value="#000000" aria-label="Цвет текста" />
+                <span class="color-picker__swatch" aria-hidden="true"></span>
+              </label>
+            </div>
+            <label class="control-scope-toggle"><input id="format-all-segments" type="checkbox" /> <span>Применить ко всем сегментам</span></label>
+            </div>
           </div>
-          <div class="toolbar-group document-font-controls" aria-label="Единый размер шрифта документа">
-            <label for="document-font-size">Весь документ</label>
-            <input id="document-font-size" type="number" min="6" max="96" step="0.5" value="12" title="Размер шрифта для всех текстовых сегментов" />
-            <span>px</span>
-            <button id="apply-document-font-size" class="compact-button" type="button" title="Установить этот размер во всех текстовых сегментах">Применить ко всем</button>
-          </div>
-          <span class="workbench-toolbar__hint">Cmd/Ctrl + колесо — зум под курсором</span>
         </div>
         <div id="canvas-scroll" class="canvas-scroll">
           <div id="document-canvas" class="document-canvas"></div>
@@ -260,7 +277,7 @@
             <button id="translation-units-apply-exact" class="button" type="button">Применить все 100% совпадения</button>
           </section>
           <div class="object-grid">
-            <label>Шрифт, px<input id="font-size" type="number" min="6" max="96" step="0.5" /></label>
+            <label>Шрифт, px<input id="font-size" type="number" min="10" max="80" step="1" /></label>
             <label>Интервал<input id="line-height" type="number" min="0.8" max="3" step="0.05" /></label>
             <label>X<input id="object-x" type="number" step="1" /></label>
             <label>Y<input id="object-y" type="number" step="1" /></label>
@@ -285,14 +302,14 @@
               <button data-align-selection="top" type="button" title="По верхнему краю">Верх</button>
               <button data-align-selection="center-y" type="button" title="По вертикальному центру">Центр Y</button>
               <button data-align-selection="bottom" type="button" title="По нижнему краю">Низ</button>
-              <button class="layout-button-grid__wide" data-align-selection="distribute-x" type="button" title="Равные интервалы по горизонтали">↔ Равные интервалы</button>
-              <button class="layout-button-grid__wide" data-align-selection="distribute-y" type="button" title="Равные интервалы по вертикали">↕ Равные интервалы</button>
+              <button class="button button--with-icon layout-button-grid__wide" data-align-selection="distribute-x" type="button" title="Равные интервалы по горизонтали"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-move-horizontal"></use></svg><span>Равные интервалы</span></button>
+              <button class="button button--with-icon layout-button-grid__wide" data-align-selection="distribute-y" type="button" title="Равные интервалы по вертикали"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-move-vertical"></use></svg><span>Равные интервалы</span></button>
             </div>
             <div class="layout-card__scope">
               <span class="layout-card__label">Расположить относительно</span>
               <select id="alignment-scope">
-                <option value="content">области содержимого</option>
-                <option value="page">всей страницы</option>
+                <option value="content">рабочей области документа</option>
+                <option value="page">листа с учётом полей</option>
               </select>
             </div>
             <div class="layout-button-grid" aria-label="Выравнивание относительно документа">
@@ -318,8 +335,8 @@
                 <label>Контейнер
                   <select id="flex-container">
                     <option value="selection">Границы выделения</option>
-                    <option value="content">Область содержимого</option>
-                    <option value="page">Вся страница</option>
+                    <option value="content">Рабочая область документа</option>
+                    <option value="page">Лист с учётом полей</option>
                   </select>
                 </label>
                 <label>Главная ось
@@ -352,7 +369,7 @@
             <div><strong>Векторная база знаний</strong><span class="memory-card__actions"><button id="memory-search-button" type="button">Найти похожие</button><button id="knowledge-base-open-context-button" type="button">Открыть БЗ</button></span></div>
             <div class="memory-card__glossary">
               <select id="glossary-select" aria-label="Активный глоссарий"><option value="">Загружаем глоссарии…</option></select>
-              <button id="glossary-add-button" type="button">＋ Новый</button>
+              <button id="glossary-add-button" class="button button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg><span>Новый</span></button>
             </div>
             <label class="memory-card__mode">Использование БЗ
               <select id="knowledge-base-mode">
@@ -374,7 +391,7 @@
         </section>
 
         <section id="qa-panel" class="qa-panel" hidden>
-          <div class="qa-panel__header"><strong id="qa-title">Проверка документа</strong><button id="qa-close" type="button">×</button></div>
+          <div class="qa-panel__header"><strong id="qa-title">Проверка документа</strong><button id="qa-close" class="icon-button icon-button--small icon-button--ghost" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
           <div id="qa-actions" class="qa-actions"></div>
           <div id="qa-summary" class="qa-summary"></div>
           <div id="qa-list" class="qa-list"></div>
@@ -384,7 +401,7 @@
 
     <div id="selection-box" class="selection-box" hidden></div>
     <aside id="knowledge-suggestion-popover" class="knowledge-suggestion-popover" hidden aria-label="Подсказки Базы знаний">
-      <div class="knowledge-suggestion-popover__header"><strong id="knowledge-suggestion-title">Совпадения БЗ</strong><button id="knowledge-suggestion-close" type="button" aria-label="Закрыть">×</button></div>
+      <div class="knowledge-suggestion-popover__header"><strong id="knowledge-suggestion-title">Совпадения БЗ</strong><button id="knowledge-suggestion-close" class="icon-button icon-button--small icon-button--ghost icon-button--warning" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
       <div id="knowledge-suggestion-list" class="knowledge-suggestion-list"></div>
     </aside>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -392,7 +409,7 @@
       <section class="document-library-dialog" role="dialog" aria-modal="true" aria-labelledby="document-library-title">
         <div class="settings-dialog__header">
           <div><p class="eyebrow">Локальное хранилище</p><h2 id="document-library-title">Документы</h2></div>
-          <button id="document-library-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+          <button id="document-library-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
         <p class="settings-dialog__intro">Архив скрывает документ из рабочего списка, но оставляет файлы на диске. Удаление необратимо.</p>
         <div id="document-library-list" class="document-library-list"><small>Загружаем список…</small></div>
@@ -402,13 +419,13 @@
       <section class="knowledge-base-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-base-title">
         <div class="settings-dialog__header">
           <div><p class="eyebrow">Переводческая память</p><h2 id="knowledge-base-title">База знаний</h2></div>
-          <button id="knowledge-base-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+          <button id="knowledge-base-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
         <div class="knowledge-base-toolbar">
           <input id="knowledge-base-query" type="search" placeholder="Найти в оригиналах и переводах…" aria-label="Поиск по Базе знаний" />
           <select id="knowledge-base-glossary-filter" aria-label="Фильтр по глоссарию"><option value="">Все глоссарии</option></select>
           <button id="knowledge-base-search-button" class="button" type="button">Найти</button>
-          <button id="knowledge-base-new-button" class="button button--primary" type="button">＋ Новая запись</button>
+          <button id="knowledge-base-new-button" class="button button--primary button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg><span>Новая запись</span></button>
         </div>
         <form id="knowledge-base-entry-form" class="knowledge-base-entry-form" hidden>
           <input id="knowledge-base-entry-id" type="hidden" />
@@ -427,9 +444,9 @@
         </form>
         <div id="knowledge-base-list" class="knowledge-base-list"><small>Загружаем записи…</small></div>
         <div class="knowledge-base-pagination">
-          <button id="knowledge-base-previous" class="button" type="button">← Назад</button>
+          <button id="knowledge-base-previous" class="button button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg><span>Назад</span></button>
           <span id="knowledge-base-page-summary">0 записей</span>
-          <button id="knowledge-base-next" class="button" type="button">Далее →</button>
+          <button id="knowledge-base-next" class="button button--with-icon" type="button"><span>Далее</span><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
         </div>
       </section>
     </div>
@@ -437,12 +454,12 @@
       <section class="instruction-library-dialog" role="dialog" aria-modal="true" aria-labelledby="instruction-library-title">
         <div class="settings-dialog__header">
           <div><p class="eyebrow">Правила перевода</p><h2 id="instruction-library-title">Готовые AI-инструкции</h2></div>
-          <button id="instruction-library-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+          <button id="instruction-library-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
         <p class="settings-dialog__intro">Шаблоны доступны во всех документах. Изменение шаблона не переписывает комментарии, уже добавленные в документы.</p>
         <div class="instruction-library-toolbar">
           <input id="instruction-library-query" type="search" placeholder="Найти по тексту инструкции…" aria-label="Поиск по AI-инструкциям" />
-          <button id="instruction-library-new" class="button button--primary" type="button">＋ Новая инструкция</button>
+          <button id="instruction-library-new" class="button button--primary button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg><span>Новая инструкция</span></button>
         </div>
         <form id="instruction-library-form" class="instruction-library-form" hidden>
           <input id="instruction-library-id" type="hidden" />
@@ -459,7 +476,7 @@
       <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
         <div class="settings-dialog__header">
           <div><p class="eyebrow">Настройки</p><h2 id="ai-settings-title">Маршрут AI</h2></div>
-          <button id="ai-settings-close" class="icon-button" type="button" aria-label="Закрыть">×</button>
+          <button id="ai-settings-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
         <p class="settings-dialog__intro">Выбранный маршрут используется для распознавания, сегментации, повторного анализа и перевода. Рендер страниц, редактор и экспорт работают локально.</p>
         <label>Провайдер
@@ -488,6 +505,7 @@
       </section>
     </div>
     <script src="/translation-units.js"></script>
+    <script src="/custom-select.js"></script>
     <script src="/studio.js"></script>
   </body>
 </html>

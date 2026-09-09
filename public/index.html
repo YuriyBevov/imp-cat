@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ICAT Grid Prototype</title>
+    <link rel="stylesheet" href="/ui-kit.css" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -54,16 +55,16 @@
               <option value="96">96 px</option>
             </select>
           </label>
-          <p id="grid-hint" class="hint">Сетка отображается только на белых листах. Шаг применяется при перемещении и изменении размера.</p>
+          <p id="grid-hint" class="hint">Сетка отображается только на белых листах. Шаг применяется только к координатам перемещения.</p>
 
           <div class="zoom-heading">
             <span>Масштаб просмотра</span>
             <output id="zoom-value" for="view-scale">100%</output>
           </div>
           <div class="zoom-control">
-            <button id="zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
+            <button id="zoom-out" class="icon-button icon-button--small" type="button" aria-label="Уменьшить масштаб"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
             <input id="view-scale" type="range" min="25" max="250" step="5" value="100" aria-label="Масштаб документа" />
-            <button id="zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
+            <button id="zoom-in" class="icon-button icon-button--small" type="button" aria-label="Увеличить масштаб"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
           </div>
           <button id="fit-width" class="button button--panel" type="button">По ширине поля</button>
           <p id="view-scale-hint" class="hint">После загрузки документ вписывается в рабочую область. Cmd/Ctrl + колесо меняет зум под курсором и не влияет на экспорт.</p>
@@ -87,7 +88,7 @@
 
           <button id="resolve-overlaps" class="button button--panel" type="button" disabled>Разнести наложения</button>
           <p class="hint">Команда сдвигает пересекающиеся сегменты вниз в пределах исходной страницы. Исходное положение можно вернуть через меню сегмента.</p>
-          <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите ⠿ у любого выбранного сегмента.</p>
+          <p class="hint"><strong>Групповое перемещение:</strong> протяните рамку левой кнопкой мыши по свободной области, затем перетащите кнопку перемещения у любого выбранного сегмента.</p>
           <p class="hint"><strong>Вне документа:</strong> перетащите выбранные сегменты в буфер справа от листов. Там они теряют координаты страницы и не участвуют в экспорте, пока вы не вернёте их на лист.</p>
           <p class="hint"><strong>Отмена:</strong> нажимайте Cmd/Ctrl + Z, чтобы пошагово отменять изменения документа.</p>
         </section>
@@ -110,12 +111,12 @@
           <p class="eyebrow">Редактор текста</p>
           <div id="editor-toolbar" class="editor-toolbar" aria-disabled="true">
             <div class="editor-toolbar__row" role="toolbar" aria-label="Форматирование текста">
-              <button type="button" data-editor-action="bold" aria-label="Полужирный текст" title="Полужирный текст"><strong>B</strong></button>
-              <button type="button" data-editor-action="italic" aria-label="Курсив" title="Курсив"><em>I</em></button>
-              <button type="button" data-editor-action="align-left" aria-label="Выровнять по левому краю" title="По левому краю">⇤</button>
-              <button type="button" data-editor-action="align-center" aria-label="Выровнять по центру" title="По центру">≡</button>
-              <button type="button" data-editor-action="align-right" aria-label="Выровнять по правому краю" title="По правому краю">⇥</button>
-              <button type="button" data-editor-action="insert-tab" aria-label="Вставить табуляцию" title="Вставить табуляцию">Tab ↹</button>
+              <button class="icon-button icon-button--small" type="button" data-editor-action="bold" aria-label="Полужирный текст" title="Полужирный текст"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button>
+              <button class="icon-button icon-button--small" type="button" data-editor-action="italic" aria-label="Курсив" title="Курсив"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-italic"></use></svg></button>
+              <button class="icon-button icon-button--small" type="button" data-editor-action="align-left" aria-label="Выровнять по левому краю" title="По левому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-left"></use></svg></button>
+              <button class="icon-button icon-button--small" type="button" data-editor-action="align-center" aria-label="Выровнять по центру" title="По центру"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-center"></use></svg></button>
+              <button class="icon-button icon-button--small" type="button" data-editor-action="align-right" aria-label="Выровнять по правому краю" title="По правому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-right"></use></svg></button>
+              <button class="icon-button icon-button--small" type="button" data-editor-action="insert-tab" aria-label="Вставить табуляцию" title="Вставить табуляцию"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-indent-increase"></use></svg></button>
             </div>
             <label class="editor-toolbar__size" for="editor-font-size">
               <span>Размер шрифта</span>
@@ -175,6 +176,7 @@
     <script src="/history-model.js"></script>
     <script src="/ooxml-model.js"></script>
     <script src="/segmentation-model.js"></script>
+    <script src="/custom-select.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

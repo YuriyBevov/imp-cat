@@ -1,20 +1,23 @@
 (() => {
   const $ = selector => document.querySelector(selector)
+  const iconMarkup = name => `<svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-${name}"></use></svg>`
   const translationUnits = window.IcatTranslationUnits
+  const GRID_DENSITY_COLUMNS = Object.freeze({ xs: 64, sm: 48, md: 32, lg: 24, xl: 16, xxl: 8 })
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
-    documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'), addDocumentTab: $('#add-document-tab'),
+    documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'),
     documentLibraryButton: $('#document-library-button'), documentLibraryModal: $('#document-library-modal'),
     documentLibraryClose: $('#document-library-close'), documentLibraryList: $('#document-library-list'),
     documentTitle: $('#document-title'), documentStatus: $('#document-status'), newDocument: $('#new-document-button'),
+    appbarMenu: $('#appbar-menu'), appbarMenuButton: $('#appbar-menu-button'), appbarActionsMenu: $('#appbar-actions-menu'),
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
-    thumbnails: $('#page-thumbnails'), pageCount: $('#page-count'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
+    thumbnails: $('#page-thumbnails'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     viewLayout: $('#view-layout-button'), viewSegments: $('#view-segments-button'), sourcePanelToggle: $('#source-panel-toggle'),
-    zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomOutput: $('#zoom-output'),
-    gridSnap: $('#grid-snap'), gridSize: $('#grid-size'),
+    zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
+    gridSize: $('#grid-size'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
-    sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
+    sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewCancel: $('#layout-review-cancel-button'), layoutReviewStatus: $('#layout-review-status'),
@@ -33,8 +36,10 @@
     translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
     translationUnitsApplyExact: $('#translation-units-apply-exact'), translationSelectionPreview: $('#translation-selection-preview'),
     fontSize: $('#font-size'), lineHeight: $('#line-height'), objectX: $('#object-x'), objectY: $('#object-y'),
-    objectWidth: $('#object-width'), objectHeight: $('#object-height'), toolbarFontSize: $('#toolbar-font-size'),
-    documentFontSize: $('#document-font-size'), applyDocumentFontSize: $('#apply-document-font-size'),
+    objectWidth: $('#object-width'), objectHeight: $('#object-height'),
+    toolbarFontSizeDecrease: $('#toolbar-font-size-decrease'), toolbarFontSizeValue: $('#toolbar-font-size-value'), toolbarFontSizeIncrease: $('#toolbar-font-size-increase'),
+    toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
+    formatAllSegments: $('#format-all-segments'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
     alignmentScope: $('#alignment-scope'),
     flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
@@ -85,6 +90,7 @@
     focusedTranslationUnitId: null,
     viewMode: 'layout',
     sourceCollapsed: false,
+    sourcePanCleanup: null,
     pendingWorkbenchZoom: null,
     pendingSourceZoom: null,
     tabs: new Map(),
@@ -343,8 +349,8 @@
         ? `${tab.title} · ${tab.progress || 0}%`
         : tab.title
       const close = document.createElement('span')
-      close.className = 'document-tab__close'
-      close.textContent = '×'
+      close.className = 'icon-button icon-button--tiny icon-button--ghost icon-button--muted document-tab__close'
+      close.innerHTML = iconMarkup('close')
       close.title = 'Закрыть вкладку'
       close.addEventListener('click', event => {
         event.stopPropagation()
@@ -761,14 +767,12 @@
     renderDocumentTabs()
     elements.documentTitle.textContent = state.scene.title
     elements.documentStatus.textContent = `${state.scene.pages.length} стр. · ${state.scene.objects.length} сегментов · сохранено локально`
-    elements.pageCount.textContent = state.scene.pages.length
     elements.sourceLanguage.value = state.scene.sourceLanguage
     elements.targetLanguage.value = state.scene.targetLanguage
     elements.knowledgeBaseMode.value = state.scene.knowledgeBaseMode === 'priority' ? 'priority' : 'suggestions'
     elements.globalTranslationInstruction.value = state.scene.globalTranslationInstruction || ''
     loadKnowledgeBase().catch(() => {})
-    elements.gridSize.value = String(currentGridSize())
-    elements.gridSnap.checked = gridSnapEnabled()
+    elements.gridSize.value = currentGridDensity()
     const recognition = state.scene.recognition
     const recognitionSummary = recognition?.mode === 'codex'
       ? `Документ полностью разобран агентом${recognition.model ? ` ${recognition.model}` : ''}.`
@@ -813,8 +817,7 @@
     closeKnowledgeSuggestion()
     rebuildClientTables()
     renderThumbnails()
-    elements.gridSize.value = String(currentGridSize())
-    elements.gridSnap.checked = gridSnapEnabled()
+    elements.gridSize.value = currentGridDensity()
     elements.studioView.classList.toggle('is-segments-mode', state.viewMode === 'segments')
     elements.canvas.classList.toggle('is-segments-view', state.viewMode === 'segments')
     elements.canvas.replaceChildren()
@@ -933,6 +936,7 @@
       applySourceZoom()
       return
     }
+    stopSourcePan()
     elements.sourcePreviewCanvas.replaceChildren()
     const shell = document.createElement('div')
     shell.className = 'source-preview-page-shell'
@@ -943,6 +947,7 @@
     const image = document.createElement('img')
     image.src = page.imageUrl
     image.alt = `Оригинал страницы ${page.index + 1}`
+    image.draggable = false
     const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
     Object.assign(image.style, {
       left: `${sourceFrame.x}px`, top: `${sourceFrame.y}px`,
@@ -983,6 +988,52 @@
     setSourceZoom((elements.sourcePreviewScroll.clientWidth - 56) / page.widthPx)
   }
 
+  function stopSourcePan() {
+    state.sourcePanCleanup?.()
+  }
+
+  function beginSourcePan(event) {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || !event.target.closest?.('.source-preview-page')) return
+    stopSourcePan()
+    event.preventDefault()
+    const pointerId = event.pointerId
+    const startX = event.clientX
+    const startY = event.clientY
+    const startLeft = elements.sourcePreviewScroll.scrollLeft
+    const startTop = elements.sourcePreviewScroll.scrollTop
+    let active = true
+
+    const cleanup = () => {
+      if (!active) return
+      active = false
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      if (elements.sourcePreviewScroll.hasPointerCapture?.(pointerId)) {
+        elements.sourcePreviewScroll.releasePointerCapture(pointerId)
+      }
+      elements.sourcePreviewScroll.classList.remove('is-panning')
+      if (state.sourcePanCleanup === cleanup) state.sourcePanCleanup = null
+    }
+    const move = moveEvent => {
+      if (!active || moveEvent.pointerId !== pointerId) return
+      moveEvent.preventDefault()
+      elements.sourcePreviewScroll.scrollLeft = startLeft - (moveEvent.clientX - startX)
+      elements.sourcePreviewScroll.scrollTop = startTop - (moveEvent.clientY - startY)
+    }
+    const finish = finishEvent => {
+      if (finishEvent.pointerId !== pointerId) return
+      cleanup()
+    }
+
+    state.sourcePanCleanup = cleanup
+    elements.sourcePreviewScroll.classList.add('is-panning')
+    elements.sourcePreviewScroll.setPointerCapture?.(pointerId)
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+  }
+
   function renderThumbnails() {
     elements.thumbnails.replaceChildren()
     for (const page of state.scene.pages) {
@@ -994,7 +1045,8 @@
       image.src = page.imageUrl
       image.alt = ''
       const label = document.createElement('span')
-      label.textContent = `Страница ${page.index + 1}`
+      label.textContent = String(page.index + 1)
+      button.setAttribute('aria-label', `Страница ${page.index + 1}`)
       button.append(image, label)
       button.addEventListener('click', () => focusPage(page.index))
       elements.thumbnails.append(button)
@@ -1093,7 +1145,7 @@
     const result = {}
     for (const range of styleRanges(object, field)) {
       if (offset < range.start || offset >= range.end) continue
-      for (const property of ['fontSizePx', 'fontWeight', 'fontStyle', 'color']) {
+      for (const property of ['fontFamily', 'fontSizePx', 'fontWeight', 'fontStyle', 'color']) {
         if (range[property] != null) result[property] = range[property]
       }
     }
@@ -1136,7 +1188,8 @@
       const data = await response.json()
       state.scene = data.scene
       closeKnowledgeSuggestion()
-      renderDocument()
+      const object = state.scene.objects.find(item => item.id === objectId)
+      renderDocumentWithContentFit(object ? [object] : [])
       scheduleSave()
       showToast(data.source === 'memory' ? 'Применён полный перевод из БЗ' : 'Перевод скорректирован с учётом термина БЗ')
     } catch (error) {
@@ -1164,7 +1217,7 @@
       source.textContent = match.sourceText
       const arrow = document.createElement('span')
       arrow.className = 'knowledge-suggestion__arrow'
-      arrow.textContent = '→'
+      arrow.innerHTML = iconMarkup('arrow-right')
       const translation = document.createElement('span')
       translation.textContent = match.translation
       pair.append(source, arrow, translation)
@@ -1229,7 +1282,7 @@
     translationUnits.syncObjectTranslation(object)
     object.translationTextStyles = []
     object.status = 'machine-translated'
-    renderDocument()
+    renderDocumentWithContentFit([object])
     scheduleSave()
     showToast('Использован первоначальный перевод ИИ')
   }
@@ -1269,6 +1322,7 @@
       const span = document.createElement('span')
       span.textContent = value
       if (Object.keys(runStyle).length) span.dataset.textStyle = 'true'
+      if (runStyle.fontFamily != null) span.style.fontFamily = runStyle.fontFamily
       if (runStyle.fontSizePx != null) span.style.fontSize = `${runStyle.fontSizePx}px`
       if (runStyle.fontWeight != null) span.style.fontWeight = runStyle.fontWeight
       if (runStyle.fontStyle != null) span.style.fontStyle = runStyle.fontStyle
@@ -1302,7 +1356,10 @@
 
   function rememberTextSelection(content, objectId) {
     const selection = getTextSelection(content, objectId)
-    if (selection) state.lastTextSelection = selection
+    if (selection) {
+      state.lastTextSelection = selection
+      refreshFormattingToolbar()
+    }
   }
 
   function extractInlineStyles(content, expectedText) {
@@ -1314,10 +1371,11 @@
         const parent = node.parentElement?.closest?.('[data-text-style]')
         if (parent && length) {
           const range = { start: cursor, end: cursor + length }
+          if (parent.style.fontFamily) range.fontFamily = parent.style.fontFamily.replace(/^['"]|['"]$/g, '')
           if (parent.style.fontSize) range.fontSizePx = Number.parseFloat(parent.style.fontSize)
           if (parent.style.fontWeight) range.fontWeight = Number.parseFloat(parent.style.fontWeight) || (parent.style.fontWeight === 'bold' ? 700 : undefined)
           if (parent.style.fontStyle) range.fontStyle = parent.style.fontStyle
-          if (parent.style.color) range.color = parent.style.color
+          if (parent.style.color) range.color = normalizeTextColor(parent.style.color)
           ranges.push(range)
         }
         cursor += length
@@ -1632,9 +1690,9 @@
     badge.className = 'scene-object__badge'
     badge.textContent = typeLabel(object.type)
     const handle = document.createElement('button')
-    handle.className = 'scene-object__handle'
+    handle.className = 'icon-button icon-button--tiny icon-button--filled scene-object__handle'
     handle.type = 'button'
-    handle.textContent = '⠿'
+    handle.innerHTML = iconMarkup('grip-vertical')
     handle.title = 'Переместить'
     handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
@@ -1678,8 +1736,8 @@
       }
       scheduleSave()
       requestAnimationFrame(() => {
+        fitObjectsToRenderedContent([object], state.viewMode === 'layout')
         if (state.viewMode === 'segments') refreshSegmentsViewHeights()
-        else growObjectToContent(node, object)
       })
     })
     const resize = document.createElement('span')
@@ -1720,10 +1778,15 @@
     if (!node || !object || state.viewMode !== 'layout') return false
     const content = node.querySelector('.scene-object__content')
     if (!content) return false
-    const requiredHeight = Math.ceil(Math.max(content.scrollHeight, content.getBoundingClientRect().height) + 2)
+    // The visible content has min-height: 100%. Measuring that rendered box and
+    // adding padding made every full rerender grow every segment by a few pixels.
+    // The isolated probe measures only the intrinsic text at the stored width,
+    // making repeated renders and drag operations geometrically idempotent.
+    const requiredHeight = minimumObjectHeight(object, object.width)
     if (!Number.isFinite(requiredHeight) || requiredHeight <= object.height + 1) return false
     const page = state.scene.pages[object.pageIndex]
-    object.height = Math.min(page.heightPx * 2, Math.max(12, requiredHeight))
+    const areaBottom = page.contentBounds.y + page.contentBounds.height
+    object.height = Math.min(Math.max(12, areaBottom - object.y), Math.max(12, requiredHeight))
     node.style.height = `${object.height}px`
     return true
   }
@@ -1738,24 +1801,28 @@
     if (changed) scheduleSave()
   }
 
-  function currentGridSize() {
-    const value = Number(state.scene?.gridSize)
-    return Number.isFinite(value) ? Math.min(96, Math.max(4, value)) : 8
+  function currentGridDensity() {
+    return GRID_DENSITY_COLUMNS[state.scene?.gridDensity] ? state.scene.gridDensity : 'xs'
   }
 
-  function gridSnapEnabled() {
-    return state.scene?.snapToGrid !== false
+  function currentGridSize(page = state.scene?.pages?.[state.activePage] || state.scene?.pages?.[0]) {
+    const columns = GRID_DENSITY_COLUMNS[currentGridDensity()]
+    return page?.contentBounds?.width > 0 ? page.contentBounds.width / columns : 8
   }
 
-  function snapCoordinate(value) {
-    if (!gridSnapEnabled()) return value
-    const size = currentGridSize()
-    return Math.round(value / size) * size
+  function snapCoordinate(value, page, axis = 'x') {
+    const size = currentGridSize(page)
+    const area = page?.contentBounds || { x: 0, y: 0, width: page?.widthPx || 0, height: page?.heightPx || 0 }
+    const origin = axis === 'y' ? area.y : area.x
+    const boundary = origin + (axis === 'y' ? area.height : area.width)
+    const line = origin + Math.round((value - origin) / size) * size
+    // The bottom boundary is also a valid line when the page aspect ratio
+    // leaves a partial final row.
+    return Math.min(boundary, Math.max(origin, line))
   }
 
-  function snapSizeUp(value) {
-    if (!gridSnapEnabled()) return Math.ceil(value)
-    return Math.ceil(value / currentGridSize()) * currentGridSize()
+  function contentSize(value) {
+    return Math.ceil(value)
   }
 
   function estimatedContentSize(object, width) {
@@ -1772,25 +1839,31 @@
   }
 
   function measureObjectContent(object, width = null) {
-    const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
+    const renderedNodes = [...elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)]
+    const node = renderedNodes.find(candidate => candidate.classList.contains('scene-object--translation'))
+      || renderedNodes.find(candidate => !candidate.classList.contains('scene-object--source'))
+      || renderedNodes[0]
     if (!node) return estimatedContentSize(object, width)
-    const probe = node.cloneNode(true)
-    const content = probe.querySelector('.scene-object__content')
-    probe.classList.remove('is-selected')
+    const sourceContent = node.querySelector('.scene-object__content')
+    if (!sourceContent) return estimatedContentSize(object, width)
+    const probe = sourceContent.cloneNode(true)
+    probe.contentEditable = 'false'
     Object.assign(probe.style, {
-      position: 'fixed', left: '-100000px', top: '0', width: width == null ? 'max-content' : `${width}px`,
-      height: 'auto', minWidth: '0', minHeight: '0', maxWidth: 'none', transform: 'none', visibility: 'hidden',
+      position: 'fixed', left: '-100000px', top: '0', display: 'inline-block',
+      width: width == null ? 'max-content' : `${Math.max(12, width)}px`, height: 'auto',
+      minWidth: '12px', minHeight: '12px', maxWidth: 'none', boxSizing: 'border-box',
+      padding: '1px 3px', border: '1px solid transparent', transform: 'none', visibility: 'hidden',
       pointerEvents: 'none', overflow: 'visible', zIndex: '-1',
-    })
-    if (content) Object.assign(content.style, {
-      width: width == null ? 'max-content' : '100%', height: 'auto', overflow: 'visible',
-      whiteSpace: width == null ? 'pre' : 'pre-wrap',
+      whiteSpace: width == null ? 'pre' : 'pre-wrap', overflowWrap: width == null ? 'normal' : 'anywhere',
+      fontFamily: object.style?.fontFamily || 'Arial', fontSize: `${object.style?.fontSizePx || 14}px`,
+      fontWeight: object.style?.fontWeight || 400, fontStyle: object.style?.fontStyle || 'normal',
+      lineHeight: object.style?.lineHeight || 1.2, textAlign: object.style?.textAlign || 'left',
     })
     document.body.append(probe)
     const rectangle = probe.getBoundingClientRect()
     const measured = {
       width: width == null ? Math.max(rectangle.width, probe.scrollWidth) : width,
-      height: Math.max(rectangle.height, probe.scrollHeight, content?.scrollHeight || 0),
+      height: Math.max(rectangle.height, probe.scrollHeight),
     }
     probe.remove()
     const fallback = estimatedContentSize(object, width)
@@ -1800,21 +1873,78 @@
     }
   }
 
+  function minimumObjectHeight(object, width = object.width) {
+    const measured = Math.max(12, Math.ceil(measureObjectContent(object, width).height))
+    return measured
+  }
+
+  function constrainObjectHeight(object, requestedHeight, width = object.width) {
+    const page = state.scene.pages[object.pageIndex]
+    const maximum = Math.max(12, page.contentBounds.y + page.contentBounds.height - object.y)
+    const requested = Math.min(maximum, Math.max(12, requestedHeight))
+    // When the content itself is taller than the remaining page area, preserving
+    // readable content takes precedence. QA will still report the page overflow.
+    return Math.max(minimumObjectHeight(object, width), requested)
+  }
+
+  function canFitObjectToText(object) {
+    return Boolean(object && !object.excluded && object.type !== 'image' && object.type !== 'logo' && state.scene?.pages?.[object.pageIndex])
+  }
+
+  function fitObjectGeometryToContent(object) {
+    if (!canFitObjectToText(object)) return false
+    const page = state.scene.pages[object.pageIndex]
+    const natural = measureObjectContent(object)
+    const area = page.contentBounds
+    const width = Math.min(area.width, Math.max(12, contentSize(natural.width)))
+    const wrapped = measureObjectContent(object, width)
+    const height = Math.max(12, contentSize(wrapped.height))
+    const x = Math.max(area.x, Math.min(object.x, area.x + area.width - width))
+    const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5 || Math.abs(object.x - x) > .5
+    Object.assign(object, { x, width, height })
+    return changed
+  }
+
+  function fitObjectsToRenderedContent(objects, updateNodes = false) {
+    let changed = false
+    for (const object of objects) {
+      if (!fitObjectGeometryToContent(object)) continue
+      changed = true
+      if (updateNodes) {
+        for (const node of elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)) positionObjectNode(node, object)
+      }
+    }
+    return changed
+  }
+
+  function renderDocumentWithContentFit(objects) {
+    renderDocument()
+    if (fitObjectsToRenderedContent(objects)) renderDocument()
+  }
+
   function fitSelectionToContent(mode) {
     const objects = selectedObjects()
     if (!objects.length) return
+    cancelPointerAction()
     checkpoint()
     for (const object of objects) {
       const page = state.scene.pages[object.pageIndex]
       let width = object.width
-      if (mode === 'width' || mode === 'both') {
-        const natural = measureObjectContent(object)
-        width = Math.min(Math.max(12, page.widthPx - object.x), Math.max(12, snapSizeUp(natural.width + 1)))
-        object.width = width
+      if (mode === 'both') {
+        fitObjectGeometryToContent(object)
+        continue
       }
-      if (mode === 'height' || mode === 'both') {
+      if (mode === 'width') {
+        const natural = measureObjectContent(object)
+        width = Math.min(page.contentBounds.width, Math.max(12, contentSize(natural.width)))
+        object.width = width
+        object.x = Math.max(page.contentBounds.x, Math.min(object.x, page.contentBounds.x + page.contentBounds.width - object.width))
+      }
+      if (mode === 'height') {
         const wrapped = measureObjectContent(object, width)
-        object.height = Math.min(Math.max(12, page.heightPx - object.y), Math.max(12, snapSizeUp(wrapped.height + 1)))
+        object.height = Math.max(12, contentSize(wrapped.height))
+      } else if (mode === 'width') {
+        object.height = Math.max(object.height, minimumObjectHeight(object, width))
       }
     }
     renderDocument()
@@ -1824,9 +1954,9 @@
   }
 
   function applyGridToSurface(surface) {
-    const size = currentGridSize()
+    const page = state.scene.pages[Number(surface.dataset.pageIndex)] || state.scene.pages[0]
+    const size = currentGridSize(page)
     surface.style.setProperty('--grid-size', `${size}px`)
-    surface.style.setProperty('--grid-major-size', `${size * 4}px`)
   }
 
   function captureZoomAnchor(scroller, surface, anchorEvent, zoom) {
@@ -1889,7 +2019,10 @@
   function toggleSourcePanel() {
     state.sourceCollapsed = !state.sourceCollapsed
     elements.studioView.classList.toggle('is-source-collapsed', state.sourceCollapsed)
-    elements.sourcePanelToggle.textContent = state.sourceCollapsed ? 'Показать оригинал' : 'Скрыть оригинал'
+    const label = state.sourceCollapsed ? 'Показать оригинал' : 'Скрыть оригинал'
+    elements.sourcePanelToggle.title = label
+    elements.sourcePanelToggle.setAttribute('aria-label', label)
+    elements.sourcePanelToggle.classList.toggle('is-active', !state.sourceCollapsed)
     elements.sourcePanelToggle.setAttribute('aria-expanded', String(!state.sourceCollapsed))
   }
 
@@ -2086,6 +2219,7 @@
         save.disabled = !unit.translation.trim()
         save.textContent = 'Сохранить эту пару в БЗ'
         renderSelectedText('translation')
+        fitObjectsToRenderedContent([object], state.viewMode === 'layout')
         scheduleSave()
       })
       input.addEventListener('blur', () => { state.textCheckpoint = false })
@@ -2101,7 +2235,7 @@
         apply.addEventListener('click', () => {
           checkpoint()
           applyExactSuggestion(object, unit)
-          renderDocument()
+          renderDocumentWithContentFit([object])
           scheduleSave()
         })
         suggestion.append(value, apply)
@@ -2168,6 +2302,7 @@
     })
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     elements.flexApply.disabled = !onePage || selection.length < 2
+    refreshFormattingToolbar()
     elements.agentNotes.hidden = true
     elements.tableCellFields.hidden = !selection.length || selection.some(item => item.type !== 'table_cell')
     if (!selection.length) {
@@ -2203,14 +2338,6 @@
     setMixedControl(elements.objectY, selection.map(item => Math.round(item.y)))
     setMixedControl(elements.objectWidth, selection.map(item => Math.round(item.width)))
     setMixedControl(elements.objectHeight, selection.map(item => Math.round(item.height)))
-    elements.toolbarFontSize.value = String(Math.round(first.style.fontSizePx))
-    document.querySelectorAll('.format-button').forEach(button => {
-      const action = button.dataset.format
-      const active = action === 'bold' ? selection.every(item => item.style.fontWeight >= 600)
-        : action === 'italic' ? selection.every(item => item.style.fontStyle === 'italic')
-          : selection.every(item => item.style.textAlign === action)
-      button.classList.toggle('is-active', active)
-    })
     renderTranslationUnits(selection)
   }
 
@@ -2240,21 +2367,40 @@
   function clampGroupShift(objects, dx, dy) {
     const page = state.scene.pages[objects[0].pageIndex]
     const bounds = boundsOf(objects)
-    const minimumX = -bounds.left
-    const maximumX = page.widthPx - bounds.right
-    const minimumY = -bounds.top
-    const maximumY = page.heightPx - bounds.bottom
+    const area = page.contentBounds
+    const minimumX = area.x - bounds.left
+    const maximumX = area.x + area.width - bounds.right
+    const minimumY = area.y - bounds.top
+    const maximumY = area.y + area.height - bounds.bottom
     return {
       x: minimumX <= maximumX ? Math.min(maximumX, Math.max(minimumX, dx)) : minimumX,
       y: minimumY <= maximumY ? Math.min(maximumY, Math.max(minimumY, dy)) : minimumY,
     }
   }
 
+  function snapAxisPosition(value, minimum, maximum, page, axis) {
+    const area = page.contentBounds
+    const origin = axis === 'y' ? area.y : area.x
+    const size = currentGridSize(page)
+    if (maximum < minimum) return minimum
+    const firstIndex = Math.ceil((minimum - origin) / size - 0.000001)
+    const lastIndex = Math.floor((maximum - origin) / size + 0.000001)
+    if (firstIndex > lastIndex) return Math.min(maximum, Math.max(minimum, value))
+    const requestedIndex = Math.round((value - origin) / size)
+    const index = Math.min(lastIndex, Math.max(firstIndex, requestedIndex))
+    return origin + index * size
+  }
+
   function snapObjectGroups(objects) {
-    if (!gridSnapEnabled()) return
     for (const group of groupedByPage(objects).values()) {
       const bounds = boundsOf(group)
-      const shift = clampGroupShift(group, snapCoordinate(bounds.left) - bounds.left, snapCoordinate(bounds.top) - bounds.top)
+      const page = state.scene.pages[group[0].pageIndex]
+      const area = page.contentBounds
+      const maximumLeft = area.x + area.width - bounds.width
+      const maximumTop = area.y + area.height - bounds.height
+      const targetLeft = snapAxisPosition(bounds.left, area.x, maximumLeft, page, 'x')
+      const targetTop = snapAxisPosition(bounds.top, area.y, maximumTop, page, 'y')
+      const shift = { x: targetLeft - bounds.left, y: targetTop - bounds.top }
       for (const object of group) {
         object.x += shift.x
         object.y += shift.y
@@ -2309,9 +2455,7 @@
     const objects = selectionOnOnePage(1)
     if (!objects) return
     const page = state.scene.pages[objects[0].pageIndex]
-    const area = elements.alignmentScope.value === 'page'
-      ? { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
-      : page.contentBounds
+    const area = page.contentBounds
     const bounds = boundsOf(objects)
     let dx = 0
     let dy = 0
@@ -2328,12 +2472,13 @@
     }
     const shift = clampGroupShift(objects, 0, 0)
     for (const object of objects) { object.x += shift.x; object.y += shift.y }
+    snapObjectGroups(objects)
     renderDocument()
     scheduleSave()
   }
 
   function flexContainerArea(page, objects, scope) {
-    if (scope === 'page') return { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+    if (scope === 'page') return { ...page.contentBounds }
     if (scope === 'content') return { ...page.contentBounds }
     const bounds = boundsOf(objects)
     return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height }
@@ -2416,22 +2561,75 @@
 
     const shift = clampGroupShift(objects, 0, 0)
     for (const object of objects) { object.x += shift.x; object.y += shift.y }
-    if (scope === 'selection') snapObjectGroups(objects)
+    snapObjectGroups(objects)
     renderDocument()
     scheduleSave()
     showToast(`${horizontal ? 'Горизонтальная' : 'Вертикальная'} расстановка применена`)
   }
 
+  function cancelPointerAction() {
+    const action = state.pointerAction
+    if (!action) return
+    action.cancel?.()
+    if (state.pointerAction === action) state.pointerAction = null
+  }
+
+  function startPointerAction(event, captureElement, action, handlers) {
+    const pointerId = event.pointerId
+    let active = true
+    let lastEvent = event
+    const cleanup = () => {
+      if (!active) return
+      active = false
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', commit)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', cancel)
+      captureElement.removeEventListener('lostpointercapture', cancel)
+      if (captureElement.hasPointerCapture?.(pointerId)) captureElement.releasePointerCapture(pointerId)
+      if (state.pointerAction === action) state.pointerAction = null
+    }
+    const move = current => {
+      if (!active || current.pointerId !== pointerId) return
+      if (current.cancelable) current.preventDefault()
+      lastEvent = current
+      handlers.move?.(current)
+    }
+    const commit = current => {
+      if (!active || current.pointerId !== pointerId) return
+      if (current.cancelable) current.preventDefault()
+      lastEvent = current
+      handlers.move?.(current)
+      cleanup()
+      handlers.commit?.(current)
+    }
+    const cancel = current => {
+      if (!active || (current?.pointerId != null && current.pointerId !== pointerId)) return
+      cleanup()
+      handlers.cancel?.(lastEvent)
+    }
+    action.cancel = () => cancel(null)
+    action.updateFromScroll = () => { if (active) handlers.move?.(lastEvent) }
+    state.pointerAction = action
+    try { captureElement.setPointerCapture?.(pointerId) } catch {}
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', commit)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cancel)
+    captureElement.addEventListener('lostpointercapture', cancel)
+  }
+
   function beginMarquee(event) {
     if (event.button !== 0 || event.target.closest('.scene-object')) return
+    cancelPointerAction()
     event.preventDefault()
     const surface = event.currentTarget
     const additive = event.metaKey || event.ctrlKey
-    const originalSelection = additive ? new Set(state.selected) : new Set()
+    const selectionBefore = new Set(state.selected)
+    const originalSelection = additive ? new Set(selectionBefore) : new Set()
     const start = { x: event.clientX, y: event.clientY }
     elements.selectionBox.hidden = false
     Object.assign(elements.selectionBox.style, { left: `${start.x}px`, top: `${start.y}px`, width: '0px', height: '0px' })
-    surface.setPointerCapture(event.pointerId)
     const move = current => {
       const left = Math.min(start.x, current.clientX)
       const top = Math.min(start.y, current.clientY)
@@ -2445,48 +2643,44 @@
       }
       refreshSelection()
     }
-    const finish = current => {
-      move(current)
-      elements.selectionBox.hidden = true
-      surface.removeEventListener('pointermove', move)
-      surface.removeEventListener('pointerup', finish)
-      surface.removeEventListener('pointercancel', finish)
-    }
-    surface.addEventListener('pointermove', move)
-    surface.addEventListener('pointerup', finish)
-    surface.addEventListener('pointercancel', finish)
+    startPointerAction(event, surface, { kind: 'marquee', pointerId: event.pointerId }, {
+      move,
+      commit: () => { elements.selectionBox.hidden = true },
+      cancel: () => {
+        elements.selectionBox.hidden = true
+        state.selected = selectionBefore
+        refreshSelection()
+      },
+    })
   }
 
   function beginDrag(event, id) {
     if (event.button !== 0) return
+    cancelPointerAction()
     event.preventDefault()
     event.stopPropagation()
     state.lastTextSelection = null
     if (!state.selected.has(id)) state.selected = new Set([id])
+    const historyLength = state.history.length
     checkpoint()
     refreshSelection()
     const objects = selectedObjects()
     const handle = event.currentTarget
-    const pointerId = event.pointerId
     const origins = new Map(objects.map(object => [object.id, { x: object.x, y: object.y, pageIndex: object.pageIndex }]))
     const start = { x: event.clientX, y: event.clientY, scrollLeft: elements.canvasScroll.scrollLeft, scrollTop: elements.canvasScroll.scrollTop }
     const action = { kind: 'drag', pointerId: event.pointerId, objects, origins, start, lastX: event.clientX, lastY: event.clientY }
-    state.pointerAction = action
-    handle.setPointerCapture(pointerId)
     const update = current => {
       action.lastX = current.clientX
       action.lastY = current.clientY
       const deltaX = (current.clientX - start.x + elements.canvasScroll.scrollLeft - start.scrollLeft) / state.zoom
       const deltaY = (current.clientY - start.y + elements.canvasScroll.scrollTop - start.scrollTop) / state.zoom
       for (const group of groupedByPage(objects).values()) {
-        const originBounds = boundsOf(group.map(object => ({ ...object, ...origins.get(object.id) })))
-        const page = state.scene.pages[group[0].pageIndex]
-        const boundedX = originBounds.width > page.widthPx ? -originBounds.left : Math.min(page.widthPx - originBounds.right, Math.max(-originBounds.left, deltaX))
-        const boundedY = originBounds.height > page.heightPx ? -originBounds.top : Math.min(page.heightPx - originBounds.bottom, Math.max(-originBounds.top, deltaY))
+        const originObjects = group.map(object => ({ ...object, ...origins.get(object.id) }))
+        const boundedShift = clampGroupShift(originObjects, deltaX, deltaY)
         for (const object of group) {
           const origin = origins.get(object.id)
-          object.x = origin.x + boundedX
-          object.y = origin.y + boundedY
+          object.x = origin.x + boundedShift.x
+          object.y = origin.y + boundedShift.y
           const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
           if (node) positionObjectNode(node, object)
         }
@@ -2494,25 +2688,22 @@
       refreshInspectorCoordinates()
     }
     const finish = current => {
-      update(current)
-      const destination = document.elementFromPoint(current.clientX, current.clientY)?.closest('.studio-page')
+      const destination = document.elementFromPoint?.(current.clientX, current.clientY)?.closest('.studio-page')
       if (destination && objects.every(object => object.pageIndex === objects[0].pageIndex)) {
         const destinationIndex = Number(destination.dataset.pageIndex)
         if (destinationIndex !== objects[0].pageIndex) moveSelectionToPage(destinationIndex, current.clientX, current.clientY, objects)
       }
       snapObjectGroups(objects)
-      state.pointerAction = null
-      handle.removeEventListener('pointermove', update)
-      handle.removeEventListener('pointerup', finish)
-      handle.removeEventListener('pointercancel', finish)
-      if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
       renderDocument()
       scheduleSave()
     }
-    handle.addEventListener('pointermove', update)
-    handle.addEventListener('pointerup', finish)
-    handle.addEventListener('pointercancel', finish)
-    action.updateFromScroll = () => update({ clientX: action.lastX, clientY: action.lastY })
+    const cancel = () => {
+      for (const object of objects) Object.assign(object, origins.get(object.id))
+      state.history.length = historyLength
+      refreshUndoButtons()
+      renderDocument()
+    }
+    startPointerAction(event, handle, action, { move: update, commit: finish, cancel })
   }
 
   function moveSelectionToPage(pageIndex, clientX, clientY, objects) {
@@ -2537,41 +2728,35 @@
 
   function beginResize(event, id) {
     if (event.button !== 0) return
+    cancelPointerAction()
     event.preventDefault()
     event.stopPropagation()
     const object = state.scene.objects.find(item => item.id === id)
     if (!object) return
     const handle = event.currentTarget
-    const pointerId = event.pointerId
+    const historyLength = state.history.length
     checkpoint()
-    const start = { x: event.clientX, y: event.clientY, width: object.width, height: object.height }
-    handle.setPointerCapture(pointerId)
+    const start = { x: event.clientX, y: event.clientY, width: object.width, height: object.height, xPosition: object.x, yPosition: object.y }
+    const action = { kind: 'resize', pointerId: event.pointerId, object, start }
     const update = current => {
       const page = state.scene.pages[object.pageIndex]
-      object.width = Math.min(page.widthPx - object.x, Math.max(12, start.width + (current.clientX - start.x) / state.zoom))
-      object.height = Math.min(page.heightPx - object.y, Math.max(12, start.height + (current.clientY - start.y) / state.zoom))
+      const area = page.contentBounds
+      object.width = Math.min(area.x + area.width - object.x, Math.max(12, start.width + (current.clientX - start.x) / state.zoom))
+      object.height = constrainObjectHeight(object, start.height + (current.clientY - start.y) / state.zoom, object.width)
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (node) positionObjectNode(node, object)
       refreshInspectorCoordinates()
     }
-    const finish = current => {
-      update(current)
-      if (gridSnapEnabled()) {
-        object.width = Math.min(state.scene.pages[object.pageIndex].widthPx - object.x, Math.max(12, snapCoordinate(object.width)))
-        object.height = Math.min(state.scene.pages[object.pageIndex].heightPx - object.y, Math.max(12, snapCoordinate(object.height)))
-        const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
-        if (node) positionObjectNode(node, object)
-        refreshInspectorCoordinates()
-      }
-      handle.removeEventListener('pointermove', update)
-      handle.removeEventListener('pointerup', finish)
-      handle.removeEventListener('pointercancel', finish)
-      if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
-      scheduleSave()
+    const finish = () => { scheduleSave() }
+    const cancel = () => {
+      Object.assign(object, { x: start.xPosition, y: start.yPosition, width: start.width, height: start.height })
+      state.history.length = historyLength
+      refreshUndoButtons()
+      const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
+      if (node) positionObjectNode(node, object)
+      refreshInspectorCoordinates()
     }
-    handle.addEventListener('pointermove', update)
-    handle.addEventListener('pointerup', finish)
-    handle.addEventListener('pointercancel', finish)
+    startPointerAction(event, handle, action, { move: update, commit: finish, cancel })
   }
 
   function refreshInspectorCoordinates() {
@@ -2593,6 +2778,7 @@
   }
 
   function undo() {
+    cancelPointerAction()
     if (!state.history.length) return
     state.future.push(JSON.stringify(state.scene))
     state.scene = JSON.parse(state.history.pop())
@@ -2603,6 +2789,7 @@
   }
 
   function redo() {
+    cancelPointerAction()
     if (!state.future.length) return
     state.history.push(JSON.stringify(state.scene))
     state.scene = JSON.parse(state.future.pop())
@@ -2695,7 +2882,9 @@
       const data = await response.json()
       checkpoint()
       state.scene = data.scene
-      renderDocument()
+      const translatedObjects = state.scene.objects.filter(object => objectIds.includes(object.id))
+      renderDocumentWithContentFit(translatedObjects)
+      scheduleSave()
       elements.agentStatus.textContent = data.message
       showToast(data.message, data.pending.length > 0 && !data.translated.length && !data.suggested?.length)
     } catch (error) {
@@ -2737,7 +2926,11 @@
       const data = await response.json()
       checkpoint()
       state.scene = data.scene
-      renderDocument()
+      const revisedObjects = scope === 'document'
+        ? allFormattingObjects()
+        : state.scene.objects.filter(object => objectIds.includes(object.id))
+      renderDocumentWithContentFit(revisedObjects)
+      scheduleSave()
       elements.agentStatus.textContent = data.message
       showToast(data.message)
     } catch (error) {
@@ -2890,7 +3083,7 @@
           activeUnit.activeTranslationSource = match.matchType === 'exact' ? 'memory' : 'manual'
           translationUnits.syncObjectTranslation(object)
           object.translationTextStyles = []
-          renderDocument()
+          renderDocumentWithContentFit([object])
           scheduleSave()
         })
         elements.memoryResults.append(button)
@@ -2966,7 +3159,7 @@
     object.translation = translationUnits.translationFromUnits(units, false)
     translationUnits.mergeTranslationUnits(object)
     object.translationTextStyles = []
-    renderDocument()
+    renderDocumentWithContentFit([object])
     scheduleSave()
     showToast('Внутренние единицы объединены; геометрия сегмента сохранена')
   }
@@ -2977,7 +3170,7 @@
     const units = ensureObjectTranslationUnits(object)
     checkpoint()
     const count = units.filter(unit => applyExactSuggestion(object, unit)).length
-    renderDocument()
+    renderDocumentWithContentFit([object])
     scheduleSave()
     if (count) showToast(`Применено 100% совпадений: ${count}`)
   }
@@ -3132,18 +3325,154 @@
     return { object: objects[0], field, start: Math.max(0, Math.min(text.length, range.start)), end: Math.max(0, Math.min(text.length, range.end)) }
   }
 
+  function allFormattingObjects() {
+    return (state.scene?.objects || []).filter(canFitObjectToText)
+  }
+
+  function formattingTargetObjects() {
+    return elements.formatAllSegments?.checked ? allFormattingObjects() : selectedObjects()
+  }
+
+  function clampFontSize(value) {
+    return Math.min(80, Math.max(10, Math.round(Number(value) || 10)))
+  }
+
+  function activeFontSizes() {
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const selection = applyAll ? null : selectedTextRange()
+    if (selection) {
+      const effective = effectiveTextStyle(selection.object, selection.field, selection.start)
+      return [clampFontSize(effective.fontSizePx ?? selection.object.style.fontSizePx)]
+    }
+    return formattingTargetObjects().map(object => clampFontSize(object.style.fontSizePx))
+  }
+
+  function activeFormattingValues(property) {
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const selection = applyAll ? null : selectedTextRange()
+    if (selection) {
+      const effective = effectiveTextStyle(selection.object, selection.field, selection.start)
+      return [effective[property] ?? selection.object.style[property]]
+    }
+    return formattingTargetObjects().map(object => object.style[property])
+  }
+
+  function normalizeTextColor(value, fallback = '#000000') {
+    const text = String(value || '').trim()
+    const shortHex = text.match(/^#([0-9a-f]{3})$/i)
+    if (shortHex) return `#${[...shortHex[1]].map(character => character.repeat(2)).join('')}`.toUpperCase()
+    if (/^#[0-9a-f]{6}$/i.test(text)) return text.toUpperCase()
+    const rgb = text.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
+    if (!rgb) return fallback
+    return `#${rgb.slice(1, 4).map(channel => Math.min(255, Number(channel)).toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+  }
+
+  function refreshFormattingToolbar() {
+    const objects = formattingTargetObjects()
+    document.querySelectorAll('.format-button').forEach(button => {
+      const action = button.dataset.format
+      const active = objects.length > 0 && (action === 'bold' ? objects.every(item => item.style.fontWeight >= 600)
+        : action === 'italic' ? objects.every(item => item.style.fontStyle === 'italic')
+          : objects.every(item => item.style.textAlign === action))
+      button.classList.toggle('is-active', active)
+    })
+    const fontSizes = activeFontSizes()
+    const hasSizes = fontSizes.length > 0
+    const uniformSize = hasSizes && fontSizes.every(value => value === fontSizes[0]) ? fontSizes[0] : null
+    elements.toolbarFontSizeValue.value = uniformSize == null ? (hasSizes ? '' : '12') : String(uniformSize)
+    elements.toolbarFontSizeDecrease.disabled = !hasSizes || fontSizes.every(value => value <= 10)
+    elements.toolbarFontSizeIncrease.disabled = !hasSizes || fontSizes.every(value => value >= 80)
+    const fontFamilies = activeFormattingValues('fontFamily').filter(Boolean)
+    const uniformFont = fontFamilies.length && fontFamilies.every(value => value === fontFamilies[0]) ? fontFamilies[0] : ''
+    elements.toolbarFontFamily.value = fontFamilies.length ? uniformFont : 'Arial'
+    elements.toolbarFontFamily.disabled = !fontFamilies.length
+    const colors = activeFormattingValues('color').filter(Boolean).map(value => normalizeTextColor(value))
+    const uniformColor = colors.length && colors.every(value => value === colors[0]) ? colors[0] : null
+    const picker = elements.toolbarTextColor.closest('.color-picker')
+    elements.toolbarTextColor.disabled = !colors.length
+    elements.toolbarTextColor.value = uniformColor || '#000000'
+    picker?.style.setProperty('--color-picker-value', uniformColor || '#000000')
+    picker?.classList.toggle('is-mixed', colors.length > 0 && !uniformColor)
+  }
+
+  function setFormattingFontFamily(fontFamily) {
+    const family = String(fontFamily || '').trim()
+    if (!family) return refreshFormattingToolbar()
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!applyAll && selectedTextRange()) {
+      applySelectedTextStyle({ fontFamily: family })
+      return
+    }
+    applySelectionChange(object => {
+      object.style.fontFamily = family
+      if (applyAll) removeInlineStyleProperties(object, ['fontFamily'])
+    }, true, true, objects)
+  }
+
+  function setFormattingColor(color) {
+    const normalized = normalizeTextColor(color)
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    if (!applyAll && selectedTextRange()) {
+      applySelectedTextStyle({ color: normalized })
+      return
+    }
+    applySelectionChange(object => {
+      object.style.color = normalized
+      if (applyAll) removeInlineStyleProperties(object, ['color'])
+    }, true, false, objects)
+  }
+
+  function setFormattingFontSize(value) {
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    const size = clampFontSize(value)
+    const selection = applyAll ? null : selectedTextRange()
+    if (selection) {
+      applySelectedTextStyle({ fontSizePx: size })
+      return
+    }
+    applySelectionChange(object => {
+      object.style.fontSizePx = size
+      if (applyAll) removeInlineStyleProperties(object, ['fontSizePx'])
+    }, true, true, objects)
+  }
+
+  function changeFormattingFontSize(delta) {
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    const selection = applyAll ? null : selectedTextRange()
+    if (selection) {
+      const effective = effectiveTextStyle(selection.object, selection.field, selection.start)
+      applySelectedTextStyle({ fontSizePx: clampFontSize((effective.fontSizePx ?? selection.object.style.fontSizePx) + delta) })
+      return
+    }
+    applySelectionChange(object => {
+      object.style.fontSizePx = clampFontSize(object.style.fontSizePx + delta)
+      if (applyAll) removeInlineStyleProperties(object, ['fontSizePx'])
+    }, true, true, objects)
+  }
+
   function applySelectedTextStyle(patch) {
     const selection = selectedTextRange()
     if (!selection) return false
     checkpoint()
     styleRanges(selection.object, selection.field).push({ start: selection.start, end: selection.end, ...patch })
-    renderDocument()
+    renderDocumentWithContentFit([selection.object])
     scheduleSave()
     return true
   }
 
   function applyFormatting(action) {
-    const textSelection = selectedTextRange()
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'В документе нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    const textSelection = applyAll ? null : selectedTextRange()
     if (textSelection && ['bold', 'italic'].includes(action)) {
       const current = effectiveTextStyle(textSelection.object, textSelection.field, textSelection.start)
       const patch = action === 'bold'
@@ -3152,11 +3481,15 @@
       applySelectedTextStyle(patch)
       return
     }
+    const fontWeight = objects.every(object => object.style.fontWeight >= 600) ? 400 : 700
+    const fontStyle = objects.every(object => object.style.fontStyle === 'italic') ? 'normal' : 'italic'
     applySelectionChange(object => {
-      if (action === 'bold') object.style.fontWeight = object.style.fontWeight >= 600 ? 400 : 700
-      else if (action === 'italic') object.style.fontStyle = object.style.fontStyle === 'italic' ? 'normal' : 'italic'
+      if (action === 'bold') object.style.fontWeight = fontWeight
+      else if (action === 'italic') object.style.fontStyle = fontStyle
       else object.style.textAlign = action
-    })
+      if (applyAll && action === 'bold') removeInlineStyleProperties(object, ['fontWeight'])
+      if (applyAll && action === 'italic') removeInlineStyleProperties(object, ['fontStyle'])
+    }, true, true, objects)
   }
 
   function resetPosition() {
@@ -3178,43 +3511,28 @@
     scheduleSave()
   }
 
-  function applySelectionChange(callback, rerender = true) {
-    const objects = selectedObjects()
+  function applySelectionChange(callback, rerender = true, fitContent = false, explicitObjects = null) {
+    const objects = explicitObjects || selectedObjects()
     if (!objects.length) return
     checkpoint()
     for (const object of objects) callback(object)
-    if (rerender) renderDocument()
+    if (rerender && fitContent) renderDocumentWithContentFit(objects)
+    else if (rerender) renderDocument()
     else refreshSelection()
     scheduleSave()
   }
 
-  function withoutInlineFontSize(ranges) {
+  function withoutInlineStyleProperties(ranges, properties) {
     return (Array.isArray(ranges) ? ranges : []).map(range => {
       const normalized = { ...range }
-      delete normalized.fontSizePx
+      for (const property of properties) delete normalized[property]
       return normalized
     }).filter(range => Object.keys(range).some(key => key !== 'start' && key !== 'end'))
   }
 
-  function applyUnifiedDocumentFontSize() {
-    if (!state.scene) return
-    const fontSizePx = Number(elements.documentFontSize.value)
-    if (!Number.isFinite(fontSizePx) || fontSizePx < 6 || fontSizePx > 96) {
-      return showToast('Укажите размер шрифта от 6 до 96 px', true)
-    }
-    const objects = state.scene.objects.filter(object => (
-      !object.excluded && object.type !== 'image' && object.type !== 'logo'
-    ))
-    if (!objects.length) return showToast('В документе нет текстовых сегментов', true)
-    checkpoint()
-    for (const object of objects) {
-      object.style = { ...(object.style || {}), fontSizePx }
-      object.sourceTextStyles = withoutInlineFontSize(object.sourceTextStyles)
-      object.translationTextStyles = withoutInlineFontSize(object.translationTextStyles)
-    }
-    renderDocument()
-    scheduleSave()
-    showToast(`Размер ${fontSizePx}px установлен во всех текстовых сегментах (${objects.length})`)
+  function removeInlineStyleProperties(object, properties) {
+    object.sourceTextStyles = withoutInlineStyleProperties(object.sourceTextStyles, properties)
+    object.translationTextStyles = withoutInlineStyleProperties(object.translationTextStyles, properties)
   }
 
   async function exportDocument(format) {
@@ -3285,7 +3603,8 @@
     const bindText = (control, field) => {
       control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
       control.addEventListener('input', () => {
-        for (const object of selectedObjects()) {
+        const objects = selectedObjects()
+        for (const object of objects) {
           object[field] = control.value
           object[field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'] = []
           if (field === 'sourceText') {
@@ -3307,6 +3626,7 @@
         }
         renderSelectedText(field === 'sourceText' ? 'sourceText' : field)
         if (field === 'sourceText') renderSelectedText('translation')
+        fitObjectsToRenderedContent(objects, state.viewMode === 'layout')
         renderTranslationUnits(selectedObjects())
         scheduleSave()
       })
@@ -3318,16 +3638,26 @@
       elements.sourceText.addEventListener(eventName, refreshTranslationSelectionPreview)
     }
     const numeric = [
-      [elements.fontSize, (object, value) => { object.style.fontSizePx = value }],
-      [elements.lineHeight, (object, value) => { object.style.lineHeight = value }],
-      [elements.objectX, (object, value) => { object.x = Math.min(state.scene.pages[object.pageIndex].widthPx - object.width, Math.max(0, snapCoordinate(value))) }],
-      [elements.objectY, (object, value) => { object.y = Math.min(state.scene.pages[object.pageIndex].heightPx - object.height, Math.max(0, snapCoordinate(value))) }],
-      [elements.objectWidth, (object, value) => { object.width = Math.min(state.scene.pages[object.pageIndex].widthPx - object.x, Math.max(12, snapCoordinate(value))) }],
-      [elements.objectHeight, (object, value) => { object.height = Math.min(state.scene.pages[object.pageIndex].heightPx - object.y, Math.max(12, snapCoordinate(value))) }],
+      [elements.fontSize, (object, value) => { object.style.fontSizePx = clampFontSize(value) }, true],
+      [elements.lineHeight, (object, value) => { object.style.lineHeight = value }, true],
+      [elements.objectX, (object, value) => {
+        const page = state.scene.pages[object.pageIndex]
+        object.x = Math.min(page.contentBounds.x + page.contentBounds.width - object.width, Math.max(page.contentBounds.x, snapCoordinate(value, page, 'x')))
+      }, false],
+      [elements.objectY, (object, value) => {
+        const page = state.scene.pages[object.pageIndex]
+        object.y = Math.min(page.contentBounds.y + page.contentBounds.height - object.height, Math.max(page.contentBounds.y, snapCoordinate(value, page, 'y')))
+      }, false],
+      [elements.objectWidth, (object, value) => {
+        const page = state.scene.pages[object.pageIndex]
+        object.width = Math.min(page.contentBounds.x + page.contentBounds.width - object.x, Math.max(12, value))
+        object.height = Math.max(object.height, minimumObjectHeight(object, object.width))
+      }, false],
+      [elements.objectHeight, (object, value) => { object.height = constrainObjectHeight(object, value, object.width) }, false],
     ]
-    for (const [control, apply] of numeric) control.addEventListener('change', () => {
+    for (const [control, apply, fitContent] of numeric) control.addEventListener('change', () => {
       const value = Number(control.value)
-      if (Number.isFinite(value)) applySelectionChange(object => apply(object, value))
+      if (Number.isFinite(value)) applySelectionChange(object => apply(object, value), true, fitContent)
     })
   }
 
@@ -3354,7 +3684,6 @@
       if (state.saveTimer) await saveScene()
       elements.fileInput.click()
     })
-    elements.addDocumentTab.addEventListener('click', () => elements.fileInput.click())
     elements.documentLibraryButton.addEventListener('click', openDocumentLibrary)
     elements.documentLibraryClose.addEventListener('click', () => { elements.documentLibraryModal.hidden = true })
     elements.documentLibraryModal.addEventListener('pointerdown', event => {
@@ -3403,6 +3732,7 @@
     elements.zoomOut.addEventListener('click', () => setZoom(state.zoom - .1))
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
+    elements.zoomActual.addEventListener('click', () => setZoom(1))
     elements.viewLayout.addEventListener('click', () => setDocumentView('layout'))
     elements.viewSegments.addEventListener('click', () => setDocumentView('segments'))
     elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
@@ -3425,27 +3755,23 @@
     }, { passive: true })
     elements.sourceZoomOut.addEventListener('click', () => setSourceZoom(state.sourceZoom - .1))
     elements.sourceZoomIn.addEventListener('click', () => setSourceZoom(state.sourceZoom + .1))
+    elements.sourceZoomActual.addEventListener('click', () => setSourceZoom(1))
     elements.sourceZoomFit.addEventListener('click', fitSourceWidth)
+    elements.sourcePreviewScroll.addEventListener('pointerdown', beginSourcePan)
     elements.sourcePreviewScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
       queueWheelZoom(event, true)
     }, { passive: false })
     elements.gridSize.addEventListener('change', () => {
-      const size = Number(elements.gridSize.value)
-      if (!Number.isFinite(size) || size === currentGridSize()) return
+      const density = elements.gridSize.value
+      if (!GRID_DENSITY_COLUMNS[density] || density === currentGridDensity()) return
       checkpoint()
-      state.scene.gridSize = size
+      state.scene.gridDensity = density
+      state.scene.gridSize = Number(currentGridSize().toFixed(4))
       for (const surface of elements.canvas.querySelectorAll('.studio-page')) applyGridToSurface(surface)
       scheduleSave()
-      showToast(`Размер ячейки: ${size} px`)
-    })
-    elements.gridSnap.addEventListener('change', () => {
-      if (elements.gridSnap.checked === gridSnapEnabled()) return
-      checkpoint()
-      state.scene.snapToGrid = elements.gridSnap.checked
-      scheduleSave()
-      showToast(elements.gridSnap.checked ? 'Привязка к сетке включена' : 'Привязка к сетке выключена')
+      showToast(`Плотность сетки: ${density.toUpperCase()}`)
     })
     elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
@@ -3518,25 +3844,45 @@
     document.querySelectorAll('[data-align-selection]').forEach(button => button.addEventListener('click', () => alignSelection(button.dataset.alignSelection)))
     document.querySelectorAll('[data-align-document]').forEach(button => button.addEventListener('click', () => alignToDocument(button.dataset.alignDocument)))
     elements.flexApply.addEventListener('click', applyFlexLayout)
-    elements.applyDocumentFontSize.addEventListener('click', applyUnifiedDocumentFontSize)
-    elements.documentFontSize.addEventListener('keydown', event => {
-      if (event.key === 'Enter') applyUnifiedDocumentFontSize()
+    elements.toolbarFontSizeDecrease.addEventListener('click', () => changeFormattingFontSize(-1))
+    elements.toolbarFontSizeIncrease.addEventListener('click', () => changeFormattingFontSize(1))
+    elements.toolbarFontSizeValue.addEventListener('change', () => {
+      if (elements.toolbarFontSizeValue.value === '') return refreshFormattingToolbar()
+      setFormattingFontSize(elements.toolbarFontSizeValue.value)
     })
-    elements.toolbarFontSize.addEventListener('change', () => {
-      const value = Number(elements.toolbarFontSize.value)
-      if (!applySelectedTextStyle({ fontSizePx: value })) applySelectionChange(object => { object.style.fontSizePx = value })
+    elements.toolbarFontSizeValue.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return
+      event.preventDefault()
+      if (elements.toolbarFontSizeValue.value !== '') setFormattingFontSize(elements.toolbarFontSizeValue.value)
+      elements.toolbarFontSizeValue.blur()
     })
+    elements.toolbarFontFamily.addEventListener('change', () => setFormattingFontFamily(elements.toolbarFontFamily.value))
+    elements.toolbarTextColor.addEventListener('input', () => {
+      elements.toolbarTextColor.closest('.color-picker')?.style.setProperty('--color-picker-value', elements.toolbarTextColor.value)
+    })
+    elements.toolbarTextColor.addEventListener('change', () => setFormattingColor(elements.toolbarTextColor.value))
+    elements.formatAllSegments.addEventListener('change', refreshFormattingToolbar)
     document.querySelectorAll('.format-button').forEach(button => button.addEventListener('click', () => applyFormatting(button.dataset.format)))
-    document.querySelectorAll('.workflow__step').forEach(button => button.addEventListener('click', () => {
-      document.querySelectorAll('.workflow__step').forEach(item => item.classList.toggle('is-active', item === button))
-      if (button.dataset.stage === 'qa' && state.scene) runQa()
-    }))
+    const setAppbarMenuOpen = open => {
+      elements.appbarActionsMenu.hidden = !open
+      elements.appbarMenuButton.setAttribute('aria-expanded', String(open))
+    }
+    elements.appbarMenuButton.addEventListener('click', event => {
+      event.stopPropagation()
+      setAppbarMenuOpen(elements.appbarActionsMenu.hidden)
+    })
+    elements.appbarActionsMenu.addEventListener('click', event => {
+      if (event.target.closest('a, button')) setAppbarMenuOpen(false)
+    })
     document.addEventListener('keydown', event => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault()
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        setAppbarMenuOpen(false)
+        cancelPointerAction()
+        stopSourcePan()
         closeKnowledgeSuggestion()
         closeInstructionPresetEditor()
         if (!elements.aiSettingsModal.hidden) closeProviderSettings()
@@ -3551,11 +3897,14 @@
       }
     })
     document.addEventListener('pointerdown', event => {
+      if (!elements.appbarActionsMenu.hidden && !elements.appbarMenu.contains(event.target)) setAppbarMenuOpen(false)
       if (elements.knowledgeSuggestionPopover.hidden) return
       if (elements.knowledgeSuggestionPopover.contains(event.target) || event.target.closest?.('.knowledge-highlight')) return
       closeKnowledgeSuggestion()
     })
     window.addEventListener('pagehide', () => {
+      cancelPointerAction()
+      stopSourcePan()
       clearTimeout(state.jobsPollTimer)
       if (!state.saveTimer || !state.metadata) return
       fetch(`/api/studio/documents/${state.metadata.id}/scene`, {

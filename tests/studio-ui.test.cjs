@@ -9,16 +9,22 @@ const html = fs.readFileSync(path.join(root, 'public/studio.html'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
 const translationUnits = fs.readFileSync(path.join(root, 'public/translation-units.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
+const uiKit = fs.readFileSync(path.join(root, 'public/ui-kit.css'), 'utf8')
 const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
 const userGuide = fs.readFileSync(path.join(root, 'USER_GUIDE.md'), 'utf8')
 const technicalSpecification = fs.readFileSync(path.join(root, 'TECHNICAL_SPECIFICATION.md'), 'utf8')
 const docsHtml = fs.readFileSync(path.join(root, 'public/docs.html'), 'utf8')
 const docsClient = fs.readFileSync(path.join(root, 'public/docs.js'), 'utf8')
+const uiComponentsHtml = fs.readFileSync(path.join(root, 'public/ui-components.html'), 'utf8')
+const uiComponentsClient = fs.readFileSync(path.join(root, 'public/ui-components.js'), 'utf8')
+const iconSprite = fs.readFileSync(path.join(root, 'public/icons.svg'), 'utf8')
+const legacyPrototypeHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8')
 const agentsGuide = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
 
 test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
-    'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas',
+    'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas', 'source-zoom-100',
+    'appbar-menu', 'appbar-menu-button', 'appbar-actions-menu',
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
     'translation-select-all', 'translation-selection-count', 'translation-global-instruction', 'revise-selected-button', 'revise-document-button',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
@@ -36,12 +42,12 @@ test('studio exposes the complete source-to-export workflow', () => {
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
-    'grid-snap', 'grid-size', 'alignment-scope', 'align-left-button',
+    'grid-size', 'alignment-scope', 'align-left-button',
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
-    'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
-    'document-font-size', 'apply-document-font-size',
+    'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button', 'format-all-segments',
+    'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase', 'zoom-100',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
-    'document-tabs', 'add-document-tab', 'document-library-button', 'document-library-modal', 'document-library-list',
+    'document-tabs', 'document-library-button', 'document-library-modal', 'document-library-list',
     'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button', 'cancel-job-button', 'loading-progress-details',
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
@@ -92,13 +98,74 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /exportDocument\('pdf'\)/)
   assert.match(html, /href="\/documentation"/)
   assert.match(html, /href="\/user-guide"/)
+  assert.match(html, /href="\/ui-components"/)
+  assert.doesNotMatch(html, /class="workflow"/)
+  assert.doesNotMatch(html, /class="panel-heading"/)
+  assert.doesNotMatch(html, /class="source-preview-toolbar"/)
+  assert.doesNotMatch(html, /class="source-preview-hint"/)
+  assert.doesNotMatch(html, /id="grid-snap"/)
+  assert.doesNotMatch(html, /workbench-toolbar__hint/)
+  assert.match(html, /id="source-zoom-fit"[\s\S]*?<svg/)
+  assert.match(html, /id="zoom-fit"[^>]*class="icon-button"[\s\S]*?icon-fit-width/)
+  assert.match(html, /id="grid-size"[^>]*data-select-icon="grid"/)
+  assert.match(html, /id="view-layout-button"[^>]*class="icon-button[^>]*[\s\S]*?icon-grid/)
+  assert.match(html, /id="view-segments-button"[^>]*class="icon-button[^>]*[\s\S]*?icon-list-rows/)
+  assert.match(html, /id="source-panel-toggle"[^>]*class="icon-button[^>]*is-active[^>]*[\s\S]*?icon-layout/)
+  assert.ok(html.indexOf('id="source-panel-toggle"') < html.indexOf('id="view-layout-button"'))
+  assert.match(html, /id="toolbar-font-family"[\s\S]*?<option value="Arial" selected>[\s\S]*?<option value="Times New Roman">/)
+  assert.match(html, /id="toolbar-text-color"[^>]*type="color"/)
+  assert.doesNotMatch(html, /id="add-document-tab"/)
+  assert.match(html, /src="\/custom-select\.js"/)
+  assert.doesNotMatch(html, /id="toolbar-font-size"/)
+  assert.match(html, /id="toolbar-font-size-value"[^>]*type="number"[^>]*min="10"[^>]*max="80"[^>]*step="1"/)
+  assert.match(html, /class="font-size-stepper__field"[\s\S]*?id="toolbar-font-size-value"[\s\S]*?class="font-size-stepper__unit"[^>]*>px</)
+  assert.match(html, /id="font-size"[^>]*min="10"[^>]*max="80"[^>]*step="1"/)
+  assert.match(styles, /\.source-preview-controls\s*\{[^}]*position:\s*absolute[^}]*right:\s*12px[^}]*bottom:\s*12px/)
+  assert.match(styles, /grid-template-columns:\s*60px/)
+  assert.match(styles, /grid-template-areas:\s*"toolbar toolbar toolbar toolbar"/)
+  assert.match(styles, /\.workbench-toolbar\s*\{[^}]*grid-area:\s*toolbar/)
+  assert.match(styles, /\.workbench-toolbar button,[\s\S]*?\.workbench-toolbar \.base-select\s*\{[^}]*height:\s*28px[^}]*min-height:\s*28px/)
+  assert.match(styles, /\.workbench-toolbar \.icon-button\s*\{[^}]*width:\s*28px[^}]*min-width:\s*28px/)
+  assert.match(styles, /\.workbench-toolbar__inner > \.toolbar-group:first-child\s*\{[^}]*margin-left:\s*auto/)
+  assert.match(styles, /\.document-tabs__inner\s*\{[^}]*justify-content:\s*flex-end/)
+  assert.match(styles, /\.document-tabs__list\s*\{[^}]*width:\s*max-content[^}]*margin-left:\s*auto/)
+  assert.match(styles, /\.grid-controls\s*\{[^}]*width:\s*72px[^}]*padding-right:\s*6px/)
+  assert.match(styles, /\.grid-controls \.base-select\s*\{[^}]*width:\s*100%/)
+  assert.doesNotMatch(styles, /\.grid-controls \.base-select-root\s*\{[^}]*width:\s*100px/)
+  assert.match(uiKit, /\.app-container\s*\{[^}]*padding-inline:\s*var\(--app-gutter, 12px\)/)
+  assert.match(html, /class="app-container appbar__inner"/)
+  assert.match(html, /class="app-container document-tabs__inner"/)
+  assert.match(html, /class="app-container workbench-toolbar__inner"/)
+})
+
+test('app bar actions open from a burger and close outside or with Escape', async () => {
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async () => ({ ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) })
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 10))
+
+  const trigger = dom.window.document.querySelector('#appbar-menu-button')
+  const menu = dom.window.document.querySelector('#appbar-actions-menu')
+  assert.equal(menu.hidden, true)
+  trigger.click()
+  assert.equal(menu.hidden, false)
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true')
+  dom.window.document.body.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }))
+  assert.equal(menu.hidden, true)
+  trigger.click()
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  assert.equal(menu.hidden, true)
+  dom.window.close()
 })
 
 test('user guide documents the complete interface and links from README', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
   assert.match(readme, /\[USER_GUIDE\.md\]\(USER_GUIDE\.md\)/)
   for (const label of [
-    'Документация', 'Руководство', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
+    'Документация', 'Руководство', 'Компоненты', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
     'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Макет', 'Сегменты',
     'Проверить структуру', 'Повторить анализ исходника', 'Перевести выбранные', 'Исправить наложения',
     'AI: сравнить и исправить макет', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
@@ -107,6 +174,76 @@ test('user guide documents the complete interface and links from README', () => 
     'Применить расстановку', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные',
     'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
   ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})
+
+test('icon buttons use the shared local SVG sprite and accessible labels', () => {
+  const dom = new JSDOM(html)
+  const symbols = new Set([...iconSprite.matchAll(/<symbol id="([^"]+)"/g)].map(match => match[1]))
+  const iconButtons = [...dom.window.document.querySelectorAll('button.icon-button')]
+  const formatButtons = [...dom.window.document.querySelectorAll('button.format-button')]
+  assert.ok(iconButtons.length >= 10)
+  assert.ok(formatButtons.length >= 6)
+
+  for (const button of [...iconButtons, ...formatButtons]) {
+    const use = button.querySelector('svg.ui-icon use')
+    assert.ok(use, `Кнопка ${button.id || button.dataset.format || button.outerHTML} должна использовать SVG-иконку`)
+    const href = use.getAttribute('href')
+    assert.match(href, /^\/icons\.svg#icon-/)
+    assert.ok(symbols.has(href.split('#')[1]), `Иконка ${href} должна существовать в спрайте`)
+    assert.ok(button.getAttribute('aria-label') || button.getAttribute('title'))
+  }
+
+  for (const [pageName, markup] of [['studio', html], ['components', uiComponentsHtml], ['legacy', legacyPrototypeHtml]]) {
+    const page = new JSDOM(markup)
+    for (const button of page.window.document.querySelectorAll('button:has(svg.ui-icon)')) {
+      const hasVisibleText = Boolean(button.textContent.trim())
+      assert.ok(
+        button.classList.contains(hasVisibleText ? 'button' : 'icon-button'),
+        `${pageName}: ${hasVisibleText ? 'текстовая кнопка с иконкой' : 'икон-кнопка'} должна использовать базовый класс компонента: ${button.outerHTML}`,
+      )
+      const href = button.querySelector('use').getAttribute('href')
+      assert.ok(symbols.has(href.split('#')[1]), `${pageName}: иконка ${href} должна существовать в спрайте`)
+    }
+    page.window.close()
+  }
+
+  assert.match(client, /const iconMarkup = name =>/)
+  assert.match(client, /iconMarkup\('close'\)/)
+  assert.match(client, /iconMarkup\('grip-vertical'\)/)
+  assert.match(client, /icon-button icon-button--tiny icon-button--filled scene-object__handle/)
+  assert.match(uiKit, /\.ui-icon\s*\{[^}]*pointer-events:\s*none/)
+  assert.match(uiKit, /\.icon-button--compact\s*\{/)
+  assert.match(uiKit, /\.icon-button--ghost\s*\{/)
+  assert.doesNotMatch(styles, /\.document-tabs__add\s*\{/)
+  assert.doesNotMatch(styles, /\.source-preview-controls \.icon-button\s*\{/)
+  dom.window.close()
+})
+
+test('UI components catalog exposes an interactive SourcePreviewControls reference', () => {
+  assert.match(server, /app\.get\('\/ui-components'/)
+  assert.match(uiComponentsHtml, /SourcePreviewControls/)
+  assert.match(uiComponentsHtml, /id="source-preview-demo"/)
+  assert.match(uiComponentsHtml, /IconButton \/ BaseIcon/)
+  assert.match(uiComponentsHtml, /ColorPicker/)
+  assert.match(uiComponentsHtml, /icon-layout/)
+  assert.match(uiComponentsHtml, /icon-list-rows/)
+
+  const dom = new JSDOM(uiComponentsHtml.replace('<script src="/ui-components.js" defer></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/ui-components',
+  })
+  dom.window.eval(uiComponentsClient)
+  const output = dom.window.document.querySelector('#component-source-zoom-output')
+  assert.equal(output.value, '70%')
+  dom.window.document.querySelector('#component-source-zoom-in').click()
+  assert.equal(output.value, '80%')
+  dom.window.document.querySelector('#component-source-zoom-100').click()
+  assert.equal(output.value, '100%')
+  const colorInput = dom.window.document.querySelector('#component-text-color')
+  colorInput.value = '#cc3300'
+  colorInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(colorInput.closest('.color-picker').style.getPropertyValue('--color-picker-value'), '#cc3300')
+  assert.equal(dom.window.document.querySelector('#component-document').style.transform, 'scale(1)')
+  dom.window.close()
 })
 
 test('documentation pages render the maintained Markdown sources from the interface', async () => {
@@ -147,13 +284,29 @@ test('documentation pages render the maintained Markdown sources from the interf
 test('studio keeps an independently zoomable source beside editable page objects', () => {
   assert.match(styles, /\.source-preview-panel[\s\S]*border-right/)
   assert.match(styles, /\.source-preview-page img[\s\S]*pointer-events: none/)
+  assert.match(styles, /\.source-preview-page[\s\S]*cursor: grab/)
+  assert.match(styles, /\.source-preview-scroll\.is-panning[\s\S]*cursor: grabbing/)
+  assert.match(client, /function beginSourcePan/)
+  assert.doesNotMatch(styles, /\.scene-object\.has-inset-drag-handle/)
+  assert.match(styles, /\.studio-page\s*\{[\s\S]*?overflow:\s*visible/)
+  assert.match(styles, /\.scene-object__resize\s*\{[^}]*right:\s*-12px[^}]*bottom:\s*-12px/)
+  assert.match(styles, /\.scene-object\.is-selected\s*\{\s*z-index:/)
+  assert.doesNotMatch(styles, /\.scene-object\.is-selected\s*\{[^}]*(?:outline|border):/)
+  assert.doesNotMatch(styles, /has-inset-resize/)
+  assert.doesNotMatch(client, /has-inset-resize/)
+  assert.match(client, /function startPointerAction/)
+  assert.match(client, /lostpointercapture/)
   assert.match(styles, /\.scene-object[\s\S]*position: absolute/)
   assert.match(styles, /\.studio-page[\s\S]*overflow: hidden/)
   assert.match(styles, /\.content-boundary/)
+  assert.match(styles, /background-origin:\s*border-box/)
+  assert.match(styles, /background-position:\s*left top/)
   assert.match(styles, /--grid-size/)
   assert.match(styles, /\.studio\.is-source-collapsed/)
   assert.match(styles, /\.studio-page--segments/)
-  assert.match(styles, /\.scene-object__content[^}]*overflow:\s*visible/)
+  assert.match(styles, /\.scene-object__content[^}]*overflow:\s*hidden/)
+  assert.match(client, /function minimumObjectHeight/)
+  assert.match(client, /function constrainObjectHeight/)
   assert.match(client, /function expandClippedObjects/)
 })
 
@@ -535,13 +688,82 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
-  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '8px')
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '11.15625px')
+
+  const pointer = (type, x, y) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
+    Object.defineProperty(event, 'pointerId', { value: 7 })
+    return event
+  }
+  const sourceScroll = dom.window.document.querySelector('#source-preview-scroll')
+  sourceScroll.scrollLeft = 160
+  sourceScroll.scrollTop = 240
+  dom.window.document.querySelector('.source-preview-page').dispatchEvent(pointer('pointerdown', 300, 300))
+  assert.equal(sourceScroll.classList.contains('is-panning'), true)
+  dom.window.dispatchEvent(pointer('pointermove', 250, 210))
+  assert.equal(sourceScroll.scrollLeft, 210)
+  assert.equal(sourceScroll.scrollTop, 330)
+  dom.window.dispatchEvent(pointer('pointerup', 250, 210))
+  assert.equal(sourceScroll.classList.contains('is-panning'), false)
+  dom.window.document.querySelector('#source-zoom-100').click()
+  assert.equal(dom.window.document.querySelector('#source-zoom-output').value, '100%')
+  dom.window.document.querySelector('#zoom-in').click()
+  dom.window.document.querySelector('#zoom-100').click()
+  assert.equal(dom.window.document.querySelector('#zoom-output').value, '100%')
+
+  const initialObject = dom.window.document.querySelector('[data-id="object-1"]')
+  initialObject.dispatchEvent(pointer('pointerdown', 100, 100))
+  const xInput = dom.window.document.querySelector('#object-x')
+  xInput.value = '0'
+  xInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  let leftEdgeObject = dom.window.document.querySelector('[data-id="object-1"]')
+  assert.equal(leftEdgeObject.style.left, '40px')
+  assert.equal(leftEdgeObject.classList.contains('has-inset-drag-handle'), false)
+
+  let dragHandle = leftEdgeObject.querySelector('.scene-object__handle')
+  dragHandle.dispatchEvent(pointer('pointerdown', 100, 100))
+  dom.window.dispatchEvent(pointer('pointermove', 140, 100))
+  assert.notEqual(dom.window.document.querySelector('[data-id="object-1"]').style.left, '40px')
+  dom.window.dispatchEvent(pointer('pointercancel', 140, 100))
+  leftEdgeObject = dom.window.document.querySelector('[data-id="object-1"]')
+  assert.equal(leftEdgeObject.style.left, '40px')
+  assert.equal(dragHandle.__pointerId, null)
+
+  dragHandle = leftEdgeObject.querySelector('.scene-object__handle')
+  dragHandle.dispatchEvent(pointer('pointerdown', 100, 100))
+  dom.window.dispatchEvent(pointer('pointermove', 140, 100))
+  const gridStep = 714 / 64
+  const dragZoom = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10) / 100
+  const unsnappedDragLeft = 40 + 40 / dragZoom
+  const liveDragLeft = Number.parseFloat(dom.window.document.querySelector('[data-id="object-1"]').style.left)
+  assert.equal(liveDragLeft, unsnappedDragLeft, 'drag stays free until pointerup')
+  dom.window.dispatchEvent(pointer('pointerup', 140, 100))
+  const expectedDragLeft = 40 + Math.round((unsnappedDragLeft - 40) / gridStep) * gridStep
+  assert.equal(dom.window.document.querySelector('[data-id="object-1"]').style.left, `${expectedDragLeft}px`)
+  assert.equal(dragHandle.__pointerId, null)
+
+  const edgeHandle = dom.window.document.querySelector('[data-id="object-1"] .scene-object__handle')
+  edgeHandle.dispatchEvent(pointer('pointerdown', 140, 100))
+  dom.window.dispatchEvent(pointer('pointermove', 5000, 5000))
+  dom.window.dispatchEvent(pointer('pointerup', 5000, 5000))
+  const edgeObject = dom.window.document.querySelector('[data-id="object-1"]')
+  const edgeLeft = Number.parseFloat(edgeObject.style.left)
+  const edgeTop = Number.parseFloat(edgeObject.style.top)
+  assert.ok(Math.abs((edgeLeft - 40) / gridStep - Math.round((edgeLeft - 40) / gridStep)) < 0.0001)
+  assert.ok(Math.abs((edgeTop - 40) / gridStep - Math.round((edgeTop - 40) / gridStep)) < 0.0001)
+  assert.ok(edgeLeft + Number.parseFloat(edgeObject.style.width) <= 754)
+  assert.ok(edgeTop + Number.parseFloat(edgeObject.style.height) <= 1083)
+  dom.window.document.querySelector('#undo-button').click()
 
   dom.window.document.querySelector('#source-panel-toggle').click()
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), true)
-  assert.equal(dom.window.document.querySelector('#source-panel-toggle').textContent, 'Показать оригинал')
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').getAttribute('aria-label'), 'Показать оригинал')
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').classList.contains('is-active'), false)
+  assert.match(dom.window.document.querySelector('#source-panel-toggle use').getAttribute('href'), /icon-layout$/)
   dom.window.document.querySelector('#source-panel-toggle').click()
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), false)
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').getAttribute('aria-label'), 'Скрыть оригинал')
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').classList.contains('is-active'), true)
 
   dom.window.document.querySelector('#view-segments-button').click()
   assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), true)
@@ -553,23 +775,28 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), false)
 
   const resizeHandle = dom.window.document.querySelector('.scene-object__resize')
-  const pointer = (type, x, y) => {
-    const event = new dom.window.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
-    Object.defineProperty(event, 'pointerId', { value: 7 })
-    return event
-  }
   resizeHandle.dispatchEvent(pointer('pointerdown', 0, 0))
   resizeHandle.dispatchEvent(pointer('pointermove', 20, 10))
   resizeHandle.dispatchEvent(pointer('pointerup', 20, 10))
   assert.equal(resizeHandle.style.width, '')
   const zoom = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10) / 100
-  const firstWidth = Math.round((200 + 20 / zoom) / 8) * 8
+  const firstWidth = 200 + 20 / zoom
   assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth}px`)
   resizeHandle.dispatchEvent(pointer('pointerdown', 20, 10))
   resizeHandle.dispatchEvent(pointer('pointermove', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointerup', 30, 20))
-  const secondWidth = Math.round((firstWidth + 10 / zoom) / 8) * 8
+  const secondWidth = firstWidth + 10 / zoom
   assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${secondWidth}px`)
+
+  resizeHandle.dispatchEvent(pointer('pointerdown', 30, 20))
+  resizeHandle.dispatchEvent(pointer('pointermove', 30, -1000))
+  resizeHandle.dispatchEvent(pointer('pointerup', 30, -1000))
+  const minimumRenderedHeight = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height)
+  assert.ok(minimumRenderedHeight > 12, 'resize handle must preserve the minimum text height')
+  const heightInput = dom.window.document.querySelector('#object-height')
+  heightInput.value = '1'
+  heightInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.ok(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height) >= minimumRenderedHeight)
 
   const content = dom.window.document.querySelector('.scene-object__content')
   content.dispatchEvent(pointer('pointerdown', 0, 0))
@@ -580,10 +807,12 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.getSelection().removeAllRanges()
   dom.window.getSelection().addRange(range)
   content.dispatchEvent(pointer('pointerup', 0, 0))
-  const fontSize = dom.window.document.querySelector('#toolbar-font-size')
-  fontSize.value = '20'
-  fontSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-  assert.equal(dom.window.document.querySelector('.scene-object__content span').style.fontSize, '20px')
+  const fontSizeIncrease = dom.window.document.querySelector('#toolbar-font-size-increase')
+  const fontSizeDecrease = dom.window.document.querySelector('#toolbar-font-size-decrease')
+  const widthBeforeFontStyle = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
+  fontSizeIncrease.click()
+  assert.equal(dom.window.document.querySelector('.scene-object__content span').style.fontSize, '15px')
+  assert.notEqual(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width), widthBeforeFontStyle)
 
   const styledContent = dom.window.document.querySelector('.scene-object__content')
   const styledText = styledContent.querySelector('span').firstChild
@@ -596,14 +825,53 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.document.querySelector('#split-button').click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object').length, 2)
 
-  const documentFontSize = dom.window.document.querySelector('#document-font-size')
-  documentFontSize.value = '17'
-  dom.window.document.querySelector('#apply-document-font-size').click()
+  const applyAllFormatting = dom.window.document.querySelector('#format-all-segments')
+  applyAllFormatting.checked = true
+  applyAllFormatting.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  const fontFamily = dom.window.document.querySelector('#toolbar-font-family')
+  fontFamily.value = 'Times New Roman'
+  fontFamily.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontFamily),
+    ['"Times New Roman"', '"Times New Roman"']
+  )
+  const textColor = dom.window.document.querySelector('#toolbar-text-color')
+  textColor.value = '#336699'
+  textColor.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.color),
+    ['rgb(51, 102, 153)', 'rgb(51, 102, 153)']
+  )
+  fontSizeIncrease.click()
   assert.deepEqual(
     [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
-    ['17px', '17px']
+    ['15px', '15px']
+  )
+  assert.equal(dom.window.document.querySelector('#toolbar-font-size-value').value, '15')
+  fontSizeDecrease.click()
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
+    ['14px', '14px']
+  )
+  const fontSizeValue = dom.window.document.querySelector('#toolbar-font-size-value')
+  fontSizeValue.value = '100'
+  fontSizeValue.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
+    ['80px', '80px']
+  )
+  fontSizeValue.value = '22'
+  fontSizeValue.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
+    ['22px', '22px']
   )
   assert.equal(dom.window.document.querySelector('.scene-object__content [style*="font-size"]'), null)
+  dom.window.document.querySelector('[data-format="bold"]').click()
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontWeight),
+    ['700', '700']
+  )
 
   const firstObject = dom.window.document.querySelector('[data-id="object-1"]')
   firstObject.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: true }))
@@ -625,16 +893,66 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const translationInput = dom.window.document.querySelector('#translation-text')
   translationInput.value = '/Подпись/'
   translationInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  const gridSize = dom.window.document.querySelector('#grid-size')
+  gridSize.value = 'xxl'
+  gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   dom.window.document.querySelector('#fit-content-both-button').click()
-  const fittedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  let fittedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+  const fittedAtXXL = fittedObjects.map(node => ({ width: node.style.width, height: node.style.height }))
+  gridSize.value = 'xs'
+  gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  dom.window.document.querySelector('#fit-content-both-button').click()
+  fittedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+  assert.deepEqual(fittedObjects.map(node => ({ width: node.style.width, height: node.style.height })), fittedAtXXL)
   assert.equal(new Set(fittedObjects.map(node => node.style.width)).size, 1)
   assert.equal(new Set(fittedObjects.map(node => node.style.height)).size, 1)
   assert.ok(Number.parseFloat(fittedObjects[0].style.width) < secondWidth)
+  for (const node of fittedObjects) {
+    assert.ok(Number.parseFloat(node.style.left) >= 40)
+    assert.ok(Number.parseFloat(node.style.top) >= 40)
+    assert.ok(Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width) <= 754)
+    assert.ok(Number.parseFloat(node.style.top) + Number.parseFloat(node.style.height) <= 1083)
+  }
 
-  const gridSize = dom.window.document.querySelector('#grid-size')
-  gridSize.value = '16'
+  const fittedSizes = new Map(fittedObjects.map(node => [node.dataset.id, {
+    width: node.style.width,
+    height: node.style.height,
+  }]))
+  const fittedHandle = fittedObjects[0].querySelector('.scene-object__handle')
+  fittedHandle.dispatchEvent(pointer('pointerdown', 200, 200))
+  dom.window.dispatchEvent(pointer('pointermove', 224, 216))
+  dom.window.dispatchEvent(pointer('pointerup', 224, 216))
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  for (const node of dom.window.document.querySelectorAll('.scene-object')) {
+    assert.deepEqual(
+      { width: node.style.width, height: node.style.height },
+      fittedSizes.get(node.dataset.id),
+      'dragging must not change the fitted size of this or another segment'
+    )
+  }
+
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  let independentlyFitted = [...dom.window.document.querySelectorAll('.scene-object')]
+  independentlyFitted[0].dispatchEvent(pointer('pointerdown', 240, 240))
+  dom.window.document.querySelector('#fit-content-both-button').click()
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  independentlyFitted = [...dom.window.document.querySelectorAll('.scene-object')]
+  const firstFittedId = independentlyFitted[0].dataset.id
+  const firstFittedSize = { width: independentlyFitted[0].style.width, height: independentlyFitted[0].style.height }
+  independentlyFitted[1].dispatchEvent(pointer('pointerdown', 260, 260))
+  dom.window.document.querySelector('#fit-content-both-button').click()
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  const firstAfterSecondFit = dom.window.document.querySelector(`[data-id="${firstFittedId}"]`)
+  assert.deepEqual(
+    { width: firstAfterSecondFit.style.width, height: firstAfterSecondFit.style.height },
+    firstFittedSize,
+    'fitting another segment must not change the previously fitted segment'
+  )
+
+  gridSize.value = 'lg'
   gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '16px')
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '29.75px')
 
   const zoomBeforeWheel = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10)
   dom.window.document.querySelector('#canvas-scroll').dispatchEvent(new dom.window.WheelEvent('wheel', {

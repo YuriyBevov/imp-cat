@@ -9,6 +9,26 @@ from export_docx import export_layout  # noqa: E402
 
 
 class ExportDocxTests(unittest.TestCase):
+    def test_exports_page_work_area_as_symmetric_word_margins(self):
+        payload = {
+            "title": "Page margins",
+            "pages": [{
+                "id": "page-1", "index": 0, "widthPx": 800, "heightPx": 1100,
+                "contentBounds": {"x": 40, "y": 40, "width": 720, "height": 1020},
+            }],
+            "segments": [],
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "page-margins.docx"
+            export_layout(payload, output)
+            section = Document(output).sections[0]
+
+        self.assertEqual(section.left_margin.twips, 600)
+        self.assertEqual(section.right_margin.twips, 600)
+        self.assertEqual(section.top_margin.twips, 600)
+        self.assertEqual(section.bottom_margin.twips, 600)
+
     def test_exports_tabs_and_run_level_bold_italic_highlight(self):
         payload = {
             "title": "Rich text",

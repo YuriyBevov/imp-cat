@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI-компоненты — ICAT</title>
+    <link rel="stylesheet" href="/ui-kit.css" />
+    <link rel="stylesheet" href="/studio.css" />
+    <link rel="stylesheet" href="/ui-components.css" />
+    <script src="/custom-select.js" defer></script>
+    <script src="/ui-components.js" defer></script>
+  </head>
+  <body class="components-page">
+    <header class="components-header">
+      <a class="brand" href="/" aria-label="Вернуться в ICAT Translation Studio">
+        <span class="brand__mark">IC</span>
+        <span><strong>ICAT</strong><small>Translation Studio</small></span>
+      </a>
+      <a class="button button--with-icon components-header__back" href="/">
+        <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg>
+        <span>В редактор</span>
+      </a>
+    </header>
+
+    <main class="components-catalog">
+      <section class="components-intro">
+        <p class="eyebrow">Design system</p>
+        <h1>UI-компоненты</h1>
+        <p>Каталог согласованных элементов интерфейса ICAT. Новые компоненты добавляются сюда по мере утверждения внешнего вида и поведения.</p>
+      </section>
+
+      <div class="components-list">
+        <details class="component-section" open>
+          <summary class="component-section__summary">
+            <span>Просмотр оригинала</span>
+            <code>SourcePreviewControls</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Плавающая группа управления масштабом оригинала. Располагается в правом нижнем углу области просмотра и не занимает место документа.</p>
+            </div>
+            <div id="source-preview-demo" class="source-preview-demo">
+              <div class="source-preview-demo__viewport">
+                <div id="component-document-shell" class="source-preview-demo__shell">
+                  <article id="component-document" class="source-preview-demo__document" aria-label="Демонстрационный документ">
+                    <p class="source-preview-demo__kicker">Бюро переводов</p>
+                    <h2>Договор оказания услуг</h2>
+                    <p>Настоящий демонстрационный лист показывает поведение панели масштаба внутри области просмотра исходного документа.</p>
+                    <div class="source-preview-demo__lines" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                  </article>
+                </div>
+              </div>
+              <div class="source-preview-controls" aria-label="Масштаб оригинала">
+                <button id="component-source-zoom-out" class="icon-button icon-button--compact" type="button" title="Уменьшить оригинал" aria-label="Уменьшить оригинал"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+                <output id="component-source-zoom-output" aria-live="polite">70%</output>
+                <button id="component-source-zoom-in" class="icon-button icon-button--compact" type="button" title="Увеличить оригинал" aria-label="Увеличить оригинал"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+                <button id="component-source-zoom-100" class="compact-button source-preview-controls__actual" type="button" title="Масштаб 100%">100%</button>
+                <button id="component-source-zoom-fit" class="icon-button icon-button--compact" type="button" title="Вписать оригинал" aria-label="Вписать оригинал"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section">
+          <summary class="component-section__summary">
+            <span>Выбор цвета</span>
+            <code>ColorPicker</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Компактный контрол цвета текста. Внешний вид задаёт общий компонент, а системная палитра открывается через нативный безопасный input.</p>
+            </div>
+            <div class="component-control-demo">
+              <label class="color-picker" title="Цвет текста">
+                <input id="component-text-color" type="color" value="#315ee7" aria-label="Цвет текста" />
+                <span class="color-picker__swatch" aria-hidden="true"></span>
+              </label>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section">
+          <summary class="component-section__summary">
+            <span>Размер шрифта</span>
+            <code>FontSizeStepper</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Компактный пошаговый контрол без выпадающего списка. Кнопки меняют значение на единицу в диапазоне 10–80.</p>
+            </div>
+            <div class="component-control-demo">
+              <div class="font-size-stepper" role="group" aria-label="Демонстрационный размер шрифта">
+                <button id="component-font-size-decrease" class="icon-button icon-button--compact" type="button" aria-label="Уменьшить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+                <span class="font-size-stepper__field">
+                  <input id="component-font-size-output" class="font-size-stepper__value" type="number" min="10" max="80" step="1" value="14" aria-label="Размер шрифта" />
+                  <span class="font-size-stepper__unit" aria-hidden="true">px</span>
+                </span>
+                <button id="component-font-size-increase" class="icon-button icon-button--compact" type="button" aria-label="Увеличить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section">
+          <summary class="component-section__summary">
+            <span>Выпадающий список</span>
+            <code>BaseSelect</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Единый кастомный список с собственным trigger, плавающим меню, выбранным состоянием и клавиатурным управлением.</p>
+            </div>
+            <div class="component-control-demo">
+              <div class="component-select-demo">
+                <select aria-label="Размер демонстрационной сетки" data-select-icon="grid">
+                  <option value="xs" selected>XS</option>
+                  <option value="sm">SM</option>
+                  <option value="md">MD</option>
+                  <option value="lg">LG</option>
+                  <option value="xl">XL</option>
+                  <option value="xxl">XXL</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section">
+          <summary class="component-section__summary">
+            <span>Иконки</span>
+            <code>IconButton / BaseIcon</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <p>Единый локальный SVG-спрайт. Все кнопки только с иконкой используют `.icon-button`; размеры, цвет, заливка и рамка меняются абстрактными модификаторами `.icon-button--*`. Контекстные классы не дублируют оформление компонента.</p>
+            </div>
+            <div class="icon-catalog">
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Меню"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-menu"></use></svg></button><code>menu</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Дополнительные действия"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-more-vertical"></use></svg></button><code>more-vertical</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button><code>minus</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button><code>plus</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вписать"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button><code>maximize</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вписать по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button><code>fit-width</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Сетка"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button><code>grid</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Макет"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button><code>layout</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Сегменты"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button><code>list-rows</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button><code>close</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Отменить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-undo"></use></svg></button><code>undo</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Повторить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-redo"></use></svg></button><code>redo</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Переместить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grip-vertical"></use></svg></button><code>grip-vertical</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вправо"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button><code>arrow-right</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Влево"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button><code>arrow-left</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="По горизонтали"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-move-horizontal"></use></svg></button><code>move-horizontal</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="По вертикали"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-move-vertical"></use></svg></button><code>move-vertical</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Полужирный"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button><code>bold</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Курсив"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-italic"></use></svg></button><code>italic</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="По левому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-left"></use></svg></button><code>align-left</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="По центру"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-center"></use></svg></button><code>align-center</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="По правому краю"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-right"></use></svg></button><code>align-right</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="По ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-justify"></use></svg></button><code>align-justify</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вставить табуляцию"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-indent-increase"></use></svg></button><code>indent-increase</code></div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </main>
+  </body>
+</html>
