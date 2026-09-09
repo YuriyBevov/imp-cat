@@ -147,6 +147,7 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .page-thumbnail:hover { background: #f6f8fb; }
 .page-thumbnail.is-active { border-color: var(--blue); background: #eef2ff; }
 .page-thumbnail img { display: block; width: 100%; border: 1px solid #d0d5dd; background: #fff; box-shadow: 0 3px 8px rgba(16,24,40,.08); }
+.page-thumbnail__blank { width: 100%; aspect-ratio: 794 / 1123; border: 1px solid #d0d5dd; background: #fff; box-shadow: 0 3px 8px rgba(16,24,40,.08); }
 .page-thumbnail span { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; font-weight: 700; text-align: center; }
 
 .source-preview-panel { grid-area: source; position: relative; min-width: 0; display: grid; grid-template-rows: 1fr; border-right: 1px solid var(--line); background: #f1f4f8; }
@@ -156,6 +157,7 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .source-preview-page { position: absolute; inset: 0 auto auto 0; overflow: hidden; transform-origin: top left; background: #fff; border: 1px solid #c8d0db; box-shadow: 0 7px 22px rgba(40,52,74,.18); cursor: grab; touch-action: none; }
 .source-preview-scroll.is-panning, .source-preview-scroll.is-panning .source-preview-page { cursor: grabbing; user-select: none; }
 .source-preview-page img { position: absolute; object-fit: fill; user-select: none; pointer-events: none; }
+.source-preview-page__empty { position: absolute; inset: 0; display: grid; place-items: center; color: #98a2b3; font: 700 12px/1.4 Inter, sans-serif; }
 .source-preview-controls { position: absolute; right: 12px; bottom: 12px; z-index: 12; display: flex; align-items: center; gap: 4px; padding: 5px; border: 1px solid rgba(203,213,225,.9); border-radius: 11px; background: rgba(255,255,255,.94); box-shadow: 0 8px 24px rgba(16,24,40,.16); backdrop-filter: blur(8px); }
 .source-preview-controls output { min-width: 38px; color: var(--muted); text-align: center; font-size: 10px; font-weight: 700; }
 .source-preview-controls__actual { height: 28px; padding-inline: 7px; font-size: 10px; }
@@ -194,7 +196,12 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .format-button.is-active { color: var(--blue); border-color: var(--blue); background: #eef2ff; }
 .canvas-scroll { grid-area: canvas; min-width: 0; min-height: 0; overflow: auto; position: relative; overscroll-behavior: contain; background: var(--canvas); }
 .document-canvas { width: max-content; min-width: 100%; padding: 38px 70px 110px; }
-.studio-page-shell { margin: 0 auto 34px; position: relative; }
+.studio-page-shell { margin: 0 auto 8px; position: relative; }
+.studio-page-shell.is-drag-source-shell { z-index: 100; }
+.page-actions { width: max-content; margin: 0 auto 26px; display: flex; align-items: center; gap: 6px; }
+.page-actions .button { min-height: 28px; padding: 4px 8px; font-size: 10px; }
+.page-actions .ui-icon { width: 13px; height: 13px; }
+.page-actions__delete:disabled { color: #98a2b3; }
 .studio-page {
   --grid-size: 8px;
   position: absolute;
@@ -206,6 +213,9 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
   overflow: visible;
   user-select: none;
 }
+.studio-page.is-drag-target { box-shadow: 0 0 0 3px rgba(49,94,231,.28), 0 7px 22px rgba(40,52,74,.18); }
+.studio-page.is-drag-source { z-index: 100; }
+.document-canvas.is-object-dragging .scene-object.is-selected { z-index: 2147483646 !important; }
 .content-boundary {
   position: absolute;
   overflow: visible;

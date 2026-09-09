@@ -748,6 +748,7 @@
     const activeTab = state.tabs.get(state.activeTabKey)
     state.metadata = documentData.metadata
     state.scene = documentData.scene
+    initializeScenePageMetadata(state.scene)
     state.selected.clear()
     state.translationSelected = activeTab?.translationSelected instanceof Set
       ? new Set(activeTab.translationSelected)
@@ -788,6 +789,30 @@
     renderDocument()
     requestAnimationFrame(() => { fitWidth(); fitSourceWidth() })
     refreshUndoButtons()
+  }
+
+  function initializeScenePageMetadata(scene) {
+    for (const [index, page] of (scene?.pages || []).entries()) {
+      if (page.sourcePageIndex === undefined) {
+        const match = String(page.imageUrl || '').match(/\/pages\/(\d+)\/image(?:$|[?#])/)
+        page.sourcePageIndex = page.isAdded || !page.imageUrl ? null : Number(match?.[1] ?? index)
+      }
+    }
+    reindexScenePages(scene)
+  }
+
+  function reindexScenePages(scene = state.scene) {
+    for (const [index, page] of (scene?.pages || []).entries()) {
+      page.index = index
+      page.isAdded = Boolean(page.isAdded || page.sourcePageIndex === null)
+      if (page.isAdded) {
+        page.sourcePageIndex = null
+        page.imageUrl = null
+      } else if (state.metadata?.id && Number.isInteger(Number(page.sourcePageIndex))) {
+        page.sourcePageIndex = Number(page.sourcePageIndex)
+        page.imageUrl = `/api/studio/documents/${state.metadata.id}/pages/${page.sourcePageIndex}/image`
+      }
+    }
   }
 
   function rebuildClientTables() {
@@ -902,7 +927,7 @@
         surface.append(number)
       }
       shell.append(surface)
-      elements.canvas.append(shell)
+      elements.canvas.append(shell, createPageActions(page))
     }
     if (state.viewMode === 'segments') refreshSegmentsViewHeights()
     applyZoom()
@@ -932,7 +957,8 @@
   function renderSourcePreview() {
     if (!state.scene || !elements.sourcePreviewCanvas) return
     const page = state.scene.pages[state.activePage] || state.scene.pages[0]
-    if (state.sourceRenderedPage === page.index && elements.sourcePreviewCanvas.firstElementChild) {
+    const renderedPageKey = `${page.index}:${page.sourcePageIndex ?? 'blank'}`
+    if (state.sourceRenderedPage === renderedPageKey && elements.sourcePreviewCanvas.firstElementChild) {
       applySourceZoom()
       return
     }
@@ -944,19 +970,26 @@
     surface.className = 'source-preview-page'
     surface.style.width = `${page.widthPx}px`
     surface.style.height = `${page.heightPx}px`
-    const image = document.createElement('img')
-    image.src = page.imageUrl
-    image.alt = `Оригинал страницы ${page.index + 1}`
-    image.draggable = false
-    const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
-    Object.assign(image.style, {
-      left: `${sourceFrame.x}px`, top: `${sourceFrame.y}px`,
-      width: `${sourceFrame.width}px`, height: `${sourceFrame.height}px`,
-    })
-    surface.append(image)
+    if (page.imageUrl) {
+      const image = document.createElement('img')
+      image.src = page.imageUrl
+      image.alt = `Оригинал страницы ${page.index + 1}`
+      image.draggable = false
+      const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+      Object.assign(image.style, {
+        left: `${sourceFrame.x}px`, top: `${sourceFrame.y}px`,
+        width: `${sourceFrame.width}px`, height: `${sourceFrame.height}px`,
+      })
+      surface.append(image)
+    } else {
+      const empty = document.createElement('span')
+      empty.className = 'source-preview-page__empty'
+      empty.textContent = 'Пустая добавленная страница'
+      surface.append(empty)
+    }
     shell.append(surface)
     elements.sourcePreviewCanvas.append(shell)
-    state.sourceRenderedPage = page.index
+    state.sourceRenderedPage = renderedPageKey
     applySourceZoom()
   }
 
@@ -1041,16 +1074,53 @@
       button.className = `page-thumbnail${page.index === state.activePage ? ' is-active' : ''}`
       button.type = 'button'
       button.dataset.pageIndex = page.index
-      const image = document.createElement('img')
-      image.src = page.imageUrl
-      image.alt = ''
+      const preview = page.imageUrl ? document.createElement('img') : document.createElement('div')
+      if (page.imageUrl) {
+        preview.src = page.imageUrl
+        preview.alt = ''
+      } else {
+        preview.className = 'page-thumbnail__blank'
+        preview.setAttribute('aria-hidden', 'true')
+        preview.style.aspectRatio = `${page.widthPx} / ${page.heightPx}`
+      }
       const label = document.createElement('span')
       label.textContent = String(page.index + 1)
       button.setAttribute('aria-label', `Страница ${page.index + 1}`)
-      button.append(image, label)
+      button.append(preview, label)
       button.addEventListener('click', () => focusPage(page.index))
       elements.thumbnails.append(button)
     }
+  }
+
+  function isScenePageEmpty(pageIndex) {
+    return !state.scene.objects.some(object => !object.excluded && object.pageIndex === pageIndex)
+  }
+
+  function createPageActions(page) {
+    const controls = document.createElement('div')
+    controls.className = 'page-actions'
+    controls.dataset.pageIndex = page.index
+
+    const add = document.createElement('button')
+    add.className = 'button button--with-icon page-actions__add'
+    add.type = 'button'
+    add.innerHTML = `${iconMarkup('plus')}<span>Добавить пустую страницу ниже</span>`
+    add.addEventListener('click', () => insertBlankPage(page.index))
+
+    const remove = document.createElement('button')
+    remove.className = 'button button--with-icon page-actions__delete'
+    remove.type = 'button'
+    remove.innerHTML = `${iconMarkup('trash')}<span>Удалить пустую страницу</span>`
+    const onlyPage = state.scene.pages.length <= 1
+    const empty = isScenePageEmpty(page.index)
+    remove.disabled = onlyPage || !empty
+    remove.title = onlyPage
+      ? 'В документе должна остаться хотя бы одна страница'
+      : empty ? 'Удалить эту пустую страницу' : 'Сначала перенесите или удалите сегменты страницы'
+    remove.addEventListener('click', () => removeEmptyPage(page.index))
+
+    controls.append(add, remove)
+    return controls
   }
 
   function typeLabel(type) {
@@ -2585,7 +2655,7 @@
       window.removeEventListener('pointerup', commit)
       window.removeEventListener('pointercancel', cancel)
       window.removeEventListener('blur', cancel)
-      captureElement.removeEventListener('lostpointercapture', cancel)
+      captureElement.removeEventListener('lostpointercapture', commitLatest)
       if (captureElement.hasPointerCapture?.(pointerId)) captureElement.releasePointerCapture(pointerId)
       if (state.pointerAction === action) state.pointerAction = null
     }
@@ -2603,6 +2673,11 @@
       cleanup()
       handlers.commit?.(current)
     }
+    const commitLatest = current => {
+      if (!active || (current?.pointerId != null && current.pointerId !== pointerId)) return
+      cleanup()
+      handlers.commit?.(lastEvent)
+    }
     const cancel = current => {
       if (!active || (current?.pointerId != null && current.pointerId !== pointerId)) return
       cleanup()
@@ -2616,7 +2691,7 @@
     window.addEventListener('pointerup', commit)
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('blur', cancel)
-    captureElement.addEventListener('lostpointercapture', cancel)
+    captureElement.addEventListener('lostpointercapture', commitLatest)
   }
 
   function beginMarquee(event) {
@@ -2667,37 +2742,56 @@
     const objects = selectedObjects()
     const handle = event.currentTarget
     const origins = new Map(objects.map(object => [object.id, { x: object.x, y: object.y, pageIndex: object.pageIndex }]))
+    const originBounds = boundsOf(objects)
+    const originSurface = handle.closest('.studio-page')
+    const originSurfaceRect = originSurface?.getBoundingClientRect()
+    elements.canvas.classList.add('is-object-dragging')
+    for (const pageIndex of new Set(objects.map(object => object.pageIndex))) {
+      const sourceSurface = elements.canvas.querySelector(`.studio-page[data-page-index="${pageIndex}"]`)
+      sourceSurface?.classList.add('is-drag-source')
+      sourceSurface?.closest('.studio-page-shell')?.classList.add('is-drag-source-shell')
+    }
+    const grabOffset = originSurfaceRect ? {
+      x: (event.clientX - originSurfaceRect.left) / state.zoom - originBounds.left,
+      y: (event.clientY - originSurfaceRect.top) / state.zoom - originBounds.top,
+    } : { x: 0, y: 0 }
     const start = { x: event.clientX, y: event.clientY, scrollLeft: elements.canvasScroll.scrollLeft, scrollTop: elements.canvasScroll.scrollTop }
-    const action = { kind: 'drag', pointerId: event.pointerId, objects, origins, start, lastX: event.clientX, lastY: event.clientY }
+    const action = { kind: 'drag', pointerId: event.pointerId, objects, origins, start, grabOffset, lastX: event.clientX, lastY: event.clientY }
     const update = current => {
       action.lastX = current.clientX
       action.lastY = current.clientY
       const deltaX = (current.clientX - start.x + elements.canvasScroll.scrollLeft - start.scrollLeft) / state.zoom
       const deltaY = (current.clientY - start.y + elements.canvasScroll.scrollTop - start.scrollTop) / state.zoom
-      for (const group of groupedByPage(objects).values()) {
-        const originObjects = group.map(object => ({ ...object, ...origins.get(object.id) }))
-        const boundedShift = clampGroupShift(originObjects, deltaX, deltaY)
-        for (const object of group) {
-          const origin = origins.get(object.id)
-          object.x = origin.x + boundedShift.x
-          object.y = origin.y + boundedShift.y
-          const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
-          if (node) positionObjectNode(node, object)
-        }
+      for (const object of objects) {
+        const origin = origins.get(object.id)
+        object.x = origin.x + deltaX
+        object.y = origin.y + deltaY
+        const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
+        if (node) positionObjectNode(node, object)
       }
+      markPageDropTarget(pageSurfaceAtPoint(current.clientX, current.clientY))
       refreshInspectorCoordinates()
     }
     const finish = current => {
-      const destination = document.elementFromPoint?.(current.clientX, current.clientY)?.closest('.studio-page')
+      const destination = pageSurfaceAtPoint(current.clientX, current.clientY)
+      clearPageDragState()
       if (destination && objects.every(object => object.pageIndex === objects[0].pageIndex)) {
         const destinationIndex = Number(destination.dataset.pageIndex)
-        if (destinationIndex !== objects[0].pageIndex) moveSelectionToPage(destinationIndex, current.clientX, current.clientY, objects)
+        if (destinationIndex !== objects[0].pageIndex) {
+          moveSelectionToPage(destinationIndex, current.clientX, current.clientY, objects, grabOffset)
+          showToast(`Перенесено на страницу ${destinationIndex + 1}`)
+        }
+      }
+      for (const group of groupedByPage(objects).values()) {
+        const shift = clampGroupShift(group, 0, 0)
+        for (const object of group) { object.x += shift.x; object.y += shift.y }
       }
       snapObjectGroups(objects)
       renderDocument()
       scheduleSave()
     }
     const cancel = () => {
+      clearPageDragState()
       for (const object of objects) Object.assign(object, origins.get(object.id))
       state.history.length = historyLength
       refreshUndoButtons()
@@ -2706,14 +2800,44 @@
     startPointerAction(event, handle, action, { move: update, commit: finish, cancel })
   }
 
-  function moveSelectionToPage(pageIndex, clientX, clientY, objects) {
+  function clearPageDropTarget() {
+    for (const surface of elements.canvas.querySelectorAll('.studio-page.is-drag-target')) surface.classList.remove('is-drag-target')
+  }
+
+  function clearPageDragState() {
+    clearPageDropTarget()
+    for (const surface of elements.canvas.querySelectorAll('.studio-page.is-drag-source')) surface.classList.remove('is-drag-source')
+    for (const shell of elements.canvas.querySelectorAll('.studio-page-shell.is-drag-source-shell')) shell.classList.remove('is-drag-source-shell')
+    elements.canvas.classList.remove('is-object-dragging')
+  }
+
+  function markPageDropTarget(surface) {
+    for (const candidate of elements.canvas.querySelectorAll('.studio-page')) candidate.classList.toggle('is-drag-target', candidate === surface)
+  }
+
+  function pageSurfaceAtPoint(clientX, clientY) {
+    const surfaces = [...elements.canvas.querySelectorAll('.studio-page:not(.studio-page--segments)')]
+    let nearest = null
+    let nearestDistance = Infinity
+    for (const surface of surfaces) {
+      const rect = surface.getBoundingClientRect()
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) return surface
+      const dx = Math.max(rect.left - clientX, 0, clientX - rect.right)
+      const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom)
+      const distance = Math.hypot(dx, dy)
+      if (distance < nearestDistance) { nearest = surface; nearestDistance = distance }
+    }
+    return nearestDistance <= 96 ? nearest : null
+  }
+
+  function moveSelectionToPage(pageIndex, clientX, clientY, objects, grabOffset = { x: 0, y: 0 }) {
     const destination = elements.canvas.querySelector(`.studio-page[data-page-index="${pageIndex}"]`)
     if (!destination) return
     const rect = destination.getBoundingClientRect()
     const left = Math.min(...objects.map(object => object.x))
     const top = Math.min(...objects.map(object => object.y))
-    const anchorX = (clientX - rect.left) / state.zoom
-    const anchorY = (clientY - rect.top) / state.zoom
+    const anchorX = (clientX - rect.left) / state.zoom - grabOffset.x
+    const anchorY = (clientY - rect.top) / state.zoom - grabOffset.y
     for (const object of objects) {
       const offsetX = object.x - left
       const offsetY = object.y - top
@@ -3216,6 +3340,62 @@
     state.selected = new Set([first.id])
     renderDocument()
     scheduleSave()
+  }
+
+  function insertBlankPage(afterPageIndex) {
+    if (!state.scene) return
+    const reference = state.scene.pages[afterPageIndex]
+    if (!reference) return
+    cancelPointerAction()
+    checkpoint()
+    const insertIndex = afterPageIndex + 1
+    const blankPage = {
+      index: insertIndex,
+      sourcePageIndex: null,
+      isAdded: true,
+      widthPx: reference.widthPx,
+      heightPx: reference.heightPx,
+      sourceWidth: reference.sourceWidth || reference.widthPx,
+      sourceHeight: reference.sourceHeight || reference.heightPx,
+      imageUrl: null,
+      sourceFrame: { x: 0, y: 0, width: reference.widthPx, height: reference.heightPx },
+      contentBounds: { ...reference.contentBounds },
+      languages: [],
+      recognitionStats: { manualPage: true },
+    }
+    state.scene.pages.splice(insertIndex, 0, blankPage)
+    for (const object of state.scene.objects) {
+      if (object.pageIndex >= insertIndex) object.pageIndex += 1
+    }
+    reindexScenePages()
+    state.activePage = insertIndex
+    state.sourceRenderedPage = null
+    renderDocument()
+    scheduleSave()
+    requestAnimationFrame(() => focusPage(insertIndex))
+    showToast(`Добавлена пустая страница ${insertIndex + 1}`)
+  }
+
+  function removeEmptyPage(pageIndex) {
+    if (!state.scene?.pages?.[pageIndex]) return
+    if (state.scene.pages.length <= 1) return showToast('В документе должна остаться хотя бы одна страница', true)
+    if (!isScenePageEmpty(pageIndex)) return showToast('Страница не пустая. Сначала перенесите или удалите её сегменты.', true)
+    cancelPointerAction()
+    checkpoint()
+    state.scene.pages.splice(pageIndex, 1)
+    const remainingCount = state.scene.pages.length
+    for (const object of state.scene.objects) {
+      if (object.pageIndex > pageIndex) object.pageIndex -= 1
+      else if (object.pageIndex === pageIndex) object.pageIndex = Math.min(pageIndex, remainingCount - 1)
+    }
+    reindexScenePages()
+    state.activePage = Math.min(state.activePage > pageIndex ? state.activePage - 1 : state.activePage, remainingCount - 1)
+    state.selected = new Set([...state.selected].filter(id => state.scene.objects.some(object => object.id === id && !object.excluded)))
+    state.sourceRenderedPage = null
+    renderDocument()
+    scheduleSave()
+    requestAnimationFrame(() => focusPage(state.activePage))
+    showToast(`Удалена пустая страница ${pageIndex + 1}`)
   }
 
   function addObject(options = {}) {

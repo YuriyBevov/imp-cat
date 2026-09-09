@@ -69,6 +69,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /beginMarquee/)
   assert.match(client, /beginDrag/)
   assert.match(client, /moveSelectionToPage/)
+  assert.match(client, /insertBlankPage/)
+  assert.match(client, /removeEmptyPage/)
+  assert.match(client, /pageSurfaceAtPoint/)
   assert.match(client, /function undo/)
   assert.match(client, /function redo/)
   assert.match(client, /queueWheelZoom/)
@@ -290,6 +293,10 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.doesNotMatch(styles, /\.scene-object\.has-inset-drag-handle/)
   assert.match(styles, /\.studio-page\s*\{[\s\S]*?overflow:\s*visible/)
   assert.match(styles, /\.scene-object__resize\s*\{[^}]*right:\s*-12px[^}]*bottom:\s*-12px/)
+  assert.match(styles, /\.page-actions\s*\{[^}]*display:\s*flex/)
+  assert.match(styles, /\.studio-page\.is-drag-target/)
+  assert.match(styles, /\.studio-page\.is-drag-source/)
+  assert.match(styles, /\.studio-page-shell\.is-drag-source-shell/)
   assert.match(styles, /\.scene-object\.is-selected\s*\{\s*z-index:/)
   assert.doesNotMatch(styles, /\.scene-object\.is-selected\s*\{[^}]*(?:outline|border):/)
   assert.doesNotMatch(styles, /has-inset-resize/)
@@ -963,6 +970,96 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(zoomAfterWheel >= zoomBeforeWheel, `${zoomBeforeWheel} -> ${zoomAfterWheel}`)
   assert.ok(zoomAfterWheel - zoomBeforeWheel <= 2)
   assert.deepEqual(errors, [])
+  dom.window.close()
+})
+
+test('blank pages can be inserted and removed while segments move reliably between pages', async () => {
+  const id = 'f'.repeat(32)
+  const page = (index, sourcePageIndex = index) => ({
+    index, sourcePageIndex, isAdded: false, widthPx: 794, heightPx: 1123,
+    imageUrl: `/api/studio/documents/${id}/pages/${sourcePageIndex}/image`,
+    sourceFrame: { x: 0, y: 0, width: 794, height: 1123 },
+    contentBounds: { x: 40, y: 40, width: 714, height: 1043 },
+  })
+  const scene = {
+    title: 'Page editing', sourceLanguage: 'en', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [page(0), page(1)],
+    objects: [{
+      id: 'moving-object', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText: 'Move me', translation: 'Переместить', confidence: .99,
+      x: 50, y: 60, width: 200, height: 40, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 50, y: 60, width: 200, height: 40 },
+    }],
+  }
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.fetch = async (url, options = {}) => ({
+    ok: true,
+    json: async () => String(url).endsWith('/status')
+      ? { translationProviderConfigured: false, translationModel: null }
+      : options.method === 'PUT'
+        ? { metadata: { id, revision: 2 } }
+        : { metadata: { id, revision: 1 }, scene },
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.HTMLElement.prototype.scrollIntoView = () => {}
+  dom.window.Element.prototype.setPointerCapture = function setPointerCapture(pointerId) { this.__pointerId = pointerId }
+  dom.window.Element.prototype.hasPointerCapture = function hasPointerCapture(pointerId) { return this.__pointerId === pointerId }
+  dom.window.Element.prototype.releasePointerCapture = function releasePointerCapture(pointerId) {
+    if (this.__pointerId === pointerId) this.__pointerId = null
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  assert.equal(dom.window.document.querySelectorAll('.page-actions').length, 2)
+  assert.equal(dom.window.document.querySelector('.page-actions__delete').disabled, true)
+  dom.window.document.querySelector('.page-actions__add').click()
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 3)
+  assert.match(dom.window.document.querySelector('.source-preview-page__empty').textContent, /Пустая/)
+  assert.equal(scene.pages[2].sourcePageIndex, 1)
+  assert.match(scene.pages[2].imageUrl, /pages\/1\/image$/)
+
+  dom.window.document.querySelector('.page-actions[data-page-index="1"] .page-actions__delete').click()
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
+  assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 2)
+  assert.equal(scene.pages[1].sourcePageIndex, 1)
+  assert.match(scene.pages[1].imageUrl, /pages\/1\/image$/)
+
+  dom.window.document.querySelector('#zoom-100').click()
+  const surfaces = [...dom.window.document.querySelectorAll('.studio-page')]
+  surfaces[0].getBoundingClientRect = () => ({ left: 100, top: 100, right: 894, bottom: 1223, width: 794, height: 1123 })
+  surfaces[1].getBoundingClientRect = () => ({ left: 100, top: 1300, right: 894, bottom: 2423, width: 794, height: 1123 })
+  const pointer = (type, x, y) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
+    Object.defineProperty(event, 'pointerId', { value: 11 })
+    return event
+  }
+  dom.window.document.querySelector('[data-id="moving-object"]').dispatchEvent(pointer('pointerdown', 150, 160))
+  const dragHandle = dom.window.document.querySelector('[data-id="moving-object"] .scene-object__handle')
+  dragHandle.dispatchEvent(pointer('pointerdown', 128, 160))
+  dom.window.dispatchEvent(pointer('pointermove', 200, 1400))
+  assert.equal(surfaces[1].classList.contains('is-drag-target'), true)
+  assert.equal(surfaces[0].closest('.studio-page-shell').classList.contains('is-drag-source-shell'), true)
+  assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-object-dragging'), true)
+  dom.window.dispatchEvent(pointer('pointerup', 200, 1400))
+  assert.ok(dom.window.document.querySelector('.studio-page[data-page-index="1"] [data-id="moving-object"]'))
+  assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-object-dragging'), false)
+  assert.equal(dom.window.document.querySelector('.page-actions[data-page-index="1"] .page-actions__delete').disabled, true)
+
+  const movedObject = dom.window.document.querySelector('[data-id="moving-object"]')
+  movedObject.dispatchEvent(pointer('pointerdown', 200, 1400))
+  const resizeHandle = movedObject.querySelector('.scene-object__resize')
+  const widthBeforeResize = Number.parseFloat(movedObject.style.width)
+  resizeHandle.dispatchEvent(pointer('pointerdown', 300, 1450))
+  dom.window.dispatchEvent(pointer('pointermove', 340, 1480))
+  resizeHandle.dispatchEvent(pointer('lostpointercapture', 340, 1480))
+  assert.ok(Number.parseFloat(movedObject.style.width) > widthBeforeResize)
+  assert.equal(resizeHandle.__pointerId, null)
+
   dom.window.close()
 })
 

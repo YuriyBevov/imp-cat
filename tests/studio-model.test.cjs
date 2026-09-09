@@ -166,6 +166,23 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.snapToGrid, true)
 })
 
+test('normalizeScene preserves original page images around an inserted blank page', () => {
+  const documentId = 'e'.repeat(32)
+  const input = buildScene({ pages: [analysisFixture().pages[0], { ...analysisFixture().pages[0], index: 1 }] }, { documentId })
+  const blank = {
+    ...input.pages[0], index: 1, sourcePageIndex: null, isAdded: true, imageUrl: null,
+  }
+  input.pages.splice(1, 0, blank)
+  input.pages[2].index = 2
+  input.pages[2].sourcePageIndex = 1
+  const normalized = normalizeScene(input, documentId, 'Title')
+  assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${documentId}/pages/0/image`)
+  assert.equal(normalized.pages[1].imageUrl, null)
+  assert.equal(normalized.pages[1].sourcePageIndex, null)
+  assert.equal(normalized.pages[1].isAdded, true)
+  assert.equal(normalized.pages[2].imageUrl, `/api/studio/documents/${documentId}/pages/1/image`)
+})
+
 test('normalizeScene preserves safe inline text styles', () => {
   const input = buildScene(analysisFixture(), { documentId: '9'.repeat(32) })
   input.objects[0].sourceTextStyles = [{ start: 0, end: 5, fontFamily: 'Cambria', fontSizePx: 22, fontWeight: 700, color: '#ff0000' }]
