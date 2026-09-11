@@ -29,6 +29,15 @@
   <symbol id="icon-fit-both" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M9 9 4 4m0 0v5m0-5h5m6 5 5-5m0 0v5m0-5h-5M9 15l-5 5m0 0v-5m0 5h5m6-5 5 5m0 0v-5m0 5h-5" />
   </symbol>
+  <symbol id="icon-stretch-area-width" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 4v16M21 4v16M8 12H3m0 0 3-3m-3 3 3 3m10-3h5m0 0-3-3m3 3-3 3" />
+  </symbol>
+  <symbol id="icon-stretch-area-height" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 3h16M4 21h16M12 8V3m0 0L9 6m3-3 3 3m-3 10v5m0 0-3-3m3 3 3-3" />
+  </symbol>
+  <symbol id="icon-fit-min-width" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 5v14M21 5v14M3 12h6m0 0-3-3m3 3-3 3m15-3h-6m0 0 3-3m-3 3 3 3M10 8h4M10 16h4" />
+  </symbol>
   <symbol id="icon-merge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
     <path d="m10.2 13.8-1.7 1.7a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0" />
     <path d="m13.8 10.2 1.7-1.7a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" />
@@ -38,6 +47,10 @@
     <rect x="4" y="4" width="9" height="9" rx="1.5" />
     <rect x="11" y="11" width="9" height="9" rx="1.5" />
     <path d="M8 17H3m0 0 2-2m-2 2 2 2M16 7h5m0 0-2-2m2 2-2 2" />
+  </symbol>
+  <symbol id="icon-reset-position" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="7" y="7" width="12" height="12" rx="2" />
+    <path d="M7 12H3V8m0 4a8.5 8.5 0 0 1 14-6.5" />
   </symbol>
   <symbol id="icon-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
     <path d="M4 4h16v16H4zM4 9.33h16M4 14.67h16M9.33 4v16M14.67 4v16" />
@@ -65,6 +78,10 @@
   </symbol>
   <symbol id="icon-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </symbol>
+  <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 11a8 8 0 0 0-14.9-4M4 4v5h5" />
+    <path d="M4 13a8 8 0 0 0 14.9 4M20 20v-5h-5" />
   </symbol>
   <symbol id="icon-grip-vertical" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="9" cy="5" r="1.5" /><circle cx="15" cy="5" r="1.5" />

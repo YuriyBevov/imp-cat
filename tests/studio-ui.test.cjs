@@ -33,7 +33,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
     'instruction-preset-edit-cancel', 'instruction-preset-edit-save',
-    'auto-layout-button', 'layout-review-button', 'layout-review-cancel-button', 'layout-review-status', 'qa-button', 'export-docx-button', 'export-pdf-button',
+    'auto-layout-button', 'layout-review-button', 'layout-review-status', 'qa-button', 'qa-recheck-selection', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'knowledge-base-open-button', 'knowledge-base-open-context-button',
     'knowledge-base-modal', 'knowledge-base-query', 'knowledge-base-glossary-filter', 'knowledge-base-list',
     'knowledge-base-new-button', 'knowledge-base-entry-form', 'knowledge-base-entry-source', 'knowledge-base-entry-translation',
@@ -46,7 +46,9 @@ test('studio exposes the complete source-to-export workflow', () => {
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
     'grid-size', 'align-left-button',
-    'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button', 'format-all-segments', 'typography-select-all',
+    'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
+    'stretch-work-area-width-button', 'stretch-work-area-height-button', 'fit-min-content-width-button',
+    'format-all-segments', 'typography-select-all',
     'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase',
     'line-height-decrease', 'line-height', 'line-height-increase', 'zoom-100',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
@@ -58,6 +60,12 @@ test('studio exposes the complete source-to-export workflow', () => {
   const studioDocument = new JSDOM(html).window.document
   assert.doesNotMatch(html, /id="(?:alignment-scope|flex-container)"/)
   assert.doesNotMatch(html, /id="flex-apply-button"/)
+  assert.doesNotMatch(html, /id="selection-count"/)
+  assert.doesNotMatch(html, /id="layout-review-cancel-button"/)
+  assert.match(html, /id="layout-review-button"[^>]*>Проверить и исправить макет<\/button>/)
+  assert.equal(studioDocument.querySelector('.selection-heading .eyebrow'), null)
+  assert.match(styles, /\.selection-heading h2\s*\{[^}]*font-size:\s*12px/)
+  assert.match(styles, /\.selection-title__count\s*\{[^}]*color:\s*var\(--danger\)/)
   assert.equal(studioDocument.querySelectorAll('.flex-layout select, .flex-layout input').length, 0)
   assert.equal(studioDocument.querySelectorAll('[data-flex-axis="row"][data-flex-layout]').length, 6)
   assert.equal(studioDocument.querySelectorAll('[data-flex-axis="column"][data-flex-layout]').length, 6)
@@ -65,6 +73,11 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.ok(studioDocument.querySelector('.fit-size-actions #merge-button.icon-button use[href="/icons.svg#icon-merge"]'))
   assert.ok(studioDocument.querySelector('.segment-actions-card .layout-card__heading strong')?.textContent.includes('Сегменты'))
   assert.ok(studioDocument.querySelector('.fit-size-actions #auto-layout-button.icon-button use[href="/icons.svg#icon-resolve-overlap"]'))
+  assert.ok(studioDocument.querySelector('.fit-size-actions #reset-position-button.icon-button use[href="/icons.svg#icon-reset-position"]'))
+  assert.ok(studioDocument.querySelector('.fit-size-actions #stretch-work-area-width-button.icon-button use[href="/icons.svg#icon-stretch-area-width"]'))
+  assert.ok(studioDocument.querySelector('.fit-size-actions #stretch-work-area-height-button.icon-button use[href="/icons.svg#icon-stretch-area-height"]'))
+  assert.ok(studioDocument.querySelector('.fit-size-actions #fit-min-content-width-button.icon-button use[href="/icons.svg#icon-fit-min-width"]'))
+  assert.equal(studioDocument.querySelector('.object-actions #reset-position-button'), null)
   assert.equal(studioDocument.querySelector('.agent-actions #auto-layout-button'), null)
   assert.ok(studioDocument.querySelector('.segment-actions-card #merge-button'))
   assert.equal(studioDocument.querySelector('.inspector-scope--segments #merge-button'), null)
@@ -107,6 +120,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /alignToDocument/)
   assert.match(client, /applyFlexLayout/)
   assert.match(client, /fitSelectionToContent/)
+  assert.match(client, /stretchSelectionToWorkArea/)
   assert.match(client, /setDocumentView/)
   assert.match(client, /toggleSourcePanel/)
   assert.match(client, /agent\/reanalyze/)
@@ -153,10 +167,15 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(html, /id="toolbar-font-size-value"[^>]*type="number"[^>]*min="10"[^>]*max="80"[^>]*step="1"/)
   assert.match(html, /id="toolbar-font-size-value"[^>]*placeholder="≠"[^>]*aria-label="Размер шрифта, px"/)
   assert.match(html, /Размер шрифта, px[\s\S]*?class="number-stepper__field"[\s\S]*?id="toolbar-font-size-value"/)
-  assert.match(uiKit, /\.number-stepper__field\.is-mixed::after\s*\{[^}]*content:\s*"≠"[^}]*place-items:\s*center[^}]*color:\s*#98a2b3[^}]*font:\s*400 13px\/1 Arial/)
+  assert.match(uiKit, /\.number-stepper__field\.is-mixed::after\s*\{[^}]*content:\s*"≠"[^}]*place-items:\s*center[^}]*color:\s*#98a2b3[^}]*font:\s*400 12px\/1 Arial/)
   assert.doesNotMatch(html, /number-stepper__unit/)
   assert.doesNotMatch(uiComponentsHtml, /number-stepper__unit/)
   assert.match(html, /class="layout-card typography-card inspector-scope--layout"[\s\S]*?<strong>Типографика<\/strong>/)
+  assert.doesNotMatch(html, /оформление выбранного текста/)
+  assert.match(html, /class="typography-card__settings"[\s\S]*?id="toolbar-font-family"[\s\S]*?id="toolbar-font-size-value"[\s\S]*?id="line-height"/)
+  assert.match(styles, /\.typography-card__settings\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(120px, 1fr\) auto auto/)
+  assert.match(html, /Начертание, выравнивание и цвет[\s\S]*?class="typography-card__buttons"[\s\S]*?id="toolbar-text-color"/)
+  assert.ok(html.indexOf('id="typography-select-all"') < html.indexOf('id="format-all-segments"'))
   assert.match(html, /Высота строки[\s\S]*?class="number-stepper"[\s\S]*?id="line-height-decrease"[\s\S]*?<input id="line-height"[^>]*min="0\.8"[^>]*max="3"[^>]*step="0\.05"[\s\S]*?id="line-height-increase"/)
   assert.match(html, /id="font-size-control-label"[\s\S]*?class="number-stepper"[^>]*aria-labelledby="font-size-control-label"/)
   assert.match(html, /id="line-height-control-label"[\s\S]*?class="number-stepper"[^>]*aria-labelledby="line-height-control-label"/)
@@ -168,6 +187,11 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(html, /id="fit-content-width-button"[^>]*class="icon-button icon-button--compact"[^>]*[\s\S]*?icon-fit-width/)
   assert.match(html, /id="fit-content-height-button"[^>]*class="icon-button icon-button--compact"[^>]*[\s\S]*?icon-fit-height/)
   assert.match(html, /id="fit-content-both-button"[^>]*class="icon-button icon-button--compact"[^>]*[\s\S]*?icon-fit-both/)
+  assert.match(html, /id="stretch-work-area-width-button"[^>]*class="icon-button icon-button--compact"[^>]*[\s\S]*?icon-stretch-area-width/)
+  assert.match(html, /id="stretch-work-area-height-button"[^>]*class="icon-button icon-button--compact"[^>]*[\s\S]*?icon-stretch-area-height/)
+  assert.match(html, /id="fit-min-content-width-button"[^>]*class="icon-button icon-button--compact"[^>]*[\s\S]*?icon-fit-min-width/)
+  assert.match(html, /<strong>Расположение сегментов внутри рабочей области<\/strong>/)
+  assert.doesNotMatch(html, /для выбранных на одной странице/)
   assert.match(styles, /\.source-preview-controls\s*\{[^}]*position:\s*absolute[^}]*right:\s*12px[^}]*bottom:\s*12px/)
   assert.match(styles, /--source-open-width:\s*min\(21vw, 330px\)/)
   assert.match(styles, /\.source-preview-lightbox\s*\{[^}]*position:\s*fixed[^}]*inset:\s*0[^}]*z-index:\s*6000/)
@@ -177,6 +201,16 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.studio\s*\{[^}]*transition:\s*grid-template-columns \.28s ease/)
   assert.match(styles, /\.inspector-panel\s*\{[^}]*grid-area:\s*inspector[^}]*position:\s*relative[^}]*height:\s*100%/)
   assert.match(styles, /\.studio\.is-inspector-collapsed \.inspector-panel\s*\{[^}]*transform:\s*translateX\(100%\)/)
+  assert.equal(studioDocument.querySelector('#qa-panel')?.parentElement?.id, 'studio-view')
+  assert.equal(studioDocument.querySelector('#qa-panel')?.getAttribute('aria-hidden'), 'true')
+  assert.ok(studioDocument.querySelector('#qa-recheck-selection.icon-button.icon-button--large use[href="/icons.svg#icon-refresh"]'))
+  assert.equal(studioDocument.querySelector('#qa-segment-status'), null)
+  assert.match(styles, /\.qa-overview\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/)
+  assert.match(styles, /\.qa-summary\s*\{[^}]*height:\s*44px/)
+  assert.match(uiKit, /\.icon-button--large\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/)
+  assert.match(styles, /\.qa-panel\s*\{[^}]*position:\s*absolute[^}]*top:\s*44px[^}]*right:\s*0[^}]*bottom:\s*0[^}]*width:\s*var\(--inspector-open-width\)[^}]*transform:\s*translateX\(100%\)[^}]*transition:\s*transform \.28s ease, opacity \.28s ease/)
+  assert.match(styles, /\.qa-panel\.is-open\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)[^}]*pointer-events:\s*auto/)
+  assert.match(client, /function setQaPanelOpen\(open\)/)
   assert.match(styles, /\.studio\.is-source-collapsed \.source-preview-panel\s*\{[^}]*transform:\s*translateX\(-100%\)/)
   assert.match(styles, /\.pages-panel\s*\{[^}]*position:\s*relative[^}]*z-index:\s*10/)
   assert.match(styles, /\.source-preview-panel\s*\{[^}]*z-index:\s*8/)
@@ -226,6 +260,132 @@ test('app bar actions open from a burger and close outside or with Escape', asyn
   dom.window.close()
 })
 
+test('layout review uses one stable button for starting and cancelling the job', async () => {
+  const id = 'b'.repeat(32)
+  const jobId = 'c'.repeat(32)
+  const metadata = { id, revision: 1 }
+  const scene = {
+    title: 'Layout review fixture', sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [],
+  }
+  const requests = []
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    requests.push({ url: value, method: options.method || 'GET' })
+    if (value.endsWith('/status') && !value.includes('knowledge-base')) return { ok: true, json: async () => ({ translationProviderConfigured: false }) }
+    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [] }) }
+    if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (value.endsWith(`/documents/${id}`)) return { ok: true, json: async () => ({ metadata, scene }) }
+    if (value.endsWith(`/documents/${id}/scene`)) return { ok: true, json: async () => ({ metadata }) }
+    if (value.endsWith(`/documents/${id}/agent/layout-review`)) return {
+      ok: true,
+      json: async () => ({ job: { id: jobId, documentId: id, status: 'running', progress: 10, message: 'Сравниваем макет' } }),
+    }
+    if (value.endsWith(`/jobs/${jobId}/cancel`)) return {
+      ok: true,
+      json: async () => ({ job: { id: jobId, documentId: id, status: 'cancelled', progress: 10, message: 'Проверка отменена' } }),
+    }
+    if (value.endsWith('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'memory', connected: true, persistent: false }) }
+    if (value.endsWith('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [] }) }
+    return { ok: true, json: async () => ({}) }
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  const button = dom.window.document.querySelector('#layout-review-button')
+  assert.equal(button.textContent, 'Проверить и исправить макет')
+  assert.equal(button.dataset.action, 'start')
+  button.click()
+  await new Promise(resolve => setTimeout(resolve, 15))
+  assert.equal(button.textContent, 'Отменить проверку макета')
+  assert.equal(button.dataset.action, 'cancel')
+  assert.equal(button.classList.contains('button--danger'), true)
+  button.click()
+  await new Promise(resolve => setTimeout(resolve, 15))
+  assert.equal(requests.filter(request => request.url.endsWith(`/jobs/${jobId}/cancel`)).length, 1)
+  assert.equal(button.textContent, 'Проверить и исправить макет')
+  assert.equal(button.dataset.action, 'start')
+  assert.equal(button.classList.contains('button--danger'), false)
+  dom.window.close()
+})
+
+test('final QA opens as an animated overlay and hides only after the closing transition', async () => {
+  const id = 'd'.repeat(32)
+  const metadata = { id, revision: 1 }
+  const scene = {
+    title: 'QA fixture', sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'qa-segment', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText: 'Source', translation: 'Перевод', confidence: .98,
+      x: 40, y: 60, width: 200, height: 32, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 60, width: 200, height: 32 },
+    }],
+  }
+  const initialReport = {
+    counts: { errors: 0, warnings: 1, translated: 1, objects: 1 },
+    warnings: [{ severity: 'warning', code: 'outside-content', objectIds: ['qa-segment'], message: 'Объект находится в поле страницы вне рабочей области' }],
+  }
+  const correctedReport = { counts: { errors: 0, warnings: 0, translated: 1, objects: 1 }, warnings: [] }
+  let qaRequestCount = 0
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.Element.prototype.scrollIntoView = function scrollIntoView() {}
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    if (value.endsWith('/status') && !value.includes('knowledge-base')) return { ok: true, json: async () => ({ translationProviderConfigured: false }) }
+    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [] }) }
+    if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (value.endsWith(`/documents/${id}`)) return { ok: true, json: async () => ({ metadata, scene }) }
+    if (value.endsWith(`/documents/${id}/scene`)) return { ok: true, json: async () => ({ metadata }) }
+    if (value.endsWith(`/documents/${id}/qa`)) {
+      qaRequestCount += 1
+      return { ok: true, json: async () => qaRequestCount === 1 ? initialReport : correctedReport }
+    }
+    if (value.endsWith('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'memory', connected: true, persistent: false }) }
+    if (value.endsWith('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [] }) }
+    return { ok: true, json: async () => ({}) }
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  const panel = dom.window.document.querySelector('#qa-panel')
+  dom.window.document.querySelector('#qa-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(panel.hidden, false)
+  assert.equal(panel.classList.contains('is-open'), true)
+  assert.equal(panel.getAttribute('aria-hidden'), 'false')
+  const recheck = dom.window.document.querySelector('#qa-recheck-selection')
+  assert.equal(recheck.disabled, true)
+  dom.window.document.querySelector('.qa-item').click()
+  assert.equal(recheck.disabled, false)
+  recheck.click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(qaRequestCount, 2)
+  assert.equal(recheck.querySelector('use').getAttribute('href'), '/icons.svg#icon-refresh')
+  assert.equal(dom.window.document.querySelector('.qa-list').textContent, 'Критичных проблем не найдено. Можно выгружать документ.')
+
+  dom.window.document.querySelector('#qa-close').click()
+  assert.equal(panel.hidden, false)
+  assert.equal(panel.classList.contains('is-open'), false)
+  assert.equal(panel.getAttribute('aria-hidden'), 'true')
+  await new Promise(resolve => setTimeout(resolve, 320))
+  assert.equal(panel.hidden, true)
+  dom.window.close()
+})
+
 test('user guide documents the complete interface and links from README', () => {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8')
   assert.match(readme, /\[USER_GUIDE\.md\]\(USER_GUIDE\.md\)/)
@@ -233,7 +393,7 @@ test('user guide documents the complete interface and links from README', () => 
     'Документация', 'Руководство', 'Компоненты', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
     'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Макет', 'Сегменты',
     'Проверить структуру', 'Повторить анализ исходника', 'Перевести выбранные', 'Исправить наложения',
-    'AI: сравнить и исправить макет', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
+    'Проверить и исправить макет', 'Отменить проверку макета', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
     'Сохранить изменения', 'Исправить выбранные', 'Исправить весь документ', 'Добавить пустой сегмент',
     'Разбить по предложениям', 'Вынести выделенное в отдельную часть', 'Применить все 100% совпадения',
     'Направление, X', 'Направление, Y', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
@@ -866,6 +1026,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
 
   const initialObject = dom.window.document.querySelector('[data-id="object-1"]')
   initialObject.dispatchEvent(pointer('pointerdown', 100, 100))
+  assert.equal(dom.window.document.querySelector('#selection-title').textContent, 'Выбран 1 сегмент')
+  assert.equal(dom.window.document.querySelector('#selection-title .selection-title__count').textContent, '1')
   let leftEdgeObject = dom.window.document.querySelector('[data-id="object-1"]')
   assert.equal(leftEdgeObject.style.left, '40px')
   assert.equal(leftEdgeObject.classList.contains('has-inset-drag-handle'), false)
@@ -1014,6 +1176,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const typographySelectAll = dom.window.document.querySelector('#typography-select-all')
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+  assert.equal(dom.window.document.querySelector('#selection-title').textContent, 'Выбрано 2 сегмента')
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-primary-selected').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, focusedObjectId)
   assert.equal(typographySelectAll.getAttribute('aria-pressed'), 'true')
@@ -1026,6 +1189,45 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(typographySelectAll.textContent, 'Выбрать все сегменты')
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+
+  const geometryBeforeAreaStretch = [...dom.window.document.querySelectorAll('.scene-object')].map(node => ({
+    left: node.style.left, top: node.style.top, width: node.style.width, height: node.style.height,
+  }))
+  dom.window.document.querySelector('#stretch-work-area-width-button').click()
+  for (const node of dom.window.document.querySelectorAll('.scene-object')) {
+    assert.equal(node.style.left, '40px')
+    assert.equal(node.style.width, '714px')
+  }
+  const geometryAfterAreaStretch = [...dom.window.document.querySelectorAll('.scene-object')].map(node => ({
+    left: node.style.left, top: node.style.top, width: node.style.width, height: node.style.height,
+  }))
+  dom.window.document.querySelector('[data-format="center"]').click()
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => ({ left: node.style.left, top: node.style.top, width: node.style.width, height: node.style.height })),
+    geometryAfterAreaStretch,
+    'text alignment must preserve an explicitly stretched segment geometry'
+  )
+  dom.window.document.querySelector('#undo-button').click()
+  dom.window.document.querySelector('#undo-button').click()
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => ({ left: node.style.left, top: node.style.top, width: node.style.width, height: node.style.height })),
+    geometryBeforeAreaStretch
+  )
+  dom.window.document.querySelector('#stretch-work-area-height-button').click()
+  for (const node of dom.window.document.querySelectorAll('.scene-object')) {
+    assert.equal(node.style.top, '40px')
+    assert.equal(node.style.height, '1043px')
+  }
+  dom.window.document.querySelector('#undo-button').click()
+
+  const minContentInput = dom.window.document.querySelector('#translation-text')
+  minContentInput.value = 'short exceptionallylongword short'
+  minContentInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  const widthsBeforeMinContent = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.width))
+  dom.window.document.querySelector('#fit-min-content-width-button').click()
+  const minContentObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+  assert.ok(minContentObjects.every((node, index) => Number.parseFloat(node.style.width) < widthsBeforeMinContent[index]))
+  assert.ok(minContentObjects.every(node => Number.parseFloat(node.style.height) > 12))
 
   fontSizeIncrease.click()
   const applyAllFormatting = dom.window.document.querySelector('#format-all-segments')

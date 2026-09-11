@@ -47,6 +47,8 @@
 
 .icon-button--compact { width: 28px; height: 28px; border-radius: 6px; }
 .icon-button--compact .ui-icon { width: 15px; height: 15px; }
+.icon-button--large { width: 44px; height: 44px; }
+.icon-button--large .ui-icon { width: 20px; height: 20px; }
 .icon-button--small { width: 26px; height: 26px; }
 .icon-button--small .ui-icon { width: 14px; height: 14px; }
 .icon-button--tiny { width: 20px; height: 20px; border-radius: 5px; }
@@ -89,7 +91,7 @@
   border-radius: 5px;
   background: #fff;
   color: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   text-align: center;
@@ -103,7 +105,7 @@
   display: grid;
   place-items: center;
   color: #98a2b3;
-  font: 400 13px/1 Arial, sans-serif;
+  font: 400 12px/1 Arial, sans-serif;
   pointer-events: none;
 }
 .number-stepper__value::-webkit-inner-spin-button { appearance: none; margin: 0; }

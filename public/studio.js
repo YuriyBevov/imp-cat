@@ -26,7 +26,7 @@
     sourceLightboxZoomActual: $('#source-preview-lightbox-zoom-100'), sourceLightboxFit: $('#source-preview-lightbox-fit'), sourceLightboxZoomOutput: $('#source-preview-lightbox-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
-    layoutReview: $('#layout-review-button'), layoutReviewCancel: $('#layout-review-cancel-button'), layoutReviewStatus: $('#layout-review-status'),
+    layoutReview: $('#layout-review-button'), layoutReviewStatus: $('#layout-review-status'),
     translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
     globalTranslationInstruction: $('#translation-global-instruction'), reviseSelected: $('#revise-selected-button'), reviseDocument: $('#revise-document-button'),
     instructionPresetSelect: $('#instruction-preset-select'), instructionPresetApply: $('#instruction-preset-apply'),
@@ -34,7 +34,7 @@
     instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
     instructionPresetEditSave: $('#instruction-preset-edit-save'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
-    selectionTitle: $('#selection-title'), selectionCount: $('#selection-count'), objectType: $('#object-type'),
+    selectionTitle: $('#selection-title'), objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
     translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
@@ -46,6 +46,7 @@
     toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
     formatAllSegments: $('#format-all-segments'), typographySelectAll: $('#typography-select-all'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
+    stretchWorkAreaWidth: $('#stretch-work-area-width-button'), stretchWorkAreaHeight: $('#stretch-work-area-height-button'), fitMinContentWidth: $('#fit-min-content-width-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'), knowledgeBaseMode: $('#knowledge-base-mode'),
     knowledgeSuggestionPopover: $('#knowledge-suggestion-popover'), knowledgeSuggestionTitle: $('#knowledge-suggestion-title'),
@@ -64,7 +65,8 @@
     instructionLibraryForm: $('#instruction-library-form'), instructionLibraryId: $('#instruction-library-id'), instructionLibraryText: $('#instruction-library-text'),
     instructionLibraryFormCancel: $('#instruction-library-form-cancel'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
-    qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaActions: $('#qa-actions'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
+    qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
+    qaRecheckSelection: $('#qa-recheck-selection'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
@@ -88,6 +90,7 @@
     textCheckpoint: false,
     pointerAction: null,
     toastTimer: null,
+    qaPanelCloseTimer: null,
     serviceStatus: null,
     lastTextSelection: null,
     focusedTranslationUnitId: null,
@@ -1266,6 +1269,26 @@
     })[type] || type
   }
 
+  function selectedSegmentsNoun(count) {
+    if (count === 1) return 'сегмент'
+    const lastTwoDigits = count % 100
+    const lastDigit = count % 10
+    return lastTwoDigits >= 11 && lastTwoDigits <= 14
+      ? 'сегментов'
+      : lastDigit >= 2 && lastDigit <= 4 ? 'сегмента' : 'сегментов'
+  }
+
+  function renderSelectedSegmentsTitle(count) {
+    const number = document.createElement('span')
+    number.className = 'selection-title__count'
+    number.textContent = count
+    elements.selectionTitle.replaceChildren(
+      document.createTextNode(count === 1 ? 'Выбран ' : 'Выбрано '),
+      number,
+      document.createTextNode(` ${selectedSegmentsNoun(count)}`),
+    )
+  }
+
   function isTranslatableType(type) {
     return type === 'text' || type === 'table' || type === 'table_cell'
       || type === 'stamp' || type === 'seal' || type === 'signature'
@@ -2114,13 +2137,23 @@
     return { width, height: Math.max(12, visualLines * fontSize * lineHeight + 4) }
   }
 
-  function measureObjectContent(object, width = null) {
+  function estimatedMinContentWidth(object) {
+    const text = objectOutput(object) || ' '
+    const fontSize = Math.max(6, Number(object.style?.fontSizePx) || 14)
+    const longestPart = text.split(/[\s\u200b]+/u).reduce((longest, part) => Math.max(longest, part.length), 1)
+    return Math.max(12, longestPart * fontSize * .56 + 10)
+  }
+
+  function renderedObjectContent(object) {
     const renderedNodes = [...elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)]
     const node = renderedNodes.find(candidate => candidate.classList.contains('scene-object--translation'))
       || renderedNodes.find(candidate => !candidate.classList.contains('scene-object--source'))
       || renderedNodes[0]
-    if (!node) return estimatedContentSize(object, width)
-    const sourceContent = node.querySelector('.scene-object__content')
+    return node?.querySelector('.scene-object__content') || null
+  }
+
+  function measureObjectContent(object, width = null) {
+    const sourceContent = renderedObjectContent(object)
     if (!sourceContent) return estimatedContentSize(object, width)
     const probe = sourceContent.cloneNode(true)
     probe.contentEditable = 'false'
@@ -2147,6 +2180,28 @@
       width: measured.width > 0 ? measured.width : fallback.width,
       height: measured.height > 0 ? measured.height : fallback.height,
     }
+  }
+
+  function measureObjectMinContentWidth(object) {
+    const fallback = estimatedMinContentWidth(object)
+    const sourceContent = renderedObjectContent(object)
+    if (!sourceContent) return fallback
+    const probe = sourceContent.cloneNode(true)
+    probe.contentEditable = 'false'
+    Object.assign(probe.style, {
+      position: 'fixed', left: '-100000px', top: '0', display: 'inline-block',
+      width: 'min-content', height: 'auto', minWidth: '12px', minHeight: '12px', maxWidth: 'none',
+      boxSizing: 'border-box', padding: '1px 3px', border: '1px solid transparent', transform: 'none',
+      visibility: 'hidden', pointerEvents: 'none', overflow: 'visible', zIndex: '-1',
+      whiteSpace: 'pre-wrap', overflowWrap: 'normal', wordBreak: 'normal',
+      fontFamily: object.style?.fontFamily || 'Arial', fontSize: `${object.style?.fontSizePx || 14}px`,
+      fontWeight: object.style?.fontWeight || 400, fontStyle: object.style?.fontStyle || 'normal',
+      lineHeight: object.style?.lineHeight || 1.2, textAlign: object.style?.textAlign || 'left',
+    })
+    document.body.append(probe)
+    const measured = probe.getBoundingClientRect().width
+    probe.remove()
+    return measured > 0 ? measured : fallback
   }
 
   function minimumObjectHeight(object, width = object.width) {
@@ -2200,8 +2255,8 @@
   }
 
   function fitSelectionToContent(mode) {
-    const objects = selectedObjects()
-    if (!objects.length) return
+    const objects = selectedObjects().filter(canFitObjectToText)
+    if (!objects.length) return showToast('Сначала выберите текстовый сегмент', true)
     cancelPointerAction()
     checkpoint()
     for (const object of objects) {
@@ -2211,23 +2266,46 @@
         fitObjectGeometryToContent(object)
         continue
       }
-      if (mode === 'width') {
-        const natural = measureObjectContent(object)
-        width = Math.min(page.contentBounds.width, Math.max(12, contentSize(natural.width)))
+      if (mode === 'width' || mode === 'min-width') {
+        const naturalWidth = mode === 'min-width' ? measureObjectMinContentWidth(object) : measureObjectContent(object).width
+        width = Math.min(page.contentBounds.width, Math.max(12, contentSize(naturalWidth)))
         object.width = width
         object.x = Math.max(page.contentBounds.x, Math.min(object.x, page.contentBounds.x + page.contentBounds.width - object.width))
       }
       if (mode === 'height') {
         const wrapped = measureObjectContent(object, width)
         object.height = Math.max(12, contentSize(wrapped.height))
-      } else if (mode === 'width') {
+      } else if (mode === 'width' || mode === 'min-width') {
         object.height = Math.max(object.height, minimumObjectHeight(object, width))
       }
     }
     renderDocument()
     scheduleSave()
-    const label = mode === 'width' ? 'Ширина' : mode === 'height' ? 'Высота' : 'Ширина и высота'
-    showToast(`${label} по содержимому: ${objects.length} сегм.`)
+    const label = mode === 'width' ? 'Ширина по содержимому'
+      : mode === 'min-width' ? 'Минимальная ширина по содержимому'
+        : mode === 'height' ? 'Высота по содержимому' : 'Ширина и высота по содержимому'
+    showToast(`${label}: ${objects.length} сегм.`)
+  }
+
+  function stretchSelectionToWorkArea(axis) {
+    const objects = selectedObjects().filter(canFitObjectToText)
+    if (!objects.length) return showToast('Сначала выберите текстовый сегмент', true)
+    cancelPointerAction()
+    checkpoint()
+    for (const object of objects) {
+      const area = state.scene.pages[object.pageIndex].contentBounds
+      if (axis === 'width') {
+        object.x = area.x
+        object.width = area.width
+        object.height = Math.max(object.height, minimumObjectHeight(object, object.width))
+      } else {
+        object.y = area.y
+        object.height = Math.max(area.height, minimumObjectHeight(object, object.width))
+      }
+    }
+    renderDocument()
+    scheduleSave()
+    showToast(`Сегменты растянуты на ${axis === 'width' ? 'ширину' : 'высоту'} рабочей области: ${objects.length}`)
   }
 
   function applyGridToSurface(surface) {
@@ -2614,6 +2692,7 @@
       row.classList.toggle('is-primary-selected', Boolean(objectId) && objectId === primaryId)
     }
     const selection = selectedObjects()
+    updateQaSegmentCheckAvailability()
     elements.studioView.classList.toggle('is-inspector-empty', state.viewMode === 'segments' && selection.length === 0)
     elements.emptyInspector.hidden = selection.length > 0
     elements.objectInspector.hidden = selection.length === 0
@@ -2638,8 +2717,7 @@
     }
     const first = selection[0]
     const units = selection.length === 1 && isTranslatableType(first.type) ? ensureObjectTranslationUnits(first) : []
-    elements.selectionTitle.textContent = selection.length === 1 ? `${typeLabel(first.type)} · стр. ${first.pageIndex + 1}` : `${selection.length} сегмента`
-    elements.selectionCount.textContent = selection.length
+    renderSelectedSegmentsTitle(selection.length)
     setMixedControl(elements.objectType, selection.map(item => item.type))
     if (!elements.tableCellFields.hidden) {
       setMixedControl(elements.tableId, selection.map(item => item.tableId || ''))
@@ -3484,10 +3562,14 @@
   function renderLayoutReviewStatus() {
     if (!state.metadata) return
     const job = state.layoutReviewJobs.get(state.metadata.id)
-    const pending = job && ['queued', 'running'].includes(job.status)
-    elements.layoutReview.disabled = Boolean(pending)
-    elements.layoutReviewCancel.hidden = !pending
-    elements.layoutReviewCancel.disabled = false
+    const pending = Boolean(job && ['queued', 'running'].includes(job.status))
+    const actionLabel = pending ? 'Отменить проверку макета' : 'Проверить и исправить макет'
+    elements.layoutReview.disabled = false
+    elements.layoutReview.textContent = actionLabel
+    elements.layoutReview.title = actionLabel
+    elements.layoutReview.setAttribute('aria-label', actionLabel)
+    elements.layoutReview.dataset.action = pending ? 'cancel' : 'start'
+    elements.layoutReview.classList.toggle('button--danger', pending)
     elements.layoutReviewStatus.classList.toggle('is-error', job?.status === 'failed')
     if (job) {
       const pageDetail = Number.isFinite(Number(job.details?.totalPages))
@@ -3527,7 +3609,7 @@
     const documentId = state.metadata?.id
     const job = documentId ? state.layoutReviewJobs.get(documentId) : null
     if (!job || !['queued', 'running'].includes(job.status)) return
-    elements.layoutReviewCancel.disabled = true
+    elements.layoutReview.disabled = true
     try {
       const response = await api(`/api/studio/jobs/${job.id}/cancel`, { method: 'POST' })
       const { job: updated } = await response.json()
@@ -3535,24 +3617,85 @@
       renderLayoutReviewStatus()
       scheduleJobsPoll(100)
     } catch (error) {
-      elements.layoutReviewCancel.disabled = false
+      elements.layoutReview.disabled = false
       showToast(error.message, true)
     }
   }
 
-  async function runQa() {
-    if (!state.scene) return
-    try {
-      await saveScene(true)
-      const response = await api(`/api/studio/documents/${state.metadata.id}/qa`)
-      showQa(await response.json())
-    } catch (error) { showToast(error.message, true) }
+  function handleLayoutReviewAction() {
+    const job = state.metadata ? state.layoutReviewJobs.get(state.metadata.id) : null
+    if (job && ['queued', 'running'].includes(job.status)) return cancelLayoutReview()
+    return startLayoutReview()
   }
 
-  function showQa(report) {
-    elements.qaPanel.hidden = false
+  async function fetchQaReport() {
+    await saveScene(true)
+    const response = await api(`/api/studio/documents/${state.metadata.id}/qa`)
+    return response.json()
+  }
+
+  async function runQa() {
+    if (!state.scene) return
+    try { showQa(await fetchQaReport()) }
+    catch (error) { showToast(error.message, true) }
+  }
+
+  function updateQaSegmentCheckAvailability() {
+    if (!elements.qaRecheckSelection || elements.qaRecheckSelection.dataset.busy === 'true') return
+    const count = selectedObjects().filter(object => !object.excluded).length
+    elements.qaRecheckSelection.disabled = count === 0
+    elements.qaRecheckSelection.title = count
+      ? `Повторно проверить выбранные сегменты: ${count}`
+      : 'Сначала выберите исправленный сегмент'
+  }
+
+  async function recheckQaSelection() {
+    const objectIds = selectedObjects().filter(object => !object.excluded).map(object => object.id)
+    if (!objectIds.length) {
+      showToast('Сначала выберите исправленный сегмент', true)
+      return
+    }
+    elements.qaRecheckSelection.dataset.busy = 'true'
+    elements.qaRecheckSelection.disabled = true
+    elements.qaRecheckSelection.setAttribute('aria-busy', 'true')
+    try {
+      showQa(await fetchQaReport(), { checkedObjectIds: objectIds })
+    } catch (error) {
+      showToast(error.message, true)
+    } finally {
+      elements.qaRecheckSelection.dataset.busy = 'false'
+      elements.qaRecheckSelection.removeAttribute('aria-busy')
+      updateQaSegmentCheckAvailability()
+    }
+  }
+
+  function setQaPanelOpen(open) {
+    if (!elements.qaPanel) return
+    clearTimeout(state.qaPanelCloseTimer)
+    state.qaPanelCloseTimer = null
+    if (open) {
+      elements.qaPanel.hidden = false
+      elements.qaPanel.setAttribute('aria-hidden', 'false')
+      void elements.qaPanel.offsetWidth
+      requestAnimationFrame(() => {
+        if (!elements.qaPanel.hidden) elements.qaPanel.classList.add('is-open')
+      })
+      return
+    }
+    elements.qaPanel.classList.remove('is-open')
+    elements.qaPanel.setAttribute('aria-hidden', 'true')
+    if (elements.qaPanel.hidden) return
+    state.qaPanelCloseTimer = setTimeout(() => {
+      if (!elements.qaPanel.classList.contains('is-open')) elements.qaPanel.hidden = true
+      state.qaPanelCloseTimer = null
+    }, 300)
+  }
+
+  function showQa(report, options = {}) {
+    const checkedObjectIds = new Set(options.checkedObjectIds || [])
+    setQaPanelOpen(true)
     elements.qaTitle.textContent = 'Проверка документа'
-    elements.qaActions.replaceChildren()
+    updateQaSegmentCheckAvailability()
     elements.qaSummary.innerHTML = `
       <div><strong>${report.counts.errors}</strong><span>ошибок</span></div>
       <div><strong>${report.counts.warnings}</strong><span>предупреждений</span></div>
@@ -3565,9 +3708,13 @@
       elements.qaList.append(item)
       return
     }
-    for (const warning of report.warnings) {
+    const orderedWarnings = checkedObjectIds.size
+      ? [...report.warnings].sort((left, right) => Number(right.objectIds.some(id => checkedObjectIds.has(id))) - Number(left.objectIds.some(id => checkedObjectIds.has(id))))
+      : report.warnings
+    for (const warning of orderedWarnings) {
       const item = document.createElement('button')
       item.className = 'qa-item'
+      item.classList.toggle('is-rechecked', warning.objectIds.some(id => checkedObjectIds.has(id)))
       item.dataset.severity = warning.severity
       item.type = 'button'
       item.textContent = warning.message
@@ -4160,7 +4307,7 @@
       else object.style.textAlign = action
       if (applyAll && action === 'bold') removeInlineStyleProperties(object, ['fontWeight'])
       if (applyAll && action === 'italic') removeInlineStyleProperties(object, ['fontStyle'])
-    }, true, true, objects)
+    }, true, action === 'bold' || action === 'italic', objects)
   }
 
   function resetPosition() {
@@ -4471,10 +4618,10 @@
     elements.instructionPresetEditSave.addEventListener('click', updateSelectedInstructionPreset)
     elements.reviseSelected.addEventListener('click', () => reviseTranslations([...state.translationSelected], 'selection', elements.reviseSelected))
     elements.reviseDocument.addEventListener('click', () => reviseTranslations([], 'document', elements.reviseDocument))
-    elements.layoutReview.addEventListener('click', startLayoutReview)
-    elements.layoutReviewCancel.addEventListener('click', cancelLayoutReview)
+    elements.layoutReview.addEventListener('click', handleLayoutReviewAction)
     elements.qa.addEventListener('click', runQa)
-    elements.qaClose.addEventListener('click', () => { elements.qaPanel.hidden = true })
+    elements.qaRecheckSelection.addEventListener('click', recheckQaSelection)
+    elements.qaClose.addEventListener('click', () => setQaPanelOpen(false))
     elements.addObject.addEventListener('click', () => addObject())
     elements.memorySearch.addEventListener('click', findMemory)
     elements.glossaryAdd.addEventListener('click', createGlossary)
@@ -4508,6 +4655,9 @@
     elements.fitContentWidth.addEventListener('click', () => fitSelectionToContent('width'))
     elements.fitContentHeight.addEventListener('click', () => fitSelectionToContent('height'))
     elements.fitContentBoth.addEventListener('click', () => fitSelectionToContent('both'))
+    elements.stretchWorkAreaWidth.addEventListener('click', () => stretchSelectionToWorkArea('width'))
+    elements.stretchWorkAreaHeight.addEventListener('click', () => stretchSelectionToWorkArea('height'))
+    elements.fitMinContentWidth.addEventListener('click', () => fitSelectionToContent('min-width'))
     document.querySelectorAll('[data-align-selection]').forEach(button => button.addEventListener('click', () => alignSelection(button.dataset.alignSelection)))
     document.querySelectorAll('[data-align-document]').forEach(button => button.addEventListener('click', () => alignToDocument(button.dataset.alignDocument)))
     document.querySelectorAll('[data-flex-layout]').forEach(button => button.addEventListener('click', () => {
@@ -4588,7 +4738,7 @@
         elements.documentLibraryModal.hidden = true
         state.selected.clear()
         state.lastTextSelection = null
-        elements.qaPanel.hidden = true
+        setQaPanelOpen(false)
         refreshSelection()
         document.activeElement?.blur?.()
       }
