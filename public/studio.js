@@ -41,7 +41,7 @@
     translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
     translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
     translationUnitsApplyExact: $('#translation-units-apply-exact'), translationSelectionPreview: $('#translation-selection-preview'),
-    lineHeight: $('#line-height'),
+    lineHeightDecrease: $('#line-height-decrease'), lineHeight: $('#line-height'), lineHeightIncrease: $('#line-height-increase'),
     toolbarFontSizeDecrease: $('#toolbar-font-size-decrease'), toolbarFontSizeValue: $('#toolbar-font-size-value'), toolbarFontSizeIncrease: $('#toolbar-font-size-increase'),
     toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
     formatAllSegments: $('#format-all-segments'), typographySelectAll: $('#typography-select-all'),
@@ -2621,6 +2621,7 @@
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     elements.flexApply.disabled = !onePage || selection.length < 2
     refreshFormattingToolbar()
+    refreshFormattingSelectionToggle()
     elements.agentNotes.hidden = true
     elements.tableCellFields.hidden = !selection.length || selection.some(item => item.type !== 'table_cell')
     if (!selection.length) {
@@ -3745,9 +3746,27 @@
     return (state.scene?.objects || []).filter(canFitObjectToText)
   }
 
+  function refreshFormattingSelectionToggle() {
+    const objects = allFormattingObjects()
+    const allSelected = objects.length > 0 && objects.every(object => state.selected.has(object.id))
+    elements.typographySelectAll.disabled = objects.length === 0
+    elements.typographySelectAll.classList.toggle('is-active', allSelected)
+    elements.typographySelectAll.setAttribute('aria-pressed', String(allSelected))
+    elements.typographySelectAll.textContent = allSelected ? 'Снять выбор со всех' : 'Выбрать все сегменты'
+    elements.typographySelectAll.title = allSelected ? 'Снять выбор со всех сегментов' : 'Выбрать все сегменты'
+  }
+
   function selectAllFormattingSegments() {
     const objects = allFormattingObjects()
     if (!objects.length) return showToast('В документе нет сегментов для форматирования', true)
+    const allSelected = objects.every(object => state.selected.has(object.id))
+    if (allSelected) {
+      state.selected.clear()
+      state.lastTextSelection = null
+      refreshSelection()
+      showToast('Выбор со всех сегментов снят')
+      return
+    }
     const primaryId = primarySelectedObject()?.id
     const ids = objects.map(object => object.id).filter(id => id !== primaryId)
     if (primaryId && objects.some(object => object.id === primaryId)) ids.push(primaryId)
@@ -3766,6 +3785,24 @@
 
   function clampFontSize(value) {
     return Math.min(80, Math.max(10, Math.round(Number(value) || 10)))
+  }
+
+  function clampLineHeight(value) {
+    const clamped = Math.min(3, Math.max(.8, Number(value) || 1.2))
+    return Math.round(clamped * 20) / 20
+  }
+
+  function updateNumberStepperState(input, hasMixedValues, label, mixedDescription) {
+    input.placeholder = hasMixedValues ? '≠' : ''
+    input.title = hasMixedValues ? mixedDescription : label
+    input.setAttribute('aria-label', hasMixedValues ? mixedDescription : label)
+    input.dataset.mixed = String(hasMixedValues)
+    input.closest('.number-stepper__field')?.classList.toggle('is-mixed', hasMixedValues)
+  }
+
+  function refreshNumberStepperDraft(input) {
+    const showMixedValue = input.dataset.mixed === 'true' && input.value === ''
+    input.closest('.number-stepper__field')?.classList.toggle('is-mixed', showMixedValue)
   }
 
   function activeFontSizes() {
@@ -3810,7 +3847,9 @@
     const fontSizes = activeFontSizes()
     const hasSizes = fontSizes.length > 0
     const uniformSize = hasSizes && fontSizes.every(value => value === fontSizes[0]) ? fontSizes[0] : null
+    const hasMixedSizes = hasSizes && uniformSize == null
     elements.toolbarFontSizeValue.value = uniformSize == null ? (hasSizes ? '' : '12') : String(uniformSize)
+    updateNumberStepperState(elements.toolbarFontSizeValue, hasMixedSizes, 'Размер шрифта, px', 'У выбранных сегментов разные размеры шрифта')
     elements.toolbarFontSizeDecrease.disabled = !hasSizes || fontSizes.every(value => value <= 10)
     elements.toolbarFontSizeIncrease.disabled = !hasSizes || fontSizes.every(value => value >= 80)
     const fontFamilies = activeFormattingValues('fontFamily').filter(Boolean)
@@ -3824,13 +3863,15 @@
     elements.toolbarTextColor.value = uniformColor || '#000000'
     picker?.style.setProperty('--color-picker-value', uniformColor || '#000000')
     picker?.classList.toggle('is-mixed', colors.length > 0 && !uniformColor)
-    const lineHeights = objects.map(object => Number(object.style.lineHeight) || 1.2)
-    elements.lineHeight.disabled = !lineHeights.length
-    if (lineHeights.length) setMixedControl(elements.lineHeight, lineHeights)
-    else {
-      elements.lineHeight.value = '1.2'
-      elements.lineHeight.placeholder = ''
-    }
+    const lineHeights = objects.map(object => clampLineHeight(object.style.lineHeight))
+    const hasLineHeights = lineHeights.length > 0
+    const uniformLineHeight = hasLineHeights && lineHeights.every(value => value === lineHeights[0]) ? lineHeights[0] : null
+    const hasMixedLineHeights = hasLineHeights && uniformLineHeight == null
+    elements.lineHeight.value = uniformLineHeight == null ? (hasLineHeights ? '' : '1.2') : String(uniformLineHeight)
+    elements.lineHeight.disabled = !hasLineHeights
+    elements.lineHeightDecrease.disabled = !hasLineHeights || lineHeights.every(value => value <= .8)
+    elements.lineHeightIncrease.disabled = !hasLineHeights || lineHeights.every(value => value >= 3)
+    updateNumberStepperState(elements.lineHeight, hasMixedLineHeights, 'Высота строки', 'У выбранных сегментов разная высота строки')
   }
 
   function setFormattingFontFamily(fontFamily) {
@@ -3884,8 +3925,17 @@
     const applyAll = Boolean(elements.formatAllSegments?.checked)
     const objects = formattingTargetObjects()
     if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
-    const lineHeight = Math.min(3, Math.max(.8, Number(value) || 1.2))
+    const lineHeight = clampLineHeight(value)
     applySelectionChange(object => { object.style.lineHeight = lineHeight }, true, true, objects)
+  }
+
+  function changeFormattingLineHeight(delta) {
+    const applyAll = Boolean(elements.formatAllSegments?.checked)
+    const objects = formattingTargetObjects()
+    if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
+    applySelectionChange(object => {
+      object.style.lineHeight = clampLineHeight((Number(object.style.lineHeight) || 1.2) + delta)
+    }, true, true, objects)
   }
 
   function changeFormattingFontSize(delta) {
@@ -4288,6 +4338,7 @@
     elements.flexApply.addEventListener('click', applyFlexLayout)
     elements.toolbarFontSizeDecrease.addEventListener('click', () => changeFormattingFontSize(-1))
     elements.toolbarFontSizeIncrease.addEventListener('click', () => changeFormattingFontSize(1))
+    elements.toolbarFontSizeValue.addEventListener('input', () => refreshNumberStepperDraft(elements.toolbarFontSizeValue))
     elements.toolbarFontSizeValue.addEventListener('change', () => {
       if (elements.toolbarFontSizeValue.value === '') return refreshFormattingToolbar()
       setFormattingFontSize(elements.toolbarFontSizeValue.value)
@@ -4303,7 +4354,19 @@
       elements.toolbarTextColor.closest('.color-picker')?.style.setProperty('--color-picker-value', elements.toolbarTextColor.value)
     })
     elements.toolbarTextColor.addEventListener('change', () => setFormattingColor(elements.toolbarTextColor.value))
-    elements.lineHeight.addEventListener('change', () => setFormattingLineHeight(elements.lineHeight.value))
+    elements.lineHeightDecrease.addEventListener('click', () => changeFormattingLineHeight(-.05))
+    elements.lineHeightIncrease.addEventListener('click', () => changeFormattingLineHeight(.05))
+    elements.lineHeight.addEventListener('input', () => refreshNumberStepperDraft(elements.lineHeight))
+    elements.lineHeight.addEventListener('change', () => {
+      if (elements.lineHeight.value === '') return refreshFormattingToolbar()
+      setFormattingLineHeight(elements.lineHeight.value)
+    })
+    elements.lineHeight.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return
+      event.preventDefault()
+      if (elements.lineHeight.value !== '') setFormattingLineHeight(elements.lineHeight.value)
+      elements.lineHeight.blur()
+    })
     elements.typographySelectAll.addEventListener('click', selectAllFormattingSegments)
     elements.formatAllSegments.addEventListener('change', refreshFormattingToolbar)
     document.querySelectorAll('.format-button').forEach(button => button.addEventListener('click', () => applyFormatting(button.dataset.format)))

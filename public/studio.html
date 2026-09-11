@@ -107,26 +107,24 @@
             <button id="source-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть оригинал" aria-label="Скрыть оригинал" aria-expanded="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
           </div>
           <div class="app-container workbench-toolbar__inner">
-            <div class="toolbar-group view-controls" aria-label="Режим отображения документа">
-            <button id="view-layout-button" class="icon-button icon-button--compact is-active" type="button" title="Макет" aria-label="Макет" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button>
-            <button id="view-segments-button" class="icon-button icon-button--compact" type="button" title="Сегменты" aria-label="Сегменты" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button>
-          </div>
-          <div class="toolbar-group">
-            <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
-            <output id="zoom-output">80%</output>
-            <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
-            <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
-            <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
-          </div>
-          <div class="toolbar-group grid-controls" aria-label="Настройки сетки">
-            <label class="grid-size-control">
-              <span class="visually-hidden">Размер сетки</span>
-              <select id="grid-size" data-select-icon="grid" title="Плотность сетки" aria-label="Плотность сетки">
-                <option value="xs" selected>XS</option><option value="sm">SM</option><option value="md">MD</option>
-                <option value="lg">LG</option><option value="xl">XL</option><option value="xxl">XXL</option>
-              </select>
-            </label>
-          </div>
+            <div class="toolbar-group view-controls workbench-toolbar__layout-controls" aria-label="Режим, масштаб и сетка документа">
+              <button id="view-layout-button" class="icon-button icon-button--compact is-active" type="button" title="Макет" aria-label="Макет" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button>
+              <button id="view-segments-button" class="icon-button icon-button--compact" type="button" title="Сегменты" aria-label="Сегменты" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button>
+              <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+              <output id="zoom-output">80%</output>
+              <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
+              <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
+              <div class="grid-controls" aria-label="Настройки сетки">
+                <label class="grid-size-control">
+                  <span class="visually-hidden">Размер сетки</span>
+                  <select id="grid-size" data-select-icon="grid" title="Плотность сетки" aria-label="Плотность сетки">
+                    <option value="xs" selected>XS</option><option value="sm">SM</option><option value="md">MD</option>
+                    <option value="lg">LG</option><option value="xl">XL</option><option value="xxl">XXL</option>
+                  </select>
+                </label>
+              </div>
+            </div>
             <div class="toolbar-group inspector-controls" aria-label="Правая панель">
               <button id="inspector-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть инспектор" aria-label="Скрыть инспектор" aria-controls="inspector-panel" aria-expanded="true">
                 <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-sidebar-right"></use></svg>
@@ -287,21 +285,27 @@
               <button class="icon-button icon-button--compact format-button" data-format="justify" type="button" title="По ширине" aria-label="По ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-align-justify"></use></svg></button>
             </div>
             <div class="typography-card__settings">
-              <label>
-                <span class="layout-card__label">Размер шрифта, px</span>
-                <span class="font-size-stepper" role="group" aria-label="Размер шрифта">
+              <div class="typography-card__setting">
+                <span id="font-size-control-label" class="layout-card__label">Размер шрифта, px</span>
+                <span class="number-stepper" role="group" aria-labelledby="font-size-control-label">
                   <button id="toolbar-font-size-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить размер шрифта на 1" aria-label="Уменьшить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
-                  <span class="font-size-stepper__field">
-                    <input id="toolbar-font-size-value" class="font-size-stepper__value" type="number" min="10" max="80" step="1" placeholder="—" aria-label="Размер шрифта" />
+                  <span class="number-stepper__field">
+                    <input id="toolbar-font-size-value" class="number-stepper__value" type="number" min="10" max="80" step="1" placeholder="≠" aria-label="Размер шрифта, px" />
                   </span>
                   <button id="toolbar-font-size-increase" class="icon-button icon-button--compact" type="button" title="Увеличить размер шрифта на 1" aria-label="Увеличить размер шрифта на 1"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
                 </span>
-              </label>
-              <label>
-                <span class="layout-card__label">Высота строки</span>
-                <input id="line-height" type="number" min="0.8" max="3" step="0.05" aria-label="Высота строки" />
-              </label>
-              <label>
+              </div>
+              <div class="typography-card__setting">
+                <span id="line-height-control-label" class="layout-card__label">Высота строки</span>
+                <span class="number-stepper" role="group" aria-labelledby="line-height-control-label">
+                  <button id="line-height-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить высоту строки на 0,05" aria-label="Уменьшить высоту строки на 0,05"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+                  <span class="number-stepper__field number-stepper__field--wide">
+                    <input id="line-height" class="number-stepper__value" type="number" min="0.8" max="3" step="0.05" placeholder="≠" aria-label="Высота строки" />
+                  </span>
+                  <button id="line-height-increase" class="icon-button icon-button--compact" type="button" title="Увеличить высоту строки на 0,05" aria-label="Увеличить высоту строки на 0,05"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+                </span>
+              </div>
+              <label class="typography-card__setting">
                 <span class="layout-card__label">Цвет</span>
                 <span class="color-picker" title="Цвет текста">
                   <input id="toolbar-text-color" type="color" value="#000000" aria-label="Цвет текста" />
@@ -311,7 +315,7 @@
             </div>
             <div class="typography-card__scope">
               <label class="control-scope-toggle"><input id="format-all-segments" type="checkbox" /> <span>Применить ко всем выбранным</span></label>
-              <button id="typography-select-all" class="button" type="button">Выбрать все сегменты</button>
+              <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
             </div>
           </div>
           <div class="fit-size-actions inspector-scope--layout" aria-label="Подгонка размера сегмента">

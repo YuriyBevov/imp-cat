@@ -63,21 +63,23 @@
 .icon-button--shadow { box-shadow: 0 2px 7px rgba(15,23,42,.12); }
 .icon-button--toggle[aria-expanded="true"] { color: #315ee7; border-color: #aebcf5; background: #eef2ff; }
 
-.font-size-stepper {
+.number-stepper {
   display: inline-flex;
   align-items: center;
   gap: 2px;
 }
 
-.font-size-stepper__field {
+.number-stepper__field {
+  position: relative;
   width: 32px;
   min-width: 32px;
   height: 28px;
   display: block;
   flex: 0 0 auto;
 }
+.number-stepper__field--wide { width: 38px; min-width: 38px; }
 
-.font-size-stepper .font-size-stepper__value {
+.number-stepper .number-stepper__value {
   width: 100%;
   min-width: 0;
   height: 28px;
@@ -92,7 +94,19 @@
   font-weight: 700;
   text-align: center;
 }
-.font-size-stepper__value::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.number-stepper__field.is-mixed .number-stepper__value { border-color: #aebcf5; background: #f7f9ff; color: #315ee7; }
+.number-stepper__field.is-mixed .number-stepper__value::placeholder { color: transparent; opacity: 0; }
+.number-stepper__field.is-mixed::after {
+  content: "≠";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #98a2b3;
+  font: 400 13px/1 Arial, sans-serif;
+  pointer-events: none;
+}
+.number-stepper__value::-webkit-inner-spin-button { appearance: none; margin: 0; }
 
 .base-select__native {
   position: absolute !important;

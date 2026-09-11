@@ -48,7 +48,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'grid-size', 'alignment-scope', 'align-left-button',
     'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button', 'format-all-segments', 'typography-select-all',
-    'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase', 'zoom-100',
+    'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase',
+    'line-height-decrease', 'line-height', 'line-height-increase', 'zoom-100',
     'view-layout-button', 'view-segments-button', 'source-panel-toggle',
     'inspector-panel', 'inspector-panel-toggle',
     'document-tabs', 'document-library-button', 'document-library-modal', 'document-library-list',
@@ -117,6 +118,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(html, /id="grid-size"[^>]*data-select-icon="grid"/)
   assert.match(html, /id="view-layout-button"[^>]*class="icon-button[^>]*[\s\S]*?icon-grid/)
   assert.match(html, /id="view-segments-button"[^>]*class="icon-button[^>]*[\s\S]*?icon-list-rows/)
+  assert.match(html, /class="toolbar-group view-controls workbench-toolbar__layout-controls"[\s\S]*?id="view-layout-button"[\s\S]*?id="zoom-out"[\s\S]*?id="zoom-fit"[\s\S]*?id="grid-size"/)
   assert.match(html, /id="source-panel-toggle"[^>]*class="icon-button[^>]*is-active[^>]*[\s\S]*?icon-layout/)
   assert.ok(html.indexOf('id="source-panel-toggle"') < html.indexOf('id="view-layout-button"'))
   assert.match(html, /class="workbench-toolbar__source-toggle"[\s\S]*?id="source-panel-toggle"/)
@@ -127,11 +129,17 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(html, /src="\/custom-select\.js"/)
   assert.doesNotMatch(html, /id="toolbar-font-size"/)
   assert.match(html, /id="toolbar-font-size-value"[^>]*type="number"[^>]*min="10"[^>]*max="80"[^>]*step="1"/)
-  assert.match(html, /Размер шрифта, px[\s\S]*?class="font-size-stepper__field"[\s\S]*?id="toolbar-font-size-value"/)
-  assert.doesNotMatch(html, /font-size-stepper__unit/)
-  assert.doesNotMatch(uiComponentsHtml, /font-size-stepper__unit/)
+  assert.match(html, /id="toolbar-font-size-value"[^>]*placeholder="≠"[^>]*aria-label="Размер шрифта, px"/)
+  assert.match(html, /Размер шрифта, px[\s\S]*?class="number-stepper__field"[\s\S]*?id="toolbar-font-size-value"/)
+  assert.match(uiKit, /\.number-stepper__field\.is-mixed::after\s*\{[^}]*content:\s*"≠"[^}]*place-items:\s*center[^}]*color:\s*#98a2b3[^}]*font:\s*400 13px\/1 Arial/)
+  assert.doesNotMatch(html, /number-stepper__unit/)
+  assert.doesNotMatch(uiComponentsHtml, /number-stepper__unit/)
   assert.match(html, /class="layout-card typography-card inspector-scope--layout"[\s\S]*?<strong>Типографика<\/strong>/)
-  assert.match(html, /Высота строки[\s\S]*?<input id="line-height"[^>]*min="0\.8"[^>]*max="3"/)
+  assert.match(html, /Высота строки[\s\S]*?class="number-stepper"[\s\S]*?id="line-height-decrease"[\s\S]*?<input id="line-height"[^>]*min="0\.8"[^>]*max="3"[^>]*step="0\.05"[\s\S]*?id="line-height-increase"/)
+  assert.match(html, /id="font-size-control-label"[\s\S]*?class="number-stepper"[^>]*aria-labelledby="font-size-control-label"/)
+  assert.match(html, /id="line-height-control-label"[\s\S]*?class="number-stepper"[^>]*aria-labelledby="line-height-control-label"/)
+  assert.doesNotMatch(html, /<label>\s*<span id="(?:font-size|line-height)-control-label"/)
+  assert.match(styles, /\.typography-card__settings \.layout-card__label\s*\{[^}]*white-space:\s*nowrap/)
   assert.doesNotMatch(html, /class="toolbar-group formatting"/)
   assert.doesNotMatch(html, /id="font-size"/)
   assert.doesNotMatch(html, /id="object-(?:x|y|width|height)"/)
@@ -155,7 +163,13 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.workbench-toolbar\s*\{[^}]*grid-area:\s*toolbar/)
   assert.match(styles, /\.workbench-toolbar button,[\s\S]*?\.workbench-toolbar \.base-select\s*\{[^}]*height:\s*28px[^}]*min-height:\s*28px/)
   assert.match(styles, /\.workbench-toolbar \.icon-button\s*\{[^}]*width:\s*28px[^}]*min-width:\s*28px/)
-  assert.match(styles, /\.workbench-toolbar__inner > \.toolbar-group:first-child\s*\{[^}]*margin-left:\s*auto/)
+  assert.match(styles, /\.workbench-toolbar__inner\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(44px, 1fr\) auto minmax\(44px, 1fr\)/)
+  assert.match(styles, /\.workbench-toolbar__layout-controls\s*\{[^}]*grid-column:\s*2[^}]*justify-self:\s*center/)
+  assert.match(styles, /\.workbench-toolbar__inner > \.inspector-controls\s*\{[^}]*grid-column:\s*3[^}]*justify-self:\s*end/)
+  assert.doesNotMatch(styles, /\.workbench-toolbar__inner > \.toolbar-group:first-child\s*\{/)
+  assert.match(styles, /\.appbar\s*\{[^}]*height:\s*44px/)
+  assert.match(styles, /\.appbar-menu > \.icon-button\s*\{[^}]*width:\s*30px[^}]*height:\s*30px/)
+  assert.match(styles, /body\.has-document-tabs[^{]*\{[^}]*height:\s*calc\(100vh - 72px\)/)
   assert.match(styles, /\.document-tabs__inner\s*\{[^}]*justify-content:\s*flex-end/)
   assert.match(styles, /\.document-tabs__list\s*\{[^}]*width:\s*max-content[^}]*margin-left:\s*auto/)
   assert.match(styles, /\.grid-controls\s*\{[^}]*width:\s*72px[^}]*padding-right:\s*6px/)
@@ -256,7 +270,8 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.match(styles, /\.segment-translation-selector__label\s*\{[^}]*rotate\(-90deg\)/)
   assert.doesNotMatch(styles, /\.segment-translation-selector__label\s*\{[^}]*scale\(/)
   assert.match(html, /id="format-all-segments"[\s\S]*?Применить ко всем выбранным/)
-  assert.match(html, /id="typography-select-all"[^>]*>Выбрать все сегменты<\/button>/)
+  assert.match(html, /id="typography-select-all"[^>]*aria-pressed="false"[^>]*>Выбрать все сегменты<\/button>/)
+  assert.match(styles, /\.typography-card__scope \.button\.is-active\s*\{[^}]*background:\s*#eef2ff/)
   assert.match(styles, /\.studio-page--segments \.segments-column-headings,[\s\S]*?\.segment-translation-row\s*\{[^}]*grid-template-columns:\s*28px minmax\(0, 1fr\) minmax\(0, 1fr\)/)
   assert.ok(dom.window.document.querySelector('#translation-select-all.base-checkbox__input + .base-checkbox__control'))
   assert.doesNotMatch(styles, /\.document-tabs__add\s*\{/)
@@ -964,14 +979,40 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, objectOutsideSelection.dataset.id)
   const focusedObjectId = dom.window.document.querySelector('.scene-object.is-selected').dataset.id
-  dom.window.document.querySelector('#typography-select-all').click()
+  const typographySelectAll = dom.window.document.querySelector('#typography-select-all')
+  typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-primary-selected').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, focusedObjectId)
+  assert.equal(typographySelectAll.getAttribute('aria-pressed'), 'true')
+  assert.equal(typographySelectAll.textContent, 'Снять выбор со всех')
+  assert.equal(typographySelectAll.classList.contains('is-active'), true)
 
+  typographySelectAll.click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 0)
+  assert.equal(typographySelectAll.getAttribute('aria-pressed'), 'false')
+  assert.equal(typographySelectAll.textContent, 'Выбрать все сегменты')
+  typographySelectAll.click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+
+  fontSizeIncrease.click()
   const applyAllFormatting = dom.window.document.querySelector('#format-all-segments')
   applyAllFormatting.checked = true
   applyAllFormatting.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  const mixedFontSizeValue = dom.window.document.querySelector('#toolbar-font-size-value')
+  assert.equal(mixedFontSizeValue.value, '')
+  assert.equal(mixedFontSizeValue.placeholder, '≠')
+  assert.equal(mixedFontSizeValue.title, 'У выбранных сегментов разные размеры шрифта')
+  assert.equal(mixedFontSizeValue.closest('.number-stepper__field').classList.contains('is-mixed'), true)
+  mixedFontSizeValue.value = '1'
+  mixedFontSizeValue.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(mixedFontSizeValue.closest('.number-stepper__field').classList.contains('is-mixed'), false)
+  mixedFontSizeValue.value = ''
+  mixedFontSizeValue.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(mixedFontSizeValue.closest('.number-stepper__field').classList.contains('is-mixed'), true)
+  mixedFontSizeValue.value = '14'
+  mixedFontSizeValue.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(mixedFontSizeValue.closest('.number-stepper__field').classList.contains('is-mixed'), false)
   const fontFamily = dom.window.document.querySelector('#toolbar-font-family')
   fontFamily.value = 'Times New Roman'
   fontFamily.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
@@ -1013,6 +1054,16 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const lineHeight = dom.window.document.querySelector('#line-height')
   lineHeight.value = '1.5'
   lineHeight.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.lineHeight),
+    ['1.5', '1.5']
+  )
+  dom.window.document.querySelector('#line-height-increase').click()
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.lineHeight),
+    ['1.55', '1.55']
+  )
+  dom.window.document.querySelector('#line-height-decrease').click()
   assert.deepEqual(
     [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.lineHeight),
     ['1.5', '1.5']
