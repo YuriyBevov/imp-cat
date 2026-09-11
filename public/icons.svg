@@ -34,6 +34,11 @@
     <path d="m13.8 10.2 1.7-1.7a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" />
     <path d="m8.8 15.2 6.4-6.4" />
   </symbol>
+  <symbol id="icon-resolve-overlap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="9" height="9" rx="1.5" />
+    <rect x="11" y="11" width="9" height="9" rx="1.5" />
+    <path d="M8 17H3m0 0 2-2m-2 2 2 2M16 7h5m0 0-2-2m2 2-2 2" />
+  </symbol>
   <symbol id="icon-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
     <path d="M4 4h16v16H4zM4 9.33h16M4 14.67h16M9.33 4v16M14.67 4v16" />
   </symbol>

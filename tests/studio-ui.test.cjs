@@ -46,7 +46,6 @@ test('studio exposes the complete source-to-export workflow', () => {
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
     'grid-size', 'align-left-button',
-    'flex-direction', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button', 'format-all-segments', 'typography-select-all',
     'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase',
     'line-height-decrease', 'line-height', 'line-height-increase', 'zoom-100',
@@ -56,12 +55,29 @@ test('studio exposes the complete source-to-export workflow', () => {
     'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button', 'cancel-job-button', 'loading-progress-details',
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
-  assert.doesNotMatch(html, /id="(?:alignment-scope|flex-container)"/)
   const studioDocument = new JSDOM(html).window.document
+  assert.doesNotMatch(html, /id="(?:alignment-scope|flex-container)"/)
+  assert.doesNotMatch(html, /id="flex-apply-button"/)
+  assert.equal(studioDocument.querySelectorAll('.flex-layout select, .flex-layout input').length, 0)
+  assert.equal(studioDocument.querySelectorAll('[data-flex-axis="row"][data-flex-layout]').length, 6)
+  assert.equal(studioDocument.querySelectorAll('[data-flex-axis="column"][data-flex-layout]').length, 6)
+  assert.equal(studioDocument.querySelector('.flex-layout__disabled-actions'), null)
   assert.ok(studioDocument.querySelector('.fit-size-actions #merge-button.icon-button use[href="/icons.svg#icon-merge"]'))
-  assert.equal(studioDocument.querySelector('.layout-card #merge-button'), null)
+  assert.ok(studioDocument.querySelector('.segment-actions-card .layout-card__heading strong')?.textContent.includes('Сегменты'))
+  assert.ok(studioDocument.querySelector('.fit-size-actions #auto-layout-button.icon-button use[href="/icons.svg#icon-resolve-overlap"]'))
+  assert.equal(studioDocument.querySelector('.agent-actions #auto-layout-button'), null)
+  assert.ok(studioDocument.querySelector('.segment-actions-card #merge-button'))
   assert.equal(studioDocument.querySelector('.inspector-scope--segments #merge-button'), null)
-  assert.match(studioDocument.querySelector('[aria-label="Выравнивание относительно документа"]')?.previousElementSibling?.textContent || '', /Выравнивание относительно документа/)
+  for (const label of [
+    'Выровнять друг относительно друга, X',
+    'Выровнять друг относительно друга, Y',
+    'Выравнивание относительно документа, X',
+    'Выравнивание относительно документа, Y',
+  ]) {
+    const group = studioDocument.querySelector(`[aria-label="${label}"]`)
+    assert.ok(group)
+    assert.equal(group.previousElementSibling?.textContent.trim(), label)
+  }
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
   assert.match(client, /\/api\/studio\/documents/)
@@ -220,7 +236,7 @@ test('user guide documents the complete interface and links from README', () => 
     'AI: сравнить и исправить макет', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
     'Сохранить изменения', 'Исправить выбранные', 'Исправить весь документ', 'Добавить пустой сегмент',
     'Разбить по предложениям', 'Вынести выделенное в отдельную часть', 'Применить все 100% совпадения',
-    'Применить расстановку', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
+    'Направление, X', 'Направление, Y', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
     'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
   ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 })
@@ -817,12 +833,21 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
   assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '11.15625px')
-
   const pointer = (type, x, y) => {
     const event = new dom.window.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
     Object.defineProperty(event, 'pointerId', { value: 7 })
     return event
   }
+  const contentBoundary = dom.window.document.querySelector('.content-boundary')
+  const contentBoundaryResize = contentBoundary.querySelector('.content-boundary__resize')
+  assert.equal(contentBoundaryResize.getAttribute('aria-label'), 'Изменить высоту рабочей области документа')
+  contentBoundaryResize.dispatchEvent(pointer('pointerdown', 0, 900))
+  dom.window.dispatchEvent(pointer('pointermove', 0, 650))
+  dom.window.dispatchEvent(pointer('pointerup', 0, 650))
+  assert.ok(Number.parseFloat(contentBoundary.style.height) < 1043)
+  dom.window.document.querySelector('#undo-button').click()
+  assert.equal(dom.window.document.querySelector('.content-boundary').style.height, '1043px')
+
   const sourceScroll = dom.window.document.querySelector('#source-preview-scroll')
   sourceScroll.scrollLeft = 160
   sourceScroll.scrollTop = 240
@@ -1109,15 +1134,31 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(alignDocumentCenter.classList.contains('is-active'), true)
   assert.equal(alignDocumentCenter.getAttribute('aria-pressed'), 'true')
 
-  dom.window.document.querySelector('#flex-direction').value = 'row'
-  dom.window.document.querySelector('#flex-justify').value = 'space-between'
-  dom.window.document.querySelector('#flex-align').value = 'center'
-  dom.window.document.querySelector('#flex-apply-button').click()
+  const horizontalBetween = dom.window.document.querySelector('[data-flex-axis="row"][data-flex-layout="space-between"]')
+  const verticalBetween = dom.window.document.querySelector('[data-flex-axis="column"][data-flex-layout="space-between"]')
+  for (const node of dom.window.document.querySelectorAll('.scene-object')) {
+    const handle = node.querySelector('.scene-object__resize')
+    handle.dispatchEvent(pointer('pointerdown', 0, 0))
+    dom.window.dispatchEvent(pointer('pointermove', 5000, 0))
+    dom.window.dispatchEvent(pointer('pointerup', 5000, 0))
+  }
+  const widthsBeforeAutomaticFit = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.width))
+  const fontSizesBeforeAutomaticFit = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.fontSize))
+  assert.ok(widthsBeforeAutomaticFit.reduce((sum, width) => sum + width, 0) > 714)
+  const topsBeforeHorizontalLayout = [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.top)
+  horizontalBetween.click()
+  const widthsAfterAutomaticFit = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.width))
+  const fontSizesAfterAutomaticFit = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.fontSize))
+  assert.ok(widthsAfterAutomaticFit.reduce((sum, width) => sum + width, 0) <= 714.001)
+  assert.ok(fontSizesAfterAutomaticFit.some((size, index) => size < fontSizesBeforeAutomaticFit[index]))
   const flexObjects = [...dom.window.document.querySelectorAll('.scene-object')]
   const flexLefts = flexObjects.map(node => Number.parseFloat(node.style.left)).sort((left, right) => left - right)
   assert.equal(flexLefts[0], 40)
   assert.equal(Math.max(...flexObjects.map(node => Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width))), 754)
-  assert.equal(new Set(flexObjects.map(node => Number.parseFloat(node.style.top) + Number.parseFloat(node.style.height) / 2)).size, 1)
+  assert.deepEqual(flexObjects.map(node => node.style.top), topsBeforeHorizontalLayout)
+  const leftsBeforeVerticalLayout = flexObjects.map(node => node.style.left)
+  verticalBetween.click()
+  assert.deepEqual(flexObjects.map(node => node.style.left), leftsBeforeVerticalLayout)
 
   const translationInput = dom.window.document.querySelector('#translation-text')
   translationInput.value = '/Подпись/'

@@ -188,6 +188,17 @@ test('short source pages use an A4-height workspace without stretching the sourc
   assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(794, 1123))
 })
 
+test('normalizeScene preserves a reduced content-area height inside the A4 page', () => {
+  const normalized = normalizeScene({
+    pages: [{
+      index: 0, sourcePageIndex: 0, widthPx: 794, heightPx: 1123,
+      contentBounds: { x: 40, y: 40, width: 714, height: 520 },
+    }],
+    objects: [],
+  }, '7'.repeat(32), 'Reduced content area')
+  assert.deepEqual(normalized.pages[0].contentBounds, { x: 40, y: 40, width: 714, height: 520 })
+})
+
 test('normalizeScene preserves original page images around an inserted blank page', () => {
   const documentId = 'e'.repeat(32)
   const input = buildScene({ pages: [analysisFixture().pages[0], { ...analysisFixture().pages[0], index: 1 }] }, { documentId })

@@ -46,8 +46,6 @@
     toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
     formatAllSegments: $('#format-all-segments'), typographySelectAll: $('#typography-select-all'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
-    flexDirection: $('#flex-direction'), flexJustify: $('#flex-justify'),
-    flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'), knowledgeBaseMode: $('#knowledge-base-mode'),
     knowledgeSuggestionPopover: $('#knowledge-suggestion-popover'), knowledgeSuggestionTitle: $('#knowledge-suggestion-title'),
@@ -943,6 +941,13 @@
           left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
           width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
         })
+        const boundaryResize = document.createElement('button')
+        boundaryResize.className = 'content-boundary__resize'
+        boundaryResize.type = 'button'
+        boundaryResize.title = 'Изменить высоту рабочей области документа'
+        boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
+        boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
+        boundary.append(boundaryResize)
         surface.append(boundary)
 
         for (const table of state.scene.tables || []) {
@@ -2171,8 +2176,9 @@
     const wrapped = measureObjectContent(object, width)
     const height = Math.max(12, contentSize(wrapped.height))
     const x = Math.max(area.x, Math.min(object.x, area.x + area.width - width))
-    const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5 || Math.abs(object.x - x) > .5
-    Object.assign(object, { x, width, height })
+    const y = Math.max(area.y, Math.min(object.y, area.y + area.height - height))
+    const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5 || Math.abs(object.x - x) > .5 || Math.abs(object.y - y) > .5
+    Object.assign(object, { x, y, width, height })
     return changed
   }
 
@@ -2619,7 +2625,7 @@
     })
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
     refreshLayoutAlignmentState(selection, onePage)
-    elements.flexApply.disabled = !onePage || selection.length < 2
+    document.querySelectorAll('[data-flex-layout]').forEach(button => { button.disabled = !onePage || selection.length < 2 })
     refreshFormattingToolbar()
     refreshFormattingSelectionToggle()
     elements.agentNotes.hidden = true
@@ -2717,6 +2723,25 @@
       for (const object of group) {
         object.x += shift.x
         object.y += shift.y
+      }
+    }
+  }
+
+  function snapObjectGroupsOnAxis(objects, axis) {
+    for (const group of groupedByPage(objects).values()) {
+      const bounds = boundsOf(group)
+      const page = state.scene.pages[group[0].pageIndex]
+      const area = page.contentBounds
+      const horizontal = axis === 'x'
+      const current = horizontal ? bounds.left : bounds.top
+      const minimum = horizontal ? area.x : area.y
+      const maximum = horizontal
+        ? area.x + area.width - bounds.width
+        : area.y + area.height - bounds.height
+      const target = snapAxisPosition(current, minimum, maximum, page, axis)
+      for (const object of group) {
+        if (horizontal) object.x += target - current
+        else object.y += target - current
       }
     }
   }
@@ -2844,48 +2869,89 @@
     scheduleSave()
   }
 
-  function applyFlexLayout() {
+  function proportionalAxisLengths(objects, horizontal, availableLength) {
+    const minimumLength = 12
+    const sourceLengths = objects.map(object => horizontal ? object.width : object.height)
+    const lengths = new Array(objects.length).fill(0)
+    const pending = new Set(objects.map((_, index) => index))
+    let remainingLength = availableLength
+
+    while (pending.size) {
+      const sourceTotal = [...pending].reduce((sum, index) => sum + sourceLengths[index], 0)
+      const scale = sourceTotal > 0 ? remainingLength / sourceTotal : 0
+      const constrained = [...pending].filter(index => sourceLengths[index] * scale < minimumLength)
+      if (!constrained.length) {
+        for (const index of pending) lengths[index] = sourceLengths[index] * scale
+        break
+      }
+      for (const index of constrained) {
+        lengths[index] = minimumLength
+        remainingLength -= minimumLength
+        pending.delete(index)
+      }
+    }
+    return lengths
+  }
+
+  function scaleObjectTypography(object, factor) {
+    const scaleValue = value => Math.max(6, Math.round((Number(value) || 6) * factor * 100) / 100)
+    object.style.fontSizePx = scaleValue(object.style?.fontSizePx)
+    for (const key of ['sourceTextStyles', 'translationTextStyles']) {
+      for (const range of object[key] || []) {
+        if (range.fontSizePx != null) range.fontSizePx = scaleValue(range.fontSizePx)
+      }
+    }
+  }
+
+  function shrinkObjectsToFitAxis(objects, horizontal, availableLength, totalLength) {
+    if (totalLength <= availableLength) return false
+    const nextLengths = proportionalAxisLengths(objects, horizontal, availableLength)
+    objects.forEach((object, index) => {
+      const previousLength = horizontal ? object.width : object.height
+      const nextLength = nextLengths[index]
+      const factor = previousLength > 0 ? Math.min(1, nextLength / previousLength) : 1
+      if (horizontal) {
+        object.width = nextLength
+        object.height = Math.max(12, object.height * factor)
+      } else {
+        object.height = nextLength
+      }
+      scaleObjectTypography(object, factor)
+      if (horizontal) object.height = Math.max(object.height, estimatedContentSize(object, object.width).height)
+    })
+    return true
+  }
+
+  function applyFlexLayout(direction, justify) {
     const objects = selectionOnOnePage(2)
     if (!objects) return
     const page = state.scene.pages[objects[0].pageIndex]
-    const direction = elements.flexDirection.value
     const horizontal = direction === 'row'
-    const justify = elements.flexJustify.value
-    const align = elements.flexAlign.value
-    const requestedGap = Math.min(200, Math.max(0, Number(elements.flexGap.value) || 0))
     const ordered = [...objects].sort(horizontal
       ? (left, right) => left.x - right.x || left.y - right.y
       : (top, bottom) => top.y - bottom.y || top.x - bottom.x)
     const area = { ...page.contentBounds }
-    let mainStart = horizontal ? area.x : area.y
-    let mainLength = horizontal ? area.width : area.height
-    const totalItemLength = ordered.reduce((sum, object) => sum + (horizontal ? object.width : object.height), 0)
-    const requestedLength = totalItemLength + requestedGap * (ordered.length - 1)
+    const mainStart = horizontal ? area.x : area.y
+    const mainLength = horizontal ? area.width : area.height
+    let totalItemLength = ordered.reduce((sum, object) => sum + (horizontal ? object.width : object.height), 0)
 
-    if (totalItemLength > mainLength) {
-      showToast('Сегменты не помещаются вдоль выбранной оси. Уменьшите их или выберите большую область.', true)
-      return
-    }
-
-    const gap = ordered.length > 1
-      ? Math.min(requestedGap, Math.max(0, (mainLength - totalItemLength) / (ordered.length - 1)))
-      : 0
-    const occupiedLength = totalItemLength + gap * (ordered.length - 1)
-    const freeSpace = Math.max(0, mainLength - occupiedLength)
+    checkpoint()
+    const objectsWereReduced = shrinkObjectsToFitAxis(ordered, horizontal, mainLength, totalItemLength)
+    totalItemLength = ordered.reduce((sum, object) => sum + (horizontal ? object.width : object.height), 0)
+    const freeSpace = Math.max(0, mainLength - totalItemLength)
     let offset = 0
-    let distributedGap = gap
+    let distributedGap = 0
     if (justify === 'center') offset = freeSpace / 2
     else if (justify === 'end') offset = freeSpace
-    else if (justify === 'space-between' && ordered.length > 1) distributedGap += freeSpace / (ordered.length - 1)
+    else if (justify === 'space-between' && ordered.length > 1) distributedGap = freeSpace / (ordered.length - 1)
     else if (justify === 'space-around') {
-      distributedGap += freeSpace / ordered.length
+      distributedGap = freeSpace / ordered.length
       offset = freeSpace / (ordered.length * 2)
     } else if (justify === 'space-evenly') {
-      distributedGap += freeSpace / (ordered.length + 1)
+      distributedGap = freeSpace / (ordered.length + 1)
       offset = freeSpace / (ordered.length + 1)
     }
 
-    checkpoint()
     let cursor = mainStart + offset
     for (const object of ordered) {
       if (horizontal) object.x = cursor
@@ -2893,30 +2959,17 @@
       cursor += (horizontal ? object.width : object.height) + distributedGap
     }
 
-    const crossStart = horizontal ? area.y : area.x
-    const crossLength = horizontal ? area.height : area.width
-    const baseline = crossStart + Math.max(...objects.map(object => Math.max(6, Number(object.style?.fontSizePx) || 14) * .82))
-    for (const object of objects) {
-      const objectCrossLength = horizontal ? object.height : object.width
-      let position = crossStart
-      if (align === 'center') position += (crossLength - objectCrossLength) / 2
-      else if (align === 'end') position += crossLength - objectCrossLength
-      else if (align === 'baseline' && horizontal) position = baseline - Math.max(6, Number(object.style?.fontSizePx) || 14) * .82
-      if (horizontal) {
-        object.y = position
-        if (align === 'stretch') { object.y = crossStart; object.height = Math.max(12, crossLength) }
-      } else {
-        object.x = position
-        if (align === 'stretch') { object.x = crossStart; object.width = Math.max(12, crossLength) }
-      }
-    }
-
     const shift = clampGroupShift(objects, 0, 0)
-    for (const object of objects) { object.x += shift.x; object.y += shift.y }
-    snapObjectGroups(objects)
+    for (const object of objects) {
+      if (horizontal) object.x += shift.x
+      else object.y += shift.y
+    }
+    snapObjectGroupsOnAxis(objects, horizontal ? 'x' : 'y')
     renderDocument()
     scheduleSave()
-    showToast(`${horizontal ? 'Горизонтальная' : 'Вертикальная'} расстановка применена`)
+    showToast(objectsWereReduced
+      ? `Сегменты уменьшены и размещены по оси ${horizontal ? 'X' : 'Y'}`
+      : `${horizontal ? 'Горизонтальная' : 'Вертикальная'} расстановка применена`)
   }
 
   function cancelPointerAction() {
@@ -3167,6 +3220,60 @@
       if (node) positionObjectNode(node, object)
     }
     startPointerAction(event, handle, action, { move: update, commit: finish, cancel })
+  }
+
+  function maximumContentBoundaryHeight(page) {
+    return Math.max(120, page.heightPx - page.contentBounds.y * 2)
+  }
+
+  function minimumContentBoundaryHeight(page) {
+    const occupiedBottom = Math.max(
+      page.contentBounds.y + 120,
+      ...state.scene.objects
+        .filter(object => object.pageIndex === page.index && !object.excluded)
+        .map(object => object.y + object.height)
+    )
+    return Math.min(maximumContentBoundaryHeight(page), Math.max(120, occupiedBottom - page.contentBounds.y))
+  }
+
+  function snapContentBoundaryHeight(value, page, minimum, maximum) {
+    if (value >= maximum - currentGridSize(page) / 2) return maximum
+    const snapped = Math.round(value / currentGridSize(page)) * currentGridSize(page)
+    return Math.min(maximum, Math.max(minimum, snapped))
+  }
+
+  function beginContentBoundaryResize(event, pageIndex) {
+    if (event.button !== 0) return
+    cancelPointerAction()
+    event.preventDefault()
+    event.stopPropagation()
+    const page = state.scene.pages[pageIndex]
+    if (!page) return
+    const handle = event.currentTarget
+    const boundary = handle.closest('.content-boundary')
+    const historyLength = state.history.length
+    checkpoint()
+    const start = { clientY: event.clientY, height: page.contentBounds.height }
+    const minimum = minimumContentBoundaryHeight(page)
+    const maximum = maximumContentBoundaryHeight(page)
+    const update = current => {
+      const requested = start.height + (current.clientY - start.clientY) / state.zoom
+      page.contentBounds.height = snapContentBoundaryHeight(requested, page, minimum, maximum)
+      if (boundary) boundary.style.height = `${page.contentBounds.height}px`
+    }
+    const finish = () => {
+      refreshSelection()
+      scheduleSave()
+      showToast(`Высота рабочей области: ${Math.round(page.contentBounds.height)} px`)
+    }
+    const cancel = () => {
+      page.contentBounds.height = start.height
+      state.history.length = historyLength
+      refreshUndoButtons()
+      if (boundary) boundary.style.height = `${start.height}px`
+      refreshSelection()
+    }
+    startPointerAction(event, handle, { kind: 'content-boundary-resize', page }, { move: update, commit: finish, cancel })
   }
 
   function checkpoint() {
@@ -4403,7 +4510,9 @@
     elements.fitContentBoth.addEventListener('click', () => fitSelectionToContent('both'))
     document.querySelectorAll('[data-align-selection]').forEach(button => button.addEventListener('click', () => alignSelection(button.dataset.alignSelection)))
     document.querySelectorAll('[data-align-document]').forEach(button => button.addEventListener('click', () => alignToDocument(button.dataset.alignDocument)))
-    elements.flexApply.addEventListener('click', applyFlexLayout)
+    document.querySelectorAll('[data-flex-layout]').forEach(button => button.addEventListener('click', () => {
+      applyFlexLayout(button.dataset.flexAxis, button.dataset.flexLayout)
+    }))
     elements.toolbarFontSizeDecrease.addEventListener('click', () => changeFormattingFontSize(-1))
     elements.toolbarFontSizeIncrease.addEventListener('click', () => changeFormattingFontSize(1))
     elements.toolbarFontSizeValue.addEventListener('input', () => refreshNumberStepperDraft(elements.toolbarFontSizeValue))

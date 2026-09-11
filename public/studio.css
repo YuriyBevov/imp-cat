@@ -249,6 +249,26 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
   background-size: var(--grid-size) var(--grid-size);
 }
 .content-boundary::before { content: "рабочая область документа"; position: absolute; left: -1px; top: -20px; padding: 3px 6px; border-radius: 5px 5px 0 0; background: #e9f8f4; color: #14776c; font: 700 9px/1.4 Inter, sans-serif; letter-spacing: .02em; }
+.content-boundary__resize {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  z-index: 20001;
+  width: 34px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgba(22,132,119,.8);
+  border-radius: 7px;
+  background: #fff;
+  color: #14776c;
+  cursor: ns-resize;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  touch-action: none;
+}
+.content-boundary__resize::before { content: ""; position: absolute; left: 8px; right: 8px; top: 5px; height: 2px; border-radius: 1px; background: currentColor; }
+.content-boundary__resize:hover { background: #e9f8f4; }
+.content-boundary__resize:active { background: #d8f1eb; }
 .page-number { position: absolute; right: 9px; bottom: 7px; color: #98a2b3; font: 700 9px/1 Inter, sans-serif; pointer-events: none; }
 
 .document-canvas.is-segments-view { width: max-content; min-width: 100%; }
@@ -409,21 +429,18 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .typography-card__scope .button.is-active { color: var(--blue); border-color: var(--blue); background: #eef2ff; }
 .layout-card__scope { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 2px; border-top: 1px solid #e5e7eb; }
 .layout-card__scope select { width: auto; min-height: 28px; padding: 3px 6px; font-size: 9px; }
-.layout-button-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.layout-axis-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 8px; }
+.layout-axis-group { min-width: 0; display: grid; align-content: start; gap: 4px; }
+.layout-axis-group .layout-card__label { min-height: 24px; display: flex; align-items: flex-end; line-height: 1.25; }
+.layout-button-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .layout-button-grid button { min-width: 0; height: 27px; padding: 3px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: pointer; color: #344054; font-size: 8px; font-weight: 750; }
 .layout-button-grid button:hover { border-color: var(--blue); color: var(--blue); background: #eef2ff; }
 .layout-button-grid button.is-active { border-color: var(--blue); color: var(--blue); background: #dfe7ff; }
 .layout-button-grid button:disabled { opacity: .38; cursor: not-allowed; }
-.layout-button-grid__wide { grid-column: span 3; }
 .flex-layout { display: grid; gap: 7px; padding-top: 7px; border-top: 1px solid #e5e7eb; }
 .flex-layout__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 10px; }
 .flex-layout__heading small { color: var(--muted); font-size: 8px; }
-.flex-layout__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.flex-layout__grid label { display: grid; gap: 3px; color: var(--muted); font-size: 8px; font-weight: 700; }
-.flex-layout__grid select, .flex-layout__grid input { width: 100%; min-width: 0; height: 28px; padding: 3px 5px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--ink); font-size: 9px; }
-.flex-layout__grid label:last-child { grid-column: 1 / -1; }
-.flex-layout > .button { min-height: 32px; padding: 5px 8px; color: #fff; background: var(--blue); border-color: var(--blue); font-size: 10px; }
-.flex-layout > .button:hover { background: var(--blue-dark); border-color: var(--blue-dark); }
+.flex-layout__axis-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .translation-units-card { display: grid; gap: 8px; padding: 9px; border: 1px solid #c7d7fe; border-radius: 9px; background: #f7f9ff; }
 .translation-units-card__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .translation-units-card__heading > div { display: grid; gap: 2px; }
