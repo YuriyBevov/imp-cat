@@ -29,6 +29,11 @@
   <symbol id="icon-fit-both" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M9 9 4 4m0 0v5m0-5h5m6 5 5-5m0 0v5m0-5h-5M9 15l-5 5m0 0v-5m0 5h5m6-5 5 5m0 0v-5m0 5h-5" />
   </symbol>
+  <symbol id="icon-merge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m10.2 13.8-1.7 1.7a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0" />
+    <path d="m13.8 10.2 1.7-1.7a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" />
+    <path d="m8.8 15.2 6.4-6.4" />
+  </symbol>
   <symbol id="icon-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
     <path d="M4 4h16v16H4zM4 9.33h16M4 14.67h16M9.33 4v16M14.67 4v16" />
   </symbol>

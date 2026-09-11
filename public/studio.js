@@ -46,8 +46,7 @@
     toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
     formatAllSegments: $('#format-all-segments'), typographySelectAll: $('#typography-select-all'),
     fitContentWidth: $('#fit-content-width-button'), fitContentHeight: $('#fit-content-height-button'), fitContentBoth: $('#fit-content-both-button'),
-    alignmentScope: $('#alignment-scope'),
-    flexDirection: $('#flex-direction'), flexContainer: $('#flex-container'), flexJustify: $('#flex-justify'),
+    flexDirection: $('#flex-direction'), flexJustify: $('#flex-justify'),
     flexAlign: $('#flex-align'), flexGap: $('#flex-gap'), flexApply: $('#flex-apply-button'),
     memorySearch: $('#memory-search-button'), memoryResults: $('#memory-results'), approve: $('#approve-button'),
     glossarySelect: $('#glossary-select'), glossaryAdd: $('#glossary-add-button'), knowledgeBaseStatus: $('#knowledge-base-status'), knowledgeBaseMode: $('#knowledge-base-mode'),
@@ -2619,6 +2618,7 @@
       button.disabled = !onePage || selection.length < minimum
     })
     document.querySelectorAll('[data-align-document]').forEach(button => { button.disabled = !onePage })
+    refreshLayoutAlignmentState(selection, onePage)
     elements.flexApply.disabled = !onePage || selection.length < 2
     refreshFormattingToolbar()
     refreshFormattingSelectionToggle()
@@ -2734,6 +2734,60 @@
     return objects
   }
 
+  function valuesAreAligned(values, tolerance = .75) {
+    return values.length > 0 && Math.max(...values) - Math.min(...values) <= tolerance
+  }
+
+  function hasEqualObjectIntervals(objects, axis, tolerance = .75) {
+    if (objects.length < 3) return false
+    const horizontal = axis === 'x'
+    const sorted = [...objects].sort((left, right) => (horizontal ? left.x - right.x : left.y - right.y))
+    const gaps = sorted.slice(1).map((object, index) => {
+      const previous = sorted[index]
+      return horizontal
+        ? object.x - (previous.x + previous.width)
+        : object.y - (previous.y + previous.height)
+    })
+    return valuesAreAligned(gaps, tolerance)
+  }
+
+  function setLayoutButtonActive(button, active) {
+    button.classList.toggle('is-active', active)
+    button.setAttribute('aria-pressed', String(active))
+  }
+
+  function refreshLayoutAlignmentState(objects, onePage) {
+    for (const button of document.querySelectorAll('[data-align-selection]')) {
+      const action = button.dataset.alignSelection
+      let active = onePage && !button.disabled
+      if (active && action === 'left') active = valuesAreAligned(objects.map(object => object.x))
+      else if (active && action === 'center-x') active = valuesAreAligned(objects.map(object => object.x + object.width / 2))
+      else if (active && action === 'right') active = valuesAreAligned(objects.map(object => object.x + object.width))
+      else if (active && action === 'top') active = valuesAreAligned(objects.map(object => object.y))
+      else if (active && action === 'center-y') active = valuesAreAligned(objects.map(object => object.y + object.height / 2))
+      else if (active && action === 'bottom') active = valuesAreAligned(objects.map(object => object.y + object.height))
+      else if (active && action === 'distribute-x') active = hasEqualObjectIntervals(objects, 'x')
+      else if (active && action === 'distribute-y') active = hasEqualObjectIntervals(objects, 'y')
+      setLayoutButtonActive(button, active)
+    }
+
+    const page = onePage ? state.scene.pages[objects[0].pageIndex] : null
+    const area = page?.contentBounds
+    const bounds = area ? boundsOf(objects) : null
+    const documentTolerance = page ? Math.max(.75, currentGridSize(page) / 2 + .01) : .75
+    for (const button of document.querySelectorAll('[data-align-document]')) {
+      const action = button.dataset.alignDocument
+      let active = Boolean(area && bounds && !button.disabled)
+      if (active && action === 'left') active = valuesAreAligned([bounds.left, area.x], documentTolerance)
+      else if (active && action === 'center-x') active = valuesAreAligned([(bounds.left + bounds.right) / 2, area.x + area.width / 2], documentTolerance)
+      else if (active && action === 'right') active = valuesAreAligned([bounds.right, area.x + area.width], documentTolerance)
+      else if (active && action === 'top') active = valuesAreAligned([bounds.top, area.y], documentTolerance)
+      else if (active && action === 'center-y') active = valuesAreAligned([(bounds.top + bounds.bottom) / 2, area.y + area.height / 2], documentTolerance)
+      else if (active && action === 'bottom') active = valuesAreAligned([bounds.bottom, area.y + area.height], documentTolerance)
+      setLayoutButtonActive(button, active)
+    }
+  }
+
   function alignSelection(action) {
     const minimum = action.startsWith('distribute') ? 3 : 2
     const objects = selectionOnOnePage(minimum)
@@ -2790,40 +2844,25 @@
     scheduleSave()
   }
 
-  function flexContainerArea(page, objects, scope) {
-    if (scope === 'page') return { ...page.contentBounds }
-    if (scope === 'content') return { ...page.contentBounds }
-    const bounds = boundsOf(objects)
-    return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height }
-  }
-
   function applyFlexLayout() {
     const objects = selectionOnOnePage(2)
     if (!objects) return
     const page = state.scene.pages[objects[0].pageIndex]
     const direction = elements.flexDirection.value
     const horizontal = direction === 'row'
-    const scope = elements.flexContainer.value
     const justify = elements.flexJustify.value
     const align = elements.flexAlign.value
     const requestedGap = Math.min(200, Math.max(0, Number(elements.flexGap.value) || 0))
     const ordered = [...objects].sort(horizontal
       ? (left, right) => left.x - right.x || left.y - right.y
       : (top, bottom) => top.y - bottom.y || top.x - bottom.x)
-    const area = flexContainerArea(page, objects, scope)
+    const area = { ...page.contentBounds }
     let mainStart = horizontal ? area.x : area.y
     let mainLength = horizontal ? area.width : area.height
-    const pageMainLength = horizontal ? page.widthPx : page.heightPx
     const totalItemLength = ordered.reduce((sum, object) => sum + (horizontal ? object.width : object.height), 0)
     const requestedLength = totalItemLength + requestedGap * (ordered.length - 1)
 
-    if (scope === 'selection' && requestedLength > mainLength) {
-      const growth = requestedLength - mainLength
-      if (justify === 'end') mainStart -= growth
-      else if (justify !== 'start' && justify !== 'space-between') mainStart -= growth / 2
-      mainLength = requestedLength
-    }
-    if (totalItemLength > mainLength || (scope === 'selection' && requestedLength > pageMainLength)) {
+    if (totalItemLength > mainLength) {
       showToast('Сегменты не помещаются вдоль выбранной оси. Уменьшите их или выберите большую область.', true)
       return
     }
@@ -3119,7 +3158,7 @@
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (node) positionObjectNode(node, object)
     }
-    const finish = () => { scheduleSave() }
+    const finish = () => { refreshSelection(); scheduleSave() }
     const cancel = () => {
       Object.assign(object, { x: start.xPosition, y: start.yPosition, width: start.width, height: start.height })
       state.history.length = historyLength
@@ -3132,18 +3171,48 @@
 
   function checkpoint() {
     if (!state.scene) return
-    state.history.push(JSON.stringify(state.scene))
+    state.history.push(createHistorySnapshot())
     if (state.history.length > 60) state.history.shift()
     state.future = []
     refreshUndoButtons()
   }
 
+  function createHistorySnapshot() {
+    return {
+      scene: JSON.stringify(state.scene),
+      selectedIds: [...state.selected],
+      translationSelectedIds: [...state.translationSelected],
+      activePage: state.activePage,
+      lastTextSelection: state.lastTextSelection ? { ...state.lastTextSelection } : null,
+    }
+  }
+
+  function restoreHistorySnapshot(snapshot) {
+    const normalized = typeof snapshot === 'string' ? { scene: snapshot } : snapshot
+    state.scene = JSON.parse(normalized.scene)
+    const objectIds = new Set(state.scene.objects.map(object => object.id))
+    const selectedIds = Array.isArray(normalized.selectedIds) ? normalized.selectedIds : [...state.selected]
+    const translationSelectedIds = Array.isArray(normalized.translationSelectedIds)
+      ? normalized.translationSelectedIds
+      : [...state.translationSelected]
+    state.selected = new Set(selectedIds.filter(id => objectIds.has(id)))
+    state.translationSelected = new Set(translationSelectedIds.filter(id => objectIds.has(id)))
+    state.lastTextSelection = normalized.lastTextSelection && objectIds.has(normalized.lastTextSelection.objectId)
+      ? { ...normalized.lastTextSelection }
+      : null
+    const primary = primarySelectedObject()
+    const requestedPage = Number(normalized.activePage)
+    state.activePage = primary?.pageIndex
+      ?? (Number.isInteger(requestedPage) && state.scene.pages[requestedPage]
+        ? requestedPage
+        : Math.max(0, Math.min(state.activePage, state.scene.pages.length - 1)))
+  }
+
   function undo() {
     cancelPointerAction()
     if (!state.history.length) return
-    state.future.push(JSON.stringify(state.scene))
-    state.scene = JSON.parse(state.history.pop())
-    state.selected.clear()
+    state.future.push(createHistorySnapshot())
+    restoreHistorySnapshot(state.history.pop())
     renderDocument()
     refreshUndoButtons()
     scheduleSave()
@@ -3152,9 +3221,8 @@
   function redo() {
     cancelPointerAction()
     if (!state.future.length) return
-    state.history.push(JSON.stringify(state.scene))
-    state.scene = JSON.parse(state.future.pop())
-    state.selected.clear()
+    state.history.push(createHistorySnapshot())
+    restoreHistorySnapshot(state.future.pop())
     renderDocument()
     refreshUndoButtons()
     scheduleSave()

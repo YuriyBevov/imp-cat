@@ -45,8 +45,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
-    'grid-size', 'alignment-scope', 'align-left-button',
-    'flex-direction', 'flex-container', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
+    'grid-size', 'align-left-button',
+    'flex-direction', 'flex-justify', 'flex-align', 'flex-gap', 'flex-apply-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button', 'format-all-segments', 'typography-select-all',
     'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase',
     'line-height-decrease', 'line-height', 'line-height-increase', 'zoom-100',
@@ -56,6 +56,12 @@ test('studio exposes the complete source-to-export workflow', () => {
     'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button', 'cancel-job-button', 'loading-progress-details',
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
+  assert.doesNotMatch(html, /id="(?:alignment-scope|flex-container)"/)
+  const studioDocument = new JSDOM(html).window.document
+  assert.ok(studioDocument.querySelector('.fit-size-actions #merge-button.icon-button use[href="/icons.svg#icon-merge"]'))
+  assert.equal(studioDocument.querySelector('.layout-card #merge-button'), null)
+  assert.equal(studioDocument.querySelector('.inspector-scope--segments #merge-button'), null)
+  assert.match(studioDocument.querySelector('[aria-label="Выравнивание относительно документа"]')?.previousElementSibling?.textContent || '', /Выравнивание относительно документа/)
   assert.match(server, /app\.use\('\/api\/studio'/)
   assert.match(server, /studio\.html/)
   assert.match(client, /\/api\/studio\/documents/)
@@ -214,7 +220,7 @@ test('user guide documents the complete interface and links from README', () => 
     'AI: сравнить и исправить макет', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
     'Сохранить изменения', 'Исправить выбранные', 'Исправить весь документ', 'Добавить пустой сегмент',
     'Разбить по предложениям', 'Вынести выделенное в отдельную часть', 'Применить все 100% совпадения',
-    'Применить расстановку', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные',
+    'Применить расстановку', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
     'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
   ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 })
@@ -900,7 +906,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#inspector-panel-toggle').getAttribute('aria-expanded'), 'true')
 
   dom.window.document.querySelector('#view-segments-button').click()
-  assert.equal(dom.window.document.querySelector('#empty-inspector').hidden, false)
+  assert.equal(dom.window.document.querySelector('#empty-inspector').hidden, true)
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
   assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-segments-view'), true)
   assert.equal(dom.window.document.querySelectorAll('.studio-page--segments .scene-object').length, 2)
   assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').textContent, 'Source')
@@ -1038,6 +1045,21 @@ test('studio restores a saved scene and renders editable page objects', async ()
     [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
     ['14px', '14px']
   )
+  const primaryBeforeUndo = dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }))
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+  assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, primaryBeforeUndo)
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
+    ['15px', '15px']
+  )
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', metaKey: true, shiftKey: true, bubbles: true }))
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+  assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, primaryBeforeUndo)
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.fontSize),
+    ['14px', '14px']
+  )
   const fontSizeValue = dom.window.document.querySelector('#toolbar-font-size-value')
   fontSizeValue.value = '100'
   fontSizeValue.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
@@ -1079,9 +1101,15 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.document.querySelector('#align-left-button').click()
   const alignedLefts = [...dom.window.document.querySelectorAll('.scene-object')].map(node => node.style.left)
   assert.equal(new Set(alignedLefts).size, 1)
+  assert.equal(dom.window.document.querySelector('#align-left-button').classList.contains('is-active'), true)
+  assert.equal(dom.window.document.querySelector('#align-left-button').getAttribute('aria-pressed'), 'true')
+
+  const alignDocumentCenter = dom.window.document.querySelector('[data-align-document="center-x"]')
+  alignDocumentCenter.click()
+  assert.equal(alignDocumentCenter.classList.contains('is-active'), true)
+  assert.equal(alignDocumentCenter.getAttribute('aria-pressed'), 'true')
 
   dom.window.document.querySelector('#flex-direction').value = 'row'
-  dom.window.document.querySelector('#flex-container').value = 'content'
   dom.window.document.querySelector('#flex-justify').value = 'space-between'
   dom.window.document.querySelector('#flex-align').value = 'center'
   dom.window.document.querySelector('#flex-apply-button').click()

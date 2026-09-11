@@ -9,6 +9,7 @@ const {
   fitAgentFontSizePx,
   findMemoryMatches,
   formatServiceTranslation,
+  minimumA4PageHeight,
   pageContentBounds,
   validateScene,
 } = require('../lib/studio-model.cjs')
@@ -37,7 +38,7 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.snapToGrid, true)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
-  assert.ok(Math.abs(scene.pages[0].heightPx - 1121.53) < .1)
+  assert.equal(scene.pages[0].heightPx, 1123)
   assert.equal(scene.objects.length, 3)
   assert.match(scene.objects[1].sourceText, /First line[\s\S]*continues/)
   assert.equal(scene.objects[2].type, 'signature')
@@ -89,7 +90,7 @@ test('buildSceneFromAgent preserves normalized geometry and labels special objec
       }],
     }],
   }, { documentId: '1'.repeat(32), title: 'Agent fixture' })
-  assert.equal(scene.pages[0].heightPx, 1058.67)
+  assert.equal(scene.pages[0].heightPx, 1123)
   assert.ok(Math.abs(scene.objects[0].x - 476.4) < .01)
   assert.ok(Math.abs(scene.objects[0].width - 198.5) < .01)
   assert.equal(scene.objects[0].translation, '')
@@ -164,6 +165,27 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.gridDensity, 'xs')
   assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(normalized.pages[0].widthPx, normalized.pages[0].heightPx))
   assert.equal(normalized.snapToGrid, true)
+})
+
+test('short source pages use an A4-height workspace without stretching the source frame', () => {
+  const scene = buildScene({
+    pages: [{ index: 0, width: 1600, height: 1200, lines: [] }],
+  }, { documentId: 'f'.repeat(32) })
+  assert.equal(scene.pages[0].heightPx, minimumA4PageHeight(scene.pages[0].widthPx))
+  assert.equal(scene.pages[0].sourceFrame.width, 794)
+  assert.equal(scene.pages[0].sourceFrame.height, 595.5)
+
+  const normalized = normalizeScene({
+    pages: [{
+      index: 0, sourcePageIndex: 0, widthPx: 794, heightPx: 600,
+      sourceWidth: 1600, sourceHeight: 1200,
+      sourceFrame: { x: 0, y: 0, width: 794, height: 595.5 },
+    }],
+    objects: [],
+  }, 'f'.repeat(32), 'Short page')
+  assert.equal(normalized.pages[0].heightPx, 1123)
+  assert.equal(normalized.pages[0].sourceFrame.height, 595.5)
+  assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(794, 1123))
 })
 
 test('normalizeScene preserves original page images around an inserted blank page', () => {

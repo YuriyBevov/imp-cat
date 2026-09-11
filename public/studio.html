@@ -318,10 +318,11 @@
               <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
             </div>
           </div>
-          <div class="fit-size-actions inspector-scope--layout" aria-label="Подгонка размера сегмента">
+          <div class="fit-size-actions inspector-scope--layout" aria-label="Размеры и объединение сегментов">
             <button id="fit-content-width-button" class="icon-button icon-button--compact" type="button" title="Ширина по тексту" aria-label="Ширина по тексту"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
             <button id="fit-content-height-button" class="icon-button icon-button--compact" type="button" title="Высота по тексту" aria-label="Высота по тексту"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-height"></use></svg></button>
             <button id="fit-content-both-button" class="icon-button icon-button--compact" type="button" title="Оба размера по тексту" aria-label="Оба размера по тексту"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-both"></use></svg></button>
+            <button id="merge-button" class="icon-button icon-button--compact" type="button" title="Объединить выбранные сегменты" aria-label="Объединить выбранные сегменты" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-merge"></use></svg></button>
           </div>
           <div class="layout-card inspector-scope--layout">
             <div class="layout-card__heading">
@@ -339,13 +340,7 @@
               <button class="button button--with-icon layout-button-grid__wide" data-align-selection="distribute-x" type="button" title="Равные интервалы по горизонтали"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-move-horizontal"></use></svg><span>Равные интервалы</span></button>
               <button class="button button--with-icon layout-button-grid__wide" data-align-selection="distribute-y" type="button" title="Равные интервалы по вертикали"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-move-vertical"></use></svg><span>Равные интервалы</span></button>
             </div>
-            <div class="layout-card__scope">
-              <span class="layout-card__label">Расположить относительно</span>
-              <select id="alignment-scope">
-                <option value="content">рабочей области документа</option>
-                <option value="page">листа с учётом полей</option>
-              </select>
-            </div>
+            <span class="layout-card__label">Выравнивание относительно документа</span>
             <div class="layout-button-grid" aria-label="Выравнивание относительно документа">
               <button data-align-document="left" type="button">Лево</button>
               <button data-align-document="center-x" type="button">Центр X</button>
@@ -364,13 +359,6 @@
                   <select id="flex-direction">
                     <option value="row">Горизонтальный ряд</option>
                     <option value="column">Вертикальная колонка</option>
-                  </select>
-                </label>
-                <label>Контейнер
-                  <select id="flex-container">
-                    <option value="selection">Границы выделения</option>
-                    <option value="content">Рабочая область документа</option>
-                    <option value="page">Лист с учётом полей</option>
                   </select>
                 </label>
                 <label>Главная ось
@@ -417,7 +405,6 @@
           </div>
           <div class="object-actions inspector-scope--segments">
             <button id="approve-button" class="button button--primary" type="button">Добавить переведённые единицы в БЗ</button>
-            <button id="merge-button" class="button" type="button" disabled>Объединить выбранные</button>
             <button id="split-button" class="button" type="button">Вынести текст в отдельный блок</button>
             <button id="exclude-button" class="button button--danger" type="button">Исключить из сборки</button>
           </div>

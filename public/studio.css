@@ -412,6 +412,7 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .layout-button-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .layout-button-grid button { min-width: 0; height: 27px; padding: 3px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; cursor: pointer; color: #344054; font-size: 8px; font-weight: 750; }
 .layout-button-grid button:hover { border-color: var(--blue); color: var(--blue); background: #eef2ff; }
+.layout-button-grid button.is-active { border-color: var(--blue); color: var(--blue); background: #dfe7ff; }
 .layout-button-grid button:disabled { opacity: .38; cursor: not-allowed; }
 .layout-button-grid__wide { grid-column: span 3; }
 .flex-layout { display: grid; gap: 7px; padding-top: 7px; border-top: 1px solid #e5e7eb; }
