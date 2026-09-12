@@ -25,7 +25,7 @@
     sourceLightboxZoomOut: $('#source-preview-lightbox-zoom-out'), sourceLightboxZoomIn: $('#source-preview-lightbox-zoom-in'),
     sourceLightboxZoomActual: $('#source-preview-lightbox-zoom-100'), sourceLightboxFit: $('#source-preview-lightbox-fit'), sourceLightboxZoomOutput: $('#source-preview-lightbox-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
-    agentStatus: $('#agent-status'), analyze: $('#analyze-button'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
+    agentStatus: $('#agent-status'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewStatus: $('#layout-review-status'),
     translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
     globalTranslationInstruction: $('#translation-global-instruction'), reviseSelected: $('#revise-selected-button'), reviseDocument: $('#revise-document-button'),
@@ -68,6 +68,8 @@
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
     qaRecheckSelection: $('#qa-recheck-selection'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
+    reanalyzeConfirmModal: $('#reanalyze-confirm-modal'), reanalyzeConfirmClose: $('#reanalyze-confirm-close'),
+    reanalyzeConfirmCancel: $('#reanalyze-confirm-cancel'), reanalyzeConfirmSubmit: $('#reanalyze-confirm-submit'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
     aitunnelApiKey: $('#aitunnel-api-key'), aitunnelPersistKey: $('#aitunnel-persist-key'), aitunnelModelNote: $('#aitunnel-model-note'), aiProviderStatus: $('#ai-provider-status'),
@@ -94,7 +96,7 @@
     serviceStatus: null,
     lastTextSelection: null,
     focusedTranslationUnitId: null,
-    viewMode: 'layout',
+    viewMode: 'segments',
     sourceCollapsed: false,
     inspectorOpen: true,
     sourcePanCleanup: null,
@@ -779,6 +781,7 @@
     elements.targetLanguage.value = state.scene.targetLanguage
     elements.knowledgeBaseMode.value = state.scene.knowledgeBaseMode === 'priority' ? 'priority' : 'suggestions'
     elements.globalTranslationInstruction.value = state.scene.globalTranslationInstruction || ''
+    refreshGlobalInstructionControls()
     loadKnowledgeBase().catch(() => {})
     elements.gridSize.value = currentGridDensity()
     const recognition = state.scene.recognition
@@ -850,6 +853,10 @@
     rebuildClientTables()
     renderThumbnails()
     elements.gridSize.value = currentGridDensity()
+    elements.viewLayout.classList.toggle('is-active', state.viewMode === 'layout')
+    elements.viewSegments.classList.toggle('is-active', state.viewMode === 'segments')
+    elements.viewLayout.setAttribute('aria-pressed', String(state.viewMode === 'layout'))
+    elements.viewSegments.setAttribute('aria-pressed', String(state.viewMode === 'segments'))
     elements.studioView.classList.toggle('is-segments-mode', state.viewMode === 'segments')
     elements.canvas.classList.toggle('is-segments-view', state.viewMode === 'segments')
     elements.canvas.replaceChildren()
@@ -1319,11 +1326,16 @@
     const total = candidates.length
     elements.translationSelectAll.disabled = total === 0
     elements.translationSelectAll.checked = total > 0 && selectedCount === total
-    elements.translationSelectAll.indeterminate = selectedCount > 0 && selectedCount < total
-    elements.translationSelectionCount.textContent = `Выбрано: ${selectedCount} из ${total}`
+    elements.translationSelectAll.indeterminate = false
+    elements.translationSelectionCount.textContent = `Выбрано: ${selectedCount} из ${total} сегментов`
     elements.translate.disabled = selectedCount === 0
-    elements.reviseSelected.disabled = selectedCount === 0
-    elements.reviseDocument.disabled = total === 0
+    const hasGlobalInstruction = Boolean(elements.globalTranslationInstruction.value.trim())
+    const hasSelectedInstruction = candidates.some(object => (
+      state.translationSelected.has(object.id) && String(object.translationInstruction || '').trim()
+    ))
+    const hasDocumentInstruction = candidates.some(object => String(object.translationInstruction || '').trim())
+    elements.reviseSelected.disabled = selectedCount === 0 || (!hasGlobalInstruction && !hasSelectedInstruction)
+    elements.reviseDocument.disabled = total === 0 || (!hasGlobalInstruction && !hasDocumentInstruction)
     elements.translate.textContent = selectedCount === total && total > 0
       ? `Перевести весь документ (${total})`
       : `Перевести выбранные (${selectedCount})`
@@ -1710,6 +1722,10 @@
     elements.instructionPresetDelete.disabled = !hasGlobalSelection
   }
 
+  function refreshGlobalInstructionControls() {
+    elements.instructionPresetSave.disabled = !elements.globalTranslationInstruction.value.trim()
+  }
+
   async function loadInstructionPresets() {
     const response = await api('/api/studio/translation-instructions')
     const data = await response.json()
@@ -1916,6 +1932,7 @@
     input.addEventListener('pointerdown', event => event.stopPropagation())
     input.addEventListener('input', () => {
       object.translationInstruction = input.value.slice(0, 5000)
+      refreshTranslationSelectionControls()
       scheduleSave()
     })
     const presetControls = document.createElement('div')
@@ -3418,11 +3435,22 @@
     elements.redo.disabled = !state.future.length
   }
 
+  function synchronizeReadingOrder() {
+    if (!state.scene) return
+    for (const page of state.scene.pages) {
+      state.scene.objects
+        .filter(object => object.pageIndex === page.index && !object.excluded)
+        .sort((left, right) => left.y - right.y || left.x - right.x || left.id.localeCompare(right.id))
+        .forEach((object, index) => { object.readingOrder = index + 1 })
+    }
+  }
+
   async function saveScene(immediate = false) {
     clearTimeout(state.saveTimer)
     state.saveTimer = null
     if (!state.scene || !state.metadata) return
     try {
+      synchronizeReadingOrder()
       const response = await api(`/api/studio/documents/${state.metadata.id}/scene`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.scene),
       })
@@ -3442,7 +3470,7 @@
     state.saveTimer = setTimeout(saveScene, 650)
   }
 
-  async function runAgent(endpoint, busyText) {
+  async function runAgent(endpoint, busyText, successText) {
     if (!state.scene) return
     elements.agentStatus.textContent = busyText
     try {
@@ -3456,26 +3484,41 @@
       renderDocument()
       const report = data.report
       elements.agentStatus.textContent = `Готово: ${report.counts.errors} ошибок, ${report.counts.warnings} предупреждений.`
-      showToast('Агент завершил проверку структуры')
+      showToast(successText)
     } catch (error) {
       elements.agentStatus.textContent = 'Операция не выполнена.'
       showToast(error.message, true)
     }
   }
 
+  function openReanalyzeConfirmation() {
+    if (!state.scene || !state.metadata) return
+    elements.reanalyzeConfirmModal.hidden = false
+    requestAnimationFrame(() => elements.reanalyzeConfirmCancel.focus())
+  }
+
+  function closeReanalyzeConfirmation(restoreFocus = true) {
+    elements.reanalyzeConfirmModal.hidden = true
+    if (restoreFocus) elements.reanalyze.focus()
+  }
+
   async function reanalyzeSource() {
-    if (!state.scene || !window.confirm('Повторный анализ заменит текущую сегментацию и ручные изменения. Продолжить?')) return
+    if (!state.scene || !state.metadata) return
+    closeReanalyzeConfirmation(false)
+    elements.reanalyzeConfirmSubmit.disabled = true
     try {
       await saveScene(true)
       setView('loading')
-      elements.loadingMessage.textContent = 'Повторно анализируем сохранённые страницы агентом…'
+      elements.loadingMessage.textContent = 'Пересегментируем макет по сохранённым страницам…'
       const response = await api(`/api/studio/documents/${state.metadata.id}/agent/reanalyze`, { method: 'POST' })
       const documentData = await response.json()
       openDocument(documentData)
-      showToast(`Повторный анализ завершён: ${documentData.scene.objects.length} сегментов`)
+      showToast(`Пересегментация завершена: ${documentData.scene.objects.length} сегментов`)
     } catch (error) {
       setView('studio')
       showToast(error.message, true)
+    } finally {
+      elements.reanalyzeConfirmSubmit.disabled = false
     }
   }
 
@@ -3518,13 +3561,14 @@
     ))
     const globalInstruction = String(elements.globalTranslationInstruction.value || '').trim()
     if (!globalInstruction && !hasSegmentInstruction) {
-      return showToast('Добавьте общий комментарий или комментарий к сегменту', true)
+      return showToast('Добавьте инструкцию для AI или комментарий к сегменту', true)
     }
     state.scene.globalTranslationInstruction = globalInstruction
-    const previousLabel = trigger?.textContent
+    const previousLabel = trigger?.getAttribute('aria-label')
     if (trigger) {
       trigger.disabled = true
-      trigger.textContent = 'Исправляем…'
+      trigger.setAttribute('aria-label', 'Исправляем…')
+      trigger.setAttribute('aria-busy', 'true')
     }
     elements.reviseSelected.disabled = true
     elements.reviseDocument.disabled = true
@@ -3548,13 +3592,13 @@
       elements.agentStatus.textContent = data.message
       showToast(data.message)
     } catch (error) {
-      if (trigger) {
-        trigger.disabled = false
-        trigger.textContent = previousLabel
-      }
       elements.agentStatus.textContent = 'Корректировка по комментариям не выполнена.'
       showToast(error.message, true)
     } finally {
+      if (trigger) {
+        trigger.removeAttribute('aria-busy')
+        if (previousLabel) trigger.setAttribute('aria-label', previousLabel)
+      }
       refreshTranslationSelectionControls()
     }
   }
@@ -4488,6 +4532,7 @@
     elements.knowledgeBaseOpen.addEventListener('click', openKnowledgeBase)
     elements.knowledgeBaseOpenContext.addEventListener('click', openKnowledgeBase)
     elements.knowledgeBaseClose.addEventListener('click', closeKnowledgeBase)
+    elements.knowledgeSuggestionClose.addEventListener('click', closeKnowledgeSuggestion)
     elements.knowledgeBaseModal.addEventListener('pointerdown', event => { if (event.target === elements.knowledgeBaseModal) closeKnowledgeBase() })
     elements.knowledgeBaseSearch.addEventListener('click', () => loadKnowledgeBaseEntries(true))
     elements.knowledgeBaseQuery.addEventListener('keydown', event => {
@@ -4589,14 +4634,24 @@
     })
     elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
-    elements.analyze.addEventListener('click', () => runAgent('analyze', 'Проверяем порядок чтения и типы объектов…'))
-    elements.reanalyze.addEventListener('click', reanalyzeSource)
-    elements.autoLayout.addEventListener('click', () => { checkpoint(); runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…') })
+    elements.reanalyze.addEventListener('click', openReanalyzeConfirmation)
+    elements.reanalyzeConfirmClose.addEventListener('click', closeReanalyzeConfirmation)
+    elements.reanalyzeConfirmCancel.addEventListener('click', closeReanalyzeConfirmation)
+    elements.reanalyzeConfirmSubmit.addEventListener('click', reanalyzeSource)
+    elements.reanalyzeConfirmModal.addEventListener('pointerdown', event => {
+      if (event.target === elements.reanalyzeConfirmModal) closeReanalyzeConfirmation()
+    })
+    elements.autoLayout.addEventListener('click', () => {
+      checkpoint()
+      runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…', 'Расположение сегментов обновлено')
+    })
     elements.translationSelectAll.addEventListener('change', () => selectAllTranslationObjects(elements.translationSelectAll.checked))
     elements.translate.addEventListener('click', translateSelection)
     elements.globalTranslationInstruction.addEventListener('input', () => {
+      refreshGlobalInstructionControls()
       if (!state.scene) return
       state.scene.globalTranslationInstruction = elements.globalTranslationInstruction.value.slice(0, 10000)
+      refreshTranslationSelectionControls()
       scheduleSave()
     })
     elements.instructionPresetSelect.addEventListener('change', () => {
@@ -4722,6 +4777,10 @@
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        if (!elements.reanalyzeConfirmModal.hidden) {
+          closeReanalyzeConfirmation()
+          return
+        }
         if (!elements.sourceLightbox.hidden) {
           closeSourceLightbox()
           return

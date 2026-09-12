@@ -10,6 +10,7 @@ const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
 const translationUnits = fs.readFileSync(path.join(root, 'public/translation-units.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
 const uiKit = fs.readFileSync(path.join(root, 'public/ui-kit.css'), 'utf8')
+const tooltipClient = fs.readFileSync(path.join(root, 'public/tooltip.js'), 'utf8')
 const server = fs.readFileSync(path.join(root, 'server.cjs'), 'utf8')
 const userGuide = fs.readFileSync(path.join(root, 'USER_GUIDE.md'), 'utf8')
 const technicalSpecification = fs.readFileSync(path.join(root, 'TECHNICAL_SPECIFICATION.md'), 'utf8')
@@ -28,7 +29,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-preview-lightbox-previous', 'source-preview-lightbox-next', 'source-preview-lightbox-zoom-out', 'source-preview-lightbox-zoom-in',
     'source-preview-lightbox-zoom-output', 'source-preview-lightbox-zoom-100', 'source-preview-lightbox-fit',
     'appbar-menu', 'appbar-menu-button', 'appbar-actions-menu',
-    'source-text', 'translation-text', 'object-type', 'agent-notes', 'analyze-button', 'reanalyze-button', 'translate-button',
+    'source-text', 'translation-text', 'object-type', 'agent-notes', 'reanalyze-button', 'translate-button',
+    'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
     'translation-select-all', 'translation-selection-count', 'translation-global-instruction', 'revise-selected-button', 'revise-document-button',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
@@ -41,7 +43,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'instruction-library-button', 'instruction-library-modal', 'instruction-library-close', 'instruction-library-query',
     'instruction-library-new', 'instruction-library-list', 'instruction-library-form', 'instruction-library-id',
     'instruction-library-text', 'instruction-library-form-cancel',
-    'knowledge-suggestion-popover', 'knowledge-suggestion-list', 'approve-button', 'merge-button', 'split-button',
+    'knowledge-suggestion-popover', 'knowledge-suggestion-list', 'knowledge-suggestion-close', 'approve-button', 'merge-button', 'split-button',
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
@@ -58,10 +60,64 @@ test('studio exposes the complete source-to-export workflow', () => {
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   const studioDocument = new JSDOM(html).window.document
+  assert.ok(studioDocument.querySelector('#studio-view').classList.contains('is-segments-mode'))
+  assert.equal(studioDocument.querySelector('#view-segments-button').getAttribute('aria-pressed'), 'true')
+  assert.ok(studioDocument.querySelector('#view-segments-button').classList.contains('is-active'))
+  assert.equal(studioDocument.querySelector('#view-layout-button').getAttribute('aria-pressed'), 'false')
+  const languageCard = studioDocument.querySelector('.language-card.inspector-scope--segments')
+  const reanalyzeButton = studioDocument.querySelector('#reanalyze-button')
+  assert.equal(languageCard.tagName, 'DIV')
+  assert.ok(languageCard.parentElement.classList.contains('agent-card'))
+  assert.equal(reanalyzeButton.textContent, 'Пересегментация макета')
+  assert.ok(reanalyzeButton.classList.contains('button--danger-filled'))
+  assert.equal(reanalyzeButton.nextElementSibling, languageCard)
+  const translationInstructionCard = studioDocument.querySelector('.translation-instruction-card')
+  assert.equal(languageCard.nextElementSibling, translationInstructionCard)
+  const reanalyzeModal = studioDocument.querySelector('#reanalyze-confirm-modal')
+  assert.equal(reanalyzeModal.hidden, true)
+  assert.equal(reanalyzeModal.querySelector('[role="dialog"]').getAttribute('aria-describedby'), 'reanalyze-confirm-description')
+  assert.match(reanalyzeModal.textContent, /Вся текущая работа с переводами сегментов будет потеряна/)
+  assert.match(reanalyzeModal.textContent, /Резервная версия на этом этапе не создаётся/)
+  const translationBatchControls = studioDocument.querySelector('.translation-batch-controls')
+  assert.equal(translationInstructionCard.nextElementSibling, translationBatchControls)
+  assert.ok(translationBatchControls.nextElementSibling.classList.contains('agent-actions--translation'))
+  assert.equal(translationBatchControls.nextElementSibling.querySelector('button').id, 'translate-button')
+  assert.ok(translationBatchControls.nextElementSibling.querySelector('#translate-button').classList.contains('button--primary'))
+  assert.equal(translationBatchControls.children[0].id, 'translation-selection-count')
+  assert.equal(translationBatchControls.children[1].querySelector('input').id, 'translation-select-all')
+  assert.match(styles, /\.translation-batch-controls label\s*\{[^}]*color:\s*#cdd8f8;[^}]*font-size:\s*10px;[^}]*font-weight:\s*400/)
+  assert.match(styles, /\.translation-batch-controls small\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*10px;[^}]*font-weight:\s*700/)
+  const instructionIconButtons = [...studioDocument.querySelectorAll('.translation-instruction-card button')]
+  assert.equal(instructionIconButtons.length, 8)
+  assert.ok(instructionIconButtons.every(button => button.classList.contains('icon-button') && !button.textContent.trim() && button.getAttribute('aria-label')))
+  assert.deepEqual(
+    [...studioDocument.querySelectorAll('.instruction-preset-picker > button')].map(button => button.id),
+    ['instruction-preset-apply', 'instruction-preset-edit', 'instruction-preset-delete'],
+  )
+  assert.deepEqual(
+    [...studioDocument.querySelectorAll('.instruction-preset-picker > button')].map(button => button.getAttribute('aria-label')),
+    ['Использовать инструкцию', 'Редактировать инструкцию', 'Удалить инструкцию из списка инструкций'],
+  )
+  assert.deepEqual(
+    [...studioDocument.querySelectorAll('.translation-instruction-card__actions > button')].map(button => button.id),
+    ['instruction-preset-save', 'revise-document-button', 'revise-selected-button'],
+  )
+  assert.deepEqual(
+    [...studioDocument.querySelectorAll('.translation-instruction-card__actions > button')].map(button => button.getAttribute('aria-label')),
+    ['Сохранить инструкцию в список инструкций', 'Исправить весь документ с учетом инструкции', 'Исправить выбранные сегменты с учетом инструкции'],
+  )
+  assert.equal(studioDocument.querySelector('.translation-instruction-card__primary-row > textarea').id, 'translation-global-instruction')
+  assert.equal(studioDocument.querySelector('label[for="translation-global-instruction"]').textContent, 'Инструкция для AI')
+  assert.equal(studioDocument.querySelector('.instruction-preset-actions'), null)
+  assert.match(styles, /\.translation-instruction-card__primary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/)
+  assert.match(styles, /\.translation-instruction-card__actions\s*\{[^}]*flex-direction:\s*column/)
+  assert.match(styles, /\.instruction-preset-picker\s*\{[^}]*margin-top:\s*4px/)
+  assert.match(styles, /#translation-global-instruction\s*\{[^}]*min-height:\s*96px/)
   assert.doesNotMatch(html, /id="(?:alignment-scope|flex-container)"/)
   assert.doesNotMatch(html, /id="flex-apply-button"/)
   assert.doesNotMatch(html, /id="selection-count"/)
   assert.doesNotMatch(html, /id="layout-review-cancel-button"/)
+  assert.equal(studioDocument.querySelector('#analyze-button'), null)
   assert.match(html, /id="layout-review-button"[^>]*>Проверить и исправить макет<\/button>/)
   assert.equal(studioDocument.querySelector('.selection-heading .eyebrow'), null)
   assert.match(styles, /\.selection-heading h2\s*\{[^}]*font-size:\s*12px/)
@@ -114,6 +170,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /pageSurfaceAtPoint/)
   assert.match(client, /function undo/)
   assert.match(client, /function redo/)
+  assert.match(client, /async function saveScene[\s\S]*?synchronizeReadingOrder\(\)/)
   assert.match(client, /queueWheelZoom/)
   assert.match(client, /snapObjectGroups/)
   assert.match(client, /alignSelection/)
@@ -124,6 +181,8 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /setDocumentView/)
   assert.match(client, /toggleSourcePanel/)
   assert.match(client, /agent\/reanalyze/)
+  assert.match(client, /function openReanalyzeConfirmation/)
+  assert.doesNotMatch(client, /window\.confirm\('Повторный анализ/)
   assert.match(client, /\/api\/studio\/jobs/)
   assert.match(client, /agent\/layout-review/)
   assert.match(client, /loadPendingJobs/)
@@ -392,13 +451,16 @@ test('user guide documents the complete interface and links from README', () => 
   for (const label of [
     'Документация', 'Руководство', 'Компоненты', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
     'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Макет', 'Сегменты',
-    'Проверить структуру', 'Повторить анализ исходника', 'Перевести выбранные', 'Исправить наложения',
-    'Проверить и исправить макет', 'Отменить проверку макета', 'Финальная проверка', 'Сохранить текущую', 'Редактировать',
-    'Сохранить изменения', 'Исправить выбранные', 'Исправить весь документ', 'Добавить пустой сегмент',
+    'Пересегментация макета', 'Перевести выбранные', 'Исправить наложения',
+    'Проверить и исправить макет', 'Отменить проверку макета', 'Финальная проверка', 'Сохранить инструкцию в список инструкций', 'Редактировать инструкцию',
+    'Сохранить изменения', 'Исправить выбранные сегменты с учетом инструкции', 'Исправить весь документ с учетом инструкции', 'Добавить пустой сегмент',
     'Разбить по предложениям', 'Вынести выделенное в отдельную часть', 'Применить все 100% совпадения',
     'Направление, X', 'Направление, Y', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
     'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
   ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.doesNotMatch(html, />Проверить структуру</)
+  assert.match(userGuide, /Порядок чтения сегментов автоматически пересчитывается/)
+  assert.match(technicalSpecification, /Добавить версионирование и резервное сохранение сцены перед пересегментацией макета/)
 })
 
 test('icon buttons use the shared local SVG sprite and accessible labels', () => {
@@ -415,7 +477,9 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
     const href = use.getAttribute('href')
     assert.match(href, /^\/icons\.svg#icon-/)
     assert.ok(symbols.has(href.split('#')[1]), `Иконка ${href} должна существовать в спрайте`)
-    assert.ok(button.getAttribute('aria-label') || button.getAttribute('title'))
+    const label = button.getAttribute('aria-label') || button.getAttribute('title')
+    assert.ok(label)
+    assert.doesNotMatch(label, /^\p{Ll}/u, `Тултип должен начинаться с заглавной буквы: ${label}`)
   }
 
   for (const [pageName, markup] of [['studio', html], ['components', uiComponentsHtml], ['legacy', legacyPrototypeHtml]]) {
@@ -439,6 +503,11 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.match(uiKit, /\.ui-icon\s*\{[^}]*pointer-events:\s*none/)
   assert.match(uiKit, /\.icon-button--compact\s*\{/)
   assert.match(uiKit, /\.icon-button--ghost\s*\{/)
+  assert.match(uiKit, /\.icon-button--inverse\s*\{/)
+  assert.match(uiKit, /\.base-tooltip\s*\{/)
+  assert.match(html, /<script src="\/tooltip\.js"><\/script>/)
+  assert.match(uiComponentsHtml, /<script src="\/tooltip\.js" defer><\/script>/)
+  assert.match(legacyPrototypeHtml, /<script src="\/tooltip\.js"><\/script>/)
   assert.match(uiKit, /\.base-checkbox__input:checked \+ \.base-checkbox__control/)
   assert.match(uiKit, /\.base-checkbox__input:indeterminate \+ \.base-checkbox__control/)
   assert.match(styles, /\.studio:not\(\.is-segments-mode\) \.inspector-scope--segments/)
@@ -456,6 +525,8 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.match(styles, /\.typography-card__scope \.button\.is-active\s*\{[^}]*background:\s*#eef2ff/)
   assert.match(styles, /\.studio-page--segments \.segments-column-headings,[\s\S]*?\.segment-translation-row\s*\{[^}]*grid-template-columns:\s*28px minmax\(0, 1fr\) minmax\(0, 1fr\)/)
   assert.ok(dom.window.document.querySelector('#translation-select-all.base-checkbox__input + .base-checkbox__control'))
+  assert.equal(dom.window.document.querySelector('#translation-select-all').closest('label').querySelector('.base-checkbox__label').textContent, 'Выбрать все')
+  assert.match(styles, /\.translation-batch-controls\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between/)
   assert.doesNotMatch(styles, /\.document-tabs__add\s*\{/)
   assert.doesNotMatch(styles, /\.source-preview-controls \.icon-button\s*\{/)
   dom.window.close()
@@ -468,6 +539,8 @@ test('UI components catalog exposes an interactive SourcePreviewControls referen
   assert.match(uiComponentsHtml, /IconButton \/ BaseIcon/)
   assert.match(uiComponentsHtml, /ColorPicker/)
   assert.match(uiComponentsHtml, /BaseCheckbox/)
+  assert.match(uiComponentsHtml, /BaseTooltip/)
+  assert.match(uiComponentsHtml, /id="component-tooltip-demo"/)
   assert.match(uiComponentsHtml, /icon-layout/)
   assert.match(uiComponentsHtml, /icon-sidebar-right/)
   assert.match(uiComponentsHtml, /icon-list-rows/)
@@ -487,6 +560,39 @@ test('UI components catalog exposes an interactive SourcePreviewControls referen
   colorInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   assert.equal(colorInput.closest('.color-picker').style.getPropertyValue('--color-picker-value'), '#cc3300')
   assert.equal(dom.window.document.querySelector('#component-document').style.transform, 'scale(1)')
+  dom.window.close()
+})
+
+test('BaseTooltip labels every icon button on hover and keyboard focus', () => {
+  const dom = new JSDOM('<!doctype html><button class="icon-button" type="button" aria-label="Сохранить"><svg></svg></button><button id="legacy-title" class="icon-button" type="button" title="удалить"></button>', {
+    runScripts: 'dangerously', pretendToBeVisual: true,
+  })
+  dom.window.eval(tooltipClient)
+  const button = dom.window.document.querySelector('button')
+  const tooltip = dom.window.document.querySelector('#base-tooltip')
+  Object.defineProperty(dom.window, 'innerWidth', { value: 320, configurable: true })
+  Object.defineProperty(dom.window, 'innerHeight', { value: 240, configurable: true })
+  tooltip.getBoundingClientRect = () => ({ width: 120, height: 40 })
+  button.getBoundingClientRect = () => ({ left: 0, right: 28, top: 100, bottom: 128, width: 28, height: 28 })
+  assert.equal(tooltip.getAttribute('role'), 'tooltip')
+  button.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
+  assert.equal(tooltip.hidden, false)
+  assert.equal(tooltip.textContent, 'Сохранить')
+  assert.equal(button.getAttribute('aria-describedby'), 'base-tooltip')
+  assert.equal(tooltip.dataset.placement, 'right')
+  button.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true }))
+  assert.equal(tooltip.hidden, true)
+  button.getBoundingClientRect = () => ({ left: 292, right: 320, top: 100, bottom: 128, width: 28, height: 28 })
+  button.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
+  assert.equal(tooltip.dataset.placement, 'left')
+  button.dispatchEvent(new dom.window.MouseEvent('mouseout', { bubbles: true }))
+  button.dispatchEvent(new dom.window.FocusEvent('focusin', { bubbles: true }))
+  assert.equal(tooltip.hidden, false)
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  assert.equal(tooltip.hidden, true)
+  const titleButton = dom.window.document.querySelector('#legacy-title')
+  assert.equal(titleButton.getAttribute('title'), null)
+  assert.equal(titleButton.getAttribute('aria-label'), 'Удалить')
   dom.window.close()
 })
 
@@ -835,15 +941,41 @@ test('segments view follows visual order and supports partial or full batch tran
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#view-segments-button').click()
 
+  const reanalyzeModal = dom.window.document.querySelector('#reanalyze-confirm-modal')
+  assert.equal(reanalyzeModal.hidden, true)
+  dom.window.document.querySelector('#reanalyze-button').click()
+  assert.equal(reanalyzeModal.hidden, false)
+  dom.window.document.querySelector('#reanalyze-confirm-cancel').click()
+  assert.equal(reanalyzeModal.hidden, true)
+  dom.window.document.querySelector('#reanalyze-button').click()
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  assert.equal(reanalyzeModal.hidden, true)
+
   const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object--source')].map(node => node.dataset.id)
   assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right', 'signature'])
   assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 5)
   assert.equal(dom.window.document.querySelectorAll('.segment-ai-instruction textarea').length, 5)
   const globalPresetSelect = dom.window.document.querySelector('#instruction-preset-select')
+  const globalPresetSave = dom.window.document.querySelector('#instruction-preset-save')
+  const reviseDocument = dom.window.document.querySelector('#revise-document-button')
+  const reviseSelected = dom.window.document.querySelector('#revise-selected-button')
+  assert.equal(globalPresetSave.disabled, true)
+  assert.equal(reviseDocument.disabled, true)
+  assert.equal(reviseSelected.disabled, true)
   globalPresetSelect.value = instructionPreset.id
   globalPresetSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   dom.window.document.querySelector('#instruction-preset-apply').click()
   assert.equal(dom.window.document.querySelector('#translation-global-instruction').value, instructionPreset.instruction)
+  assert.equal(globalPresetSave.disabled, false)
+  assert.equal(reviseDocument.disabled, false)
+  assert.equal(reviseSelected.disabled, true)
+  dom.window.document.querySelector('#translation-global-instruction').value = '   '
+  dom.window.document.querySelector('#translation-global-instruction').dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(globalPresetSave.disabled, true)
+  assert.equal(reviseDocument.disabled, true)
+  assert.equal(reviseSelected.disabled, true)
+  dom.window.document.querySelector('#translation-global-instruction').value = instructionPreset.instruction
+  dom.window.document.querySelector('#translation-global-instruction').dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   const segmentInstruction = dom.window.document.querySelector('.segment-ai-instruction')
   const segmentPresetSelect = segmentInstruction.querySelector('[data-instruction-preset-select]')
   segmentPresetSelect.value = instructionPreset.id
@@ -868,7 +1000,7 @@ test('segments view follows visual order and supports partial or full batch tran
   const translate = dom.window.document.querySelector('#translate-button')
   assert.equal(checkboxes.length, 5)
   assert.equal(translate.disabled, true)
-  assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 5')
+  assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 5 сегментов')
 
   const pageSelectAll = dom.window.document.querySelector('.segments-select-all')
   assert.equal(pageSelectAll.textContent, 'Все')
@@ -889,11 +1021,15 @@ test('segments view follows visual order and supports partial or full batch tran
   assert.equal(checkboxes[0].checked, true)
   assert.equal(translate.disabled, false)
   assert.equal(translate.textContent, 'Перевести выбранные (1)')
-  assert.equal(selectAll.indeterminate, true)
+  assert.equal(reviseSelected.disabled, false)
+  assert.equal(selectAll.checked, false)
+  assert.equal(selectAll.indeterminate, false)
 
   checkboxes[1].click()
   assert.equal(checkboxes[0].checked, true)
   assert.equal(checkboxes[1].checked, true)
+  assert.equal(selectAll.checked, false)
+  assert.equal(selectAll.indeterminate, false)
   assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 2)
   assert.equal(dom.window.document.querySelector('.scene-object--source.is-primary-selected').dataset.id, checkboxes[1].dataset.translationSelect)
 
@@ -914,6 +1050,8 @@ test('segments view follows visual order and supports partial or full batch tran
   selectAll.checked = true
   selectAll.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   assert.equal(checkboxes.every(checkbox => checkbox.checked), true)
+  assert.equal(selectAll.checked, true)
+  assert.equal(selectAll.indeterminate, false)
   assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 5)
   assert.equal(translate.textContent, 'Перевести весь документ (5)')
 
@@ -991,6 +1129,12 @@ test('studio restores a saved scene and renders editable page objects', async ()
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 1)
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-segments-mode'), true)
+  assert.equal(dom.window.document.querySelector('#view-segments-button').getAttribute('aria-pressed'), 'true')
+  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').textContent, 'Source')
+  assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').textContent, 'Перевод')
+  dom.window.document.querySelector('#view-layout-button').click()
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
   assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '11.15625px')
   const pointer = (type, x, y) => {
@@ -1478,6 +1622,8 @@ test('blank pages can be inserted and removed while segments move reliably betwe
   dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-segments-mode'), true)
+  dom.window.document.querySelector('#view-layout-button').click()
 
   assert.equal(dom.window.document.querySelectorAll('.page-actions').length, 2)
   assert.equal(dom.window.document.querySelector('.page-actions__delete').disabled, true)
@@ -1560,7 +1706,8 @@ test('internal sentence splitting keeps one positioned page object', async () =>
   const object = dom.window.document.querySelector('.scene-object')
   object.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
   dom.window.document.querySelector('#translation-units-split-sentences').click()
-  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
+  assert.equal(scene.objects.length, 1)
+  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
   assert.equal(dom.window.document.querySelector('#translation-text').disabled, true)
   dom.window.close()
@@ -1610,7 +1757,8 @@ test('a selected term can be translated manually and saved as an exact knowledge
 
   dom.window.document.querySelector('#translation-units-split-selection').click()
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
-  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
+  assert.equal(scene.objects.length, 1)
+  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
   const termRow = [...dom.window.document.querySelectorAll('.translation-unit')]
     .find(row => row.querySelector('.translation-unit__source').textContent === 'SÜRELİDİR')
@@ -1788,6 +1936,9 @@ test('segments view highlights knowledge matches and keeps the AI translation as
   highlight.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, false)
   assert.match(dom.window.document.querySelector('#knowledge-suggestion-list').textContent, /Имеет срок/)
+  dom.window.document.querySelector('#knowledge-suggestion-close').click()
+  assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, true)
+  assert.equal(dom.window.document.querySelector('#knowledge-suggestion-list').childElementCount, 0)
   const alternative = dom.window.document.querySelector('.ai-translation-alternative')
   assert.match(alternative.textContent, /СРОЧНАЯ/)
   alternative.querySelector('button').click()

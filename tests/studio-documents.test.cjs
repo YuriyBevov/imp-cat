@@ -35,7 +35,7 @@ test('documents can be archived, restored and permanently deleted with confirmat
   const directory = path.join(dataDir, id)
   await fs.promises.mkdir(directory)
   await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
-    id, title: 'Archive test', filename: 'archive.pdf', pageCount: 2, objectCount: 4,
+    id, title: 'Archive test', filename: 'archive.pdf', revision: 1, pageCount: 2, objectCount: 4,
     createdAt: '2026-09-05T00:00:00.000Z', updatedAt: '2026-09-05T00:00:00.000Z', archivedAt: null,
   }))
 
@@ -48,7 +48,27 @@ test('documents can be archived, restored and permanently deleted with confirmat
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
-  let response = await fetch(`${base}/documents`)
+  const scene = {
+    documentId: id, title: 'Archive test', sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [
+      { id: 'lower', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'Lower', x: 40, y: 200, width: 200, height: 40, style: {} },
+      { id: 'upper-right', pageIndex: 0, type: 'text', readingOrder: 2, sourceText: 'Upper right', x: 300, y: 40, width: 200, height: 40, style: {} },
+      { id: 'upper-left', pageIndex: 0, type: 'text', readingOrder: 3, sourceText: 'Upper left', x: 40, y: 40, width: 200, height: 40, style: {} },
+    ],
+  }
+  let response = await fetch(`${base}/documents/${id}/scene`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scene),
+  })
+  assert.equal(response.status, 200)
+  const savedDocument = await response.json()
+  assert.deepEqual(
+    savedDocument.scene.objects.slice().sort((left, right) => left.readingOrder - right.readingOrder).map(object => object.id),
+    ['upper-left', 'upper-right', 'lower'],
+  )
+  assert.ok(savedDocument.report)
+
+  response = await fetch(`${base}/documents`)
   assert.deepEqual((await response.json()).documents.map(item => item.id), [id])
 
   const uploadBytes = Buffer.from('%PDF-1.7\nstreamed test document\n%%EOF')

@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/studio.css" />
     <link rel="stylesheet" href="/ui-components.css" />
     <script src="/custom-select.js" defer></script>
+    <script src="/tooltip.js" defer></script>
     <script src="/ui-components.js" defer></script>
   </head>
   <body class="components-page">
@@ -59,6 +60,22 @@
                 <button id="component-source-zoom-fit" class="icon-button icon-button--compact" type="button" title="Вписать оригинал" aria-label="Вписать оригинал"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button>
                 <button class="icon-button icon-button--compact" type="button" title="Открыть оригинал на весь экран" aria-label="Открыть оригинал на весь экран"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fullscreen"></use></svg></button>
               </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section" open>
+          <summary class="component-section__summary">
+            <span>Тултип</span>
+            <code>BaseTooltip</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Общая текстовая подсказка для кнопок с иконками. Текст берётся из доступного названия `aria-label`, всегда начинается с заглавной буквы; тултип показывается при наведении и клавиатурном фокусе, а также работает с динамически добавленными кнопками. Компонент выбирает свободную сторону кнопки и остаётся внутри видимой области экрана.</p>
+            </div>
+            <div class="component-control-demo">
+              <button id="component-tooltip-demo" class="icon-button" type="button" aria-label="Пример тултипа"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
             </div>
           </div>
         </details>
@@ -182,6 +199,10 @@
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Отменить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-undo"></use></svg></button><code>undo</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Повторить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-redo"></use></svg></button><code>redo</code></div>
               <div class="icon-sample"><button class="icon-button icon-button--large" type="button" aria-label="Обновить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-refresh"></use></svg></button><code>refresh / large</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Сохранить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-save"></use></svg></button><code>save</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Редактировать"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-edit"></use></svg></button><code>edit</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Исправить выбранные"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button><code>wand</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Исправить весь документ"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg></button><code>document-wand</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Переместить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grip-vertical"></use></svg></button><code>grip-vertical</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вправо"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button><code>arrow-right</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Влево"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button><code>arrow-left</code></div>
