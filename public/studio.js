@@ -27,14 +27,14 @@
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewStatus: $('#layout-review-status'),
-    translationSelectAll: $('#translation-select-all'), translationSelectionCount: $('#translation-selection-count'),
+    translationSelectAll: $('#translation-select-all'), translationClearSelection: $('#translation-clear-selection'), translationSelectionCount: $('#translation-selection-count'),
     globalTranslationInstruction: $('#translation-global-instruction'), reviseSelected: $('#revise-selected-button'), reviseDocument: $('#revise-document-button'),
     instructionPresetSelect: $('#instruction-preset-select'), instructionPresetApply: $('#instruction-preset-apply'),
     instructionPresetSave: $('#instruction-preset-save'), instructionPresetEdit: $('#instruction-preset-edit'), instructionPresetDelete: $('#instruction-preset-delete'),
     instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
     instructionPresetEditSave: $('#instruction-preset-edit-save'),
     emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
-    selectionTitle: $('#selection-title'), objectType: $('#object-type'),
+    objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
     translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
@@ -915,7 +915,6 @@
           if (selectable) {
             const selector = document.createElement('label')
             selector.className = 'segment-translation-selector'
-            selector.title = 'Добавить сегмент в пакет перевода'
             const checkbox = document.createElement('input')
             checkbox.type = 'checkbox'
             checkbox.className = 'segment-translation-selector__input'
@@ -928,7 +927,7 @@
             })
             const label = document.createElement('span')
             label.className = 'segment-translation-selector__label'
-            label.textContent = 'Выбрать'
+            label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
             label.setAttribute('aria-hidden', 'true')
             selector.append(checkbox, label)
             row.append(selector)
@@ -1276,26 +1275,6 @@
     })[type] || type
   }
 
-  function selectedSegmentsNoun(count) {
-    if (count === 1) return 'сегмент'
-    const lastTwoDigits = count % 100
-    const lastDigit = count % 10
-    return lastTwoDigits >= 11 && lastTwoDigits <= 14
-      ? 'сегментов'
-      : lastDigit >= 2 && lastDigit <= 4 ? 'сегмента' : 'сегментов'
-  }
-
-  function renderSelectedSegmentsTitle(count) {
-    const number = document.createElement('span')
-    number.className = 'selection-title__count'
-    number.textContent = count
-    elements.selectionTitle.replaceChildren(
-      document.createTextNode(count === 1 ? 'Выбран ' : 'Выбрано '),
-      number,
-      document.createTextNode(` ${selectedSegmentsNoun(count)}`),
-    )
-  }
-
   function isTranslatableType(type) {
     return type === 'text' || type === 'table' || type === 'table_cell'
       || type === 'stamp' || type === 'seal' || type === 'signature'
@@ -1327,6 +1306,7 @@
     elements.translationSelectAll.disabled = total === 0
     elements.translationSelectAll.checked = total > 0 && selectedCount === total
     elements.translationSelectAll.indeterminate = false
+    elements.translationClearSelection.disabled = selectedCount === 0
     elements.translationSelectionCount.textContent = `Выбрано: ${selectedCount} из ${total} сегментов`
     elements.translate.disabled = selectedCount === 0
     const hasGlobalInstruction = Boolean(elements.globalTranslationInstruction.value.trim())
@@ -1341,7 +1321,12 @@
       : `Перевести выбранные (${selectedCount})`
     for (const checkbox of elements.canvas.querySelectorAll('[data-translation-select]')) {
       checkbox.checked = state.translationSelected.has(checkbox.dataset.translationSelect)
-      checkbox.closest('.segment-translation-row')?.classList.toggle('is-translation-selected', checkbox.checked)
+      const row = checkbox.closest('.segment-translation-row')
+      const selector = checkbox.closest('.segment-translation-selector')
+      row?.classList.toggle('is-translation-selected', checkbox.checked)
+      const label = selector?.querySelector('.segment-translation-selector__label')
+      if (label) label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
+      if (selector) selector.title = checkbox.checked ? 'Сегмент выбран для перевода' : 'Добавить сегмент в пакет перевода'
     }
     for (const button of elements.canvas.querySelectorAll('.segments-select-all')) {
       const pageIndex = Number(button.dataset.pageIndex)
@@ -1698,7 +1683,7 @@
     const current = select.value
     const placeholder = document.createElement('option')
     placeholder.value = ''
-    placeholder.textContent = state.instructionPresets.length ? 'Готовые инструкции…' : 'Готовых инструкций пока нет'
+    placeholder.textContent = state.instructionPresets.length ? 'Сохраненные инструкции…' : 'Сохраненных инструкций пока нет'
     select.replaceChildren(placeholder)
     for (const preset of state.instructionPresets) {
       const option = document.createElement('option')
@@ -1757,7 +1742,7 @@
       empty.className = 'document-library-empty'
       empty.textContent = state.instructionPresets.length
         ? 'Инструкции не найдены. Измените поисковый запрос.'
-        : 'Готовых инструкций пока нет. Создайте первую инструкцию.'
+        : 'Сохраненных инструкций пока нет. Создайте первую инструкцию.'
       elements.instructionLibraryList.append(empty)
       return
     }
@@ -1770,7 +1755,7 @@
       const instruction = document.createElement('p')
       instruction.textContent = preset.instruction
       const meta = document.createElement('small')
-      meta.textContent = preset.updatedAt ? `Изменено ${new Date(preset.updatedAt).toLocaleString('ru-RU')}` : 'Готовая инструкция'
+      meta.textContent = preset.updatedAt ? `Изменено ${new Date(preset.updatedAt).toLocaleString('ru-RU')}` : 'Сохраненная инструкция'
       content.append(instruction, meta)
       const actions = document.createElement('div')
       actions.className = 'instruction-library-entry__actions'
@@ -1825,13 +1810,13 @@
       refreshInstructionPresetControls()
       closeInstructionLibraryForm()
       renderInstructionLibrary()
-      showToast(id ? 'Готовая инструкция обновлена' : result.created ? 'Готовая инструкция создана' : 'Такая инструкция уже существует')
+      showToast(id ? 'Сохраненная инструкция обновлена' : result.created ? 'Сохраненная инструкция создана' : 'Такая инструкция уже существует')
     } catch (error) { showToast(error.message, true) }
   }
 
   async function deleteInstructionPreset(preset) {
     const label = preset?.instruction.length > 80 ? `${preset.instruction.slice(0, 77)}…` : preset?.instruction
-    if (!preset || !confirm(`Удалить готовую инструкцию «${label}»?`)) return
+    if (!preset || !confirm(`Удалить сохраненную инструкцию «${label}»?`)) return
     try {
       await api(`/api/studio/translation-instructions/${encodeURIComponent(preset.id)}`, { method: 'DELETE' })
       state.instructionPresets = state.instructionPresets.filter(item => item.id !== preset.id)
@@ -1839,7 +1824,7 @@
       closeInstructionPresetEditor()
       refreshInstructionPresetControls()
       if (!elements.instructionLibraryModal.hidden) renderInstructionLibrary()
-      showToast('Готовая инструкция удалена')
+      showToast('Сохраненная инструкция удалена')
     } catch (error) { showToast(error.message, true) }
   }
 
@@ -1852,10 +1837,10 @@
 
   function applyInstructionPreset(select, input, maximum) {
     const preset = state.instructionPresets.find(item => item.id === select.value)
-    if (!preset) return showToast('Выберите готовую инструкцию', true)
+    if (!preset) return showToast('Выберите сохраненную инструкцию', true)
     input.value = appendInstruction(input.value, preset.instruction, maximum)
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    showToast('Готовая инструкция добавлена')
+    showToast('Сохраненная инструкция добавлена')
   }
 
   async function saveInstructionPreset(instruction, select = null) {
@@ -1875,7 +1860,7 @@
         select.value = result.preset.id
         select.dispatchEvent(new Event('change', { bubbles: true }))
       }
-      showToast(result.created ? 'Инструкция сохранена в готовые' : 'Такая инструкция уже есть в наборе')
+      showToast(result.created ? 'Инструкция добавлена в сохраненные' : 'Такая инструкция уже есть в списке')
     } catch (error) { showToast(error.message, true) }
   }
 
@@ -1886,7 +1871,7 @@
 
   function openInstructionPresetEditor() {
     const preset = state.instructionPresets.find(item => item.id === elements.instructionPresetSelect.value)
-    if (!preset) return showToast('Выберите готовую инструкцию', true)
+    if (!preset) return showToast('Выберите сохраненную инструкцию', true)
     elements.instructionPresetText.value = preset.instruction
     elements.instructionPresetEditor.hidden = false
     elements.instructionPresetText.focus()
@@ -1895,7 +1880,7 @@
   async function updateSelectedInstructionPreset() {
     const id = elements.instructionPresetSelect.value
     const instruction = elements.instructionPresetText.value.trim()
-    if (!id) return showToast('Выберите готовую инструкцию', true)
+    if (!id) return showToast('Выберите сохраненную инструкцию', true)
     if (!instruction) return showToast('Введите текст инструкции', true)
     elements.instructionPresetEditSave.disabled = true
     try {
@@ -1909,7 +1894,7 @@
       elements.instructionPresetSelect.value = preset.id
       elements.instructionPresetSelect.dispatchEvent(new Event('change', { bubbles: true }))
       closeInstructionPresetEditor()
-      showToast('Готовая инструкция обновлена')
+      showToast('Сохраненная инструкция обновлена')
     } catch (error) { showToast(error.message, true) }
     finally { elements.instructionPresetEditSave.disabled = false }
   }
@@ -1939,7 +1924,7 @@
     presetControls.className = 'segment-ai-instruction__presets'
     const presetSelect = document.createElement('select')
     presetSelect.dataset.instructionPresetSelect = 'true'
-    presetSelect.setAttribute('aria-label', `Готовая инструкция для сегмента ${object.readingOrder || object.id}`)
+    presetSelect.setAttribute('aria-label', `Сохраненная инструкция для сегмента ${object.readingOrder || object.id}`)
     populateInstructionPresetSelect(presetSelect)
     const addPreset = document.createElement('button')
     addPreset.type = 'button'
@@ -2734,7 +2719,6 @@
     }
     const first = selection[0]
     const units = selection.length === 1 && isTranslatableType(first.type) ? ensureObjectTranslationUnits(first) : []
-    renderSelectedSegmentsTitle(selection.length)
     setMixedControl(elements.objectType, selection.map(item => item.type))
     if (!elements.tableCellFields.hidden) {
       setMixedControl(elements.tableId, selection.map(item => item.tableId || ''))
@@ -4646,6 +4630,7 @@
       runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…', 'Расположение сегментов обновлено')
     })
     elements.translationSelectAll.addEventListener('change', () => selectAllTranslationObjects(elements.translationSelectAll.checked))
+    elements.translationClearSelection.addEventListener('click', () => selectAllTranslationObjects(false))
     elements.translate.addEventListener('click', translateSelection)
     elements.globalTranslationInstruction.addEventListener('input', () => {
       refreshGlobalInstructionControls()
@@ -4964,6 +4949,51 @@
     closeKnowledgeBaseEntryForm()
   }
 
+  function invalidateKnowledgeBaseEntryReferences(entryId) {
+    if (!state.scene || !entryId) return false
+    let changed = false
+    for (const object of state.scene.objects) {
+      let objectChanged = false
+      for (const unit of object.translationUnits || []) {
+        const matches = Array.isArray(unit.knowledgeMatches) ? unit.knowledgeMatches : []
+        const retainedMatches = matches.filter(match => match.entryId !== entryId)
+        const removedMatch = retainedMatches.length !== matches.length
+        const removedSuggestion = unit.memorySuggestion?.entryId === entryId
+        const removedAppliedEntry = unit.memoryEntryId === entryId
+        const removedLegacyAppliedEntry = !unit.memoryEntryId
+          && (unit.activeTranslationSource === 'memory' || unit.activeTranslationSource === 'memory-revised')
+          && removedMatch && !retainedMatches.length
+        const removedAppliedReference = removedAppliedEntry || removedLegacyAppliedEntry
+        if (!removedMatch && !removedSuggestion && !removedAppliedEntry) continue
+        unit.knowledgeMatches = retainedMatches
+        if (removedSuggestion) unit.memorySuggestion = null
+        if (removedAppliedEntry) unit.memoryEntryId = null
+        if (removedAppliedReference && (unit.activeTranslationSource === 'memory' || unit.activeTranslationSource === 'memory-revised')) {
+          unit.activeTranslationSource = unit.aiTranslation && unit.aiTranslation === unit.translation ? 'ai' : 'manual'
+        }
+        if ((removedAppliedReference || removedSuggestion) && (unit.status === 'memory-applied' || unit.status === 'memory-suggested')) {
+          unit.status = unit.translation ? 'edited' : 'new'
+        }
+        objectChanged = true
+        changed = true
+      }
+      if (objectChanged) {
+        const units = object.translationUnits || []
+        const hasAppliedMemory = units.some(unit => (
+          unit.activeTranslationSource === 'memory' || unit.activeTranslationSource === 'memory-revised'
+        ) && (unit.memoryEntryId || unit.knowledgeMatches?.length))
+        const hasMemorySuggestion = units.some(unit => unit.memorySuggestion)
+        if (object.status === 'memory-applied' && !hasAppliedMemory) object.status = object.translation ? 'edited' : hasMemorySuggestion ? 'memory-suggested' : 'recognized'
+        if (object.status === 'memory-suggested' && !hasMemorySuggestion) object.status = object.translation ? 'partially-translated' : 'recognized'
+      }
+    }
+    if (!changed) return false
+    closeKnowledgeSuggestion()
+    elements.memoryResults.innerHTML = '<small>База знаний изменена. Выполните новый поиск совпадений.</small>'
+    renderDocument()
+    return true
+  }
+
   async function saveKnowledgeBaseEntry(event) {
     event.preventDefault()
     const id = elements.knowledgeBaseEntryId.value
@@ -4977,9 +5007,11 @@
     if (!payload.sourceText || !payload.translation || !payload.glossaryId) return showToast('Заполните оригинал, перевод и глоссарий', true)
     try {
       if (id) {
+        if (state.scene && state.metadata) await saveScene(true)
         await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(id)}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         })
+        invalidateKnowledgeBaseEntryReferences(id)
       } else {
         const response = await api('/api/studio/knowledge-base/entries', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -4995,9 +5027,11 @@
   }
 
   async function deleteKnowledgeBaseEntry(entry) {
-    if (!window.confirm(`Удалить пару «${entry.sourceText.slice(0, 80)}»? Переводы в уже сохранённых документах не изменятся.`)) return
+    if (!window.confirm(`Удалить пару «${entry.sourceText.slice(0, 80)}»? Подсветка и ссылки на эту запись исчезнут из документов, но текст уже применённых переводов сохранится.`)) return
     try {
+      if (state.scene && state.metadata) await saveScene(true)
       await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
+      invalidateKnowledgeBaseEntryReferences(entry.id)
       if (elements.knowledgeBaseEntryId.value === entry.id) closeKnowledgeBaseEntryForm()
       await Promise.all([loadKnowledgeBaseEntries(), loadKnowledgeBase()])
       showToast('Запись удалена из Базы знаний')

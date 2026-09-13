@@ -165,8 +165,8 @@
               </div>
             </div>
             <div class="instruction-preset-picker">
-              <select id="instruction-preset-select" aria-label="Готовые инструкции">
-                <option value="">Готовые инструкции…</option>
+              <select id="instruction-preset-select" aria-label="Сохраненные инструкции">
+                <option value="">Сохраненные инструкции…</option>
               </select>
               <button id="instruction-preset-apply" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Использовать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
               <button id="instruction-preset-edit" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Редактировать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-edit"></use></svg></button>
@@ -181,13 +181,25 @@
               </div>
             </div>
           </div>
+          <div class="agent-knowledge-mode inspector-scope--segments">
+            <label class="memory-card__mode">Использование БЗ
+              <select id="knowledge-base-mode">
+                <option value="suggestions">Только подсказки</option>
+                <option value="priority">БЗ имеет приоритет</option>
+              </select>
+            </label>
+            <small class="memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
+          </div>
           <div class="translation-batch-controls inspector-scope--segments">
             <small id="translation-selection-count">Выбрано: 0 из 0 сегментов</small>
-            <label class="base-checkbox base-checkbox--inverse">
-              <input id="translation-select-all" class="base-checkbox__input" type="checkbox" />
-              <span class="base-checkbox__control" aria-hidden="true"></span>
-              <span class="base-checkbox__label">Выбрать все</span>
-            </label>
+            <div class="translation-batch-controls__actions">
+              <label class="base-checkbox base-checkbox--inverse">
+                <input id="translation-select-all" class="base-checkbox__input" type="checkbox" />
+                <span class="base-checkbox__control" aria-hidden="true"></span>
+                <span class="base-checkbox__label">Выбрать все</span>
+              </label>
+              <button id="translation-clear-selection" class="compact-button" type="button" disabled>Снять выбор</button>
+            </div>
           </div>
           <div class="agent-actions agent-actions--translation inspector-scope--segments">
             <button id="translate-button" class="button button--primary" type="button" disabled>Перевести выбранные</button>
@@ -207,16 +219,16 @@
         </section>
 
         <section id="object-inspector" class="object-inspector" hidden>
-          <div class="selection-heading">
-            <h2 id="selection-title">Выбран <span class="selection-title__count">1</span> сегмент</h2>
+          <div class="segment-properties-row inspector-scope--segments">
+            <label class="segment-type-field">Тип содержимого
+              <select id="object-type">
+                <option value="text">Текст</option><option value="table">Таблица</option><option value="table_cell">Ячейка таблицы</option>
+                <option value="stamp">Штамп</option><option value="seal">Печать</option><option value="signature">Подпись</option>
+                <option value="handwriting">Рукописный текст</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
+              </select>
+            </label>
+            <div class="confidence-row"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
           </div>
-          <label class="inspector-scope--segments">Тип содержимого
-            <select id="object-type">
-              <option value="text">Текст</option><option value="table">Таблица</option><option value="table_cell">Ячейка таблицы</option>
-              <option value="stamp">Штамп</option><option value="seal">Печать</option><option value="signature">Подпись</option>
-              <option value="handwriting">Рукописный текст</option><option value="logo">Логотип</option><option value="image">Изображение</option><option value="unknown">Не определено</option>
-            </select>
-          </label>
           <section id="table-cell-fields" class="table-cell-fields inspector-scope--segments" hidden>
             <label>ID таблицы<input id="table-id" type="text" maxlength="120" /></label>
             <label>Строка<input id="table-row" type="number" min="0" max="999" step="1" /></label>
@@ -224,14 +236,15 @@
             <label>Строк занимает<input id="table-row-span" type="number" min="1" max="100" step="1" /></label>
             <label>Колонок занимает<input id="table-column-span" type="number" min="1" max="100" step="1" /></label>
           </section>
-          <label class="inspector-scope--segments">Распознанный исходник
-            <textarea id="source-text" rows="6" spellcheck="true"></textarea>
-          </label>
-          <div class="confidence-row inspector-scope--segments"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
+          <div class="segment-content-fields inspector-scope--segments">
+            <label>Распознанный исходник
+              <textarea id="source-text" rows="7" spellcheck="true"></textarea>
+            </label>
+            <label>Перевод / обозначение
+              <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
+            </label>
+          </div>
           <p id="agent-notes" class="agent-notes inspector-scope--segments" hidden></p>
-          <label class="inspector-scope--segments">Перевод / обозначение
-            <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
-          </label>
           <section id="translation-units-card" class="translation-units-card inspector-scope--segments" hidden>
             <div class="translation-units-card__heading">
               <div><strong>Термины и части сегмента</strong><small>Внешний блок на странице останется единым</small></div>
@@ -398,13 +411,6 @@
               <select id="glossary-select" aria-label="Активный глоссарий"><option value="">Загружаем глоссарии…</option></select>
               <button id="glossary-add-button" class="button button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg><span>Новый</span></button>
             </div>
-            <label class="memory-card__mode">Использование БЗ
-              <select id="knowledge-base-mode">
-                <option value="suggestions">Только подсказки</option>
-                <option value="priority">БЗ имеет приоритет</option>
-              </select>
-            </label>
-            <small class="memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
             <small id="knowledge-base-status" class="memory-card__status">Проверяем PostgreSQL/pgvector…</small>
             <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
           </div>
@@ -519,7 +525,7 @@
     <div id="instruction-library-modal" class="modal-backdrop" hidden>
       <section class="instruction-library-dialog" role="dialog" aria-modal="true" aria-labelledby="instruction-library-title">
         <div class="settings-dialog__header">
-          <div><p class="eyebrow">Правила перевода</p><h2 id="instruction-library-title">Готовые AI-инструкции</h2></div>
+          <div><p class="eyebrow">Правила перевода</p><h2 id="instruction-library-title">Сохраненные AI-инструкции</h2></div>
           <button id="instruction-library-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
         <p class="settings-dialog__intro">Шаблоны доступны во всех документах. Изменение шаблона не переписывает комментарии, уже добавленные в документы.</p>

@@ -31,7 +31,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'appbar-menu', 'appbar-menu-button', 'appbar-actions-menu',
     'source-text', 'translation-text', 'object-type', 'agent-notes', 'reanalyze-button', 'translate-button',
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
-    'translation-select-all', 'translation-selection-count', 'translation-global-instruction', 'revise-selected-button', 'revise-document-button',
+    'translation-select-all', 'translation-clear-selection', 'translation-selection-count', 'translation-global-instruction', 'revise-selected-button', 'revise-document-button',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
     'instruction-preset-edit-cancel', 'instruction-preset-edit-save',
@@ -73,18 +73,26 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.equal(reanalyzeButton.nextElementSibling, languageCard)
   const translationInstructionCard = studioDocument.querySelector('.translation-instruction-card')
   assert.equal(languageCard.nextElementSibling, translationInstructionCard)
+  const agentKnowledgeMode = studioDocument.querySelector('.agent-knowledge-mode')
+  assert.equal(translationInstructionCard.nextElementSibling, agentKnowledgeMode)
+  assert.equal(agentKnowledgeMode.querySelector('#knowledge-base-mode').closest('.memory-card__mode').parentElement, agentKnowledgeMode)
+  assert.equal(studioDocument.querySelector('.memory-card #knowledge-base-mode'), null)
   const reanalyzeModal = studioDocument.querySelector('#reanalyze-confirm-modal')
   assert.equal(reanalyzeModal.hidden, true)
   assert.equal(reanalyzeModal.querySelector('[role="dialog"]').getAttribute('aria-describedby'), 'reanalyze-confirm-description')
   assert.match(reanalyzeModal.textContent, /Вся текущая работа с переводами сегментов будет потеряна/)
   assert.match(reanalyzeModal.textContent, /Резервная версия на этом этапе не создаётся/)
   const translationBatchControls = studioDocument.querySelector('.translation-batch-controls')
-  assert.equal(translationInstructionCard.nextElementSibling, translationBatchControls)
+  assert.equal(agentKnowledgeMode.nextElementSibling, translationBatchControls)
   assert.ok(translationBatchControls.nextElementSibling.classList.contains('agent-actions--translation'))
   assert.equal(translationBatchControls.nextElementSibling.querySelector('button').id, 'translate-button')
   assert.ok(translationBatchControls.nextElementSibling.querySelector('#translate-button').classList.contains('button--primary'))
   assert.equal(translationBatchControls.children[0].id, 'translation-selection-count')
+  assert.equal(translationBatchControls.children[1].className, 'translation-batch-controls__actions')
   assert.equal(translationBatchControls.children[1].querySelector('input').id, 'translation-select-all')
+  assert.equal(translationBatchControls.children[1].querySelector('button').id, 'translation-clear-selection')
+  assert.equal(translationBatchControls.children[1].querySelector('button').textContent, 'Снять выбор')
+  assert.equal(translationBatchControls.children[1].querySelector('button').disabled, true)
   assert.match(styles, /\.translation-batch-controls label\s*\{[^}]*color:\s*#cdd8f8;[^}]*font-size:\s*10px;[^}]*font-weight:\s*400/)
   assert.match(styles, /\.translation-batch-controls small\s*\{[^}]*color:\s*#fff;[^}]*font-size:\s*10px;[^}]*font-weight:\s*700/)
   const instructionIconButtons = [...studioDocument.querySelectorAll('.translation-instruction-card button')]
@@ -108,6 +116,11 @@ test('studio exposes the complete source-to-export workflow', () => {
   )
   assert.equal(studioDocument.querySelector('.translation-instruction-card__primary-row > textarea').id, 'translation-global-instruction')
   assert.equal(studioDocument.querySelector('label[for="translation-global-instruction"]').textContent, 'Инструкция для AI')
+  assert.equal(studioDocument.querySelector('#instruction-preset-select').getAttribute('aria-label'), 'Сохраненные инструкции')
+  assert.equal(studioDocument.querySelector('#instruction-preset-select option').textContent, 'Сохраненные инструкции…')
+  assert.equal(studioDocument.querySelector('#instruction-library-title').textContent, 'Сохраненные AI-инструкции')
+  assert.doesNotMatch(html, /Готовые инструкции/)
+  assert.doesNotMatch(client, /Готов(?:ая|ые|ых|ую) инструкц/)
   assert.equal(studioDocument.querySelector('.instruction-preset-actions'), null)
   assert.match(styles, /\.translation-instruction-card__primary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/)
   assert.match(styles, /\.translation-instruction-card__actions\s*\{[^}]*flex-direction:\s*column/)
@@ -119,9 +132,26 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(html, /id="layout-review-cancel-button"/)
   assert.equal(studioDocument.querySelector('#analyze-button'), null)
   assert.match(html, /id="layout-review-button"[^>]*>Проверить и исправить макет<\/button>/)
-  assert.equal(studioDocument.querySelector('.selection-heading .eyebrow'), null)
-  assert.match(styles, /\.selection-heading h2\s*\{[^}]*font-size:\s*12px/)
-  assert.match(styles, /\.selection-title__count\s*\{[^}]*color:\s*var\(--danger\)/)
+  assert.equal(studioDocument.querySelector('.selection-heading'), null)
+  assert.equal(studioDocument.querySelector('#selection-title'), null)
+  const segmentContentFields = studioDocument.querySelector('.segment-content-fields')
+  assert.deepEqual(
+    [...segmentContentFields.children].map(label => label.childNodes[0].textContent.trim()),
+    ['Распознанный исходник', 'Перевод / обозначение'],
+  )
+  assert.match(styles, /\.segment-content-fields\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(styles, /\.segment-content-fields textarea\s*\{[^}]*min-height:\s*160px/)
+  const segmentPropertiesRow = studioDocument.querySelector('.segment-properties-row')
+  assert.equal(segmentPropertiesRow.querySelector('.segment-type-field').textContent.trim().startsWith('Тип содержимого'), true)
+  assert.equal(segmentPropertiesRow.querySelector('.confidence-row').textContent.trim().startsWith('Уверенность распознавания'), true)
+  assert.equal(segmentPropertiesRow.querySelector('#confidence-value').textContent, '—')
+  assert.match(styles, /\.segment-properties-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 180px\) minmax\(0, 1fr\)/)
+  assert.match(styles, /\.segment-type-field\s*\{[^}]*max-width:\s*180px/)
+  assert.match(styles, /\.segment-properties-row \.confidence-row\s*\{[^}]*background:\s*rgba\(49,94,231,\.08\)/)
+  assert.match(styles, /\.confidence-row\s*\{[^}]*flex-direction:\s*row;[^}]*justify-content:\s*space-between/)
+  assert.match(styles, /\.confidence-row span\s*\{[^}]*max-width:\s*110px;[^}]*font-size:\s*10px;[^}]*font-weight:\s*700/)
+  assert.match(styles, /\.confidence-row strong\s*\{[^}]*color:\s*var\(--blue\)/)
+  assert.equal(segmentContentFields.nextElementSibling.id, 'agent-notes')
   assert.equal(studioDocument.querySelectorAll('.flex-layout select, .flex-layout input').length, 0)
   assert.equal(studioDocument.querySelectorAll('[data-flex-axis="row"][data-flex-layout]').length, 6)
   assert.equal(studioDocument.querySelectorAll('[data-flex-axis="column"][data-flex-layout]').length, 6)
@@ -997,20 +1027,25 @@ test('segments view follows visual order and supports partial or full batch tran
   assert.equal(instructionPresetRequests[0].instruction, 'Сохраняй номера без изменений.')
   const checkboxes = [...dom.window.document.querySelectorAll('[data-translation-select]')]
   const selectAll = dom.window.document.querySelector('#translation-select-all')
+  const clearSelection = dom.window.document.querySelector('#translation-clear-selection')
   const translate = dom.window.document.querySelector('#translate-button')
   assert.equal(checkboxes.length, 5)
+  assert.ok(checkboxes.every(checkbox => checkbox.nextElementSibling.textContent === 'Выбрать'))
   assert.equal(translate.disabled, true)
+  assert.equal(clearSelection.disabled, true)
   assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 5 сегментов')
 
   const pageSelectAll = dom.window.document.querySelector('.segments-select-all')
   assert.equal(pageSelectAll.textContent, 'Все')
   pageSelectAll.click()
   assert.equal(checkboxes.every(checkbox => checkbox.checked), true)
+  assert.ok(checkboxes.every(checkbox => checkbox.nextElementSibling.textContent === 'Выбран'))
   assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 5)
   assert.equal(pageSelectAll.classList.contains('is-active'), true)
   assert.equal(pageSelectAll.getAttribute('aria-pressed'), 'true')
   pageSelectAll.click()
   assert.equal(checkboxes.every(checkbox => !checkbox.checked), true)
+  assert.ok(checkboxes.every(checkbox => checkbox.nextElementSibling.textContent === 'Выбрать'))
   assert.equal(pageSelectAll.classList.contains('is-active'), false)
   assert.equal(pageSelectAll.getAttribute('aria-pressed'), 'false')
 
@@ -1019,7 +1054,9 @@ test('segments view follows visual order and supports partial or full batch tran
   firstCheckboxControl.click()
   assert.equal(dom.window.document.querySelector('#selection-box').hidden, true)
   assert.equal(checkboxes[0].checked, true)
+  assert.equal(checkboxes[0].nextElementSibling.textContent, 'Выбран')
   assert.equal(translate.disabled, false)
+  assert.equal(clearSelection.disabled, false)
   assert.equal(translate.textContent, 'Перевести выбранные (1)')
   assert.equal(reviseSelected.disabled, false)
   assert.equal(selectAll.checked, false)
@@ -1033,6 +1070,15 @@ test('segments view follows visual order and supports partial or full batch tran
   assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 2)
   assert.equal(dom.window.document.querySelector('.scene-object--source.is-primary-selected').dataset.id, checkboxes[1].dataset.translationSelect)
 
+  clearSelection.click()
+  assert.equal(checkboxes.every(checkbox => !checkbox.checked), true)
+  assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 0)
+  assert.equal(selectAll.checked, false)
+  assert.equal(clearSelection.disabled, true)
+
+  checkboxes[0].click()
+  checkboxes[1].click()
+
   checkboxes[0].click()
   assert.equal(checkboxes[0].checked, true)
   assert.equal(checkboxes[1].checked, true)
@@ -1043,7 +1089,9 @@ test('segments view follows visual order and supports partial or full batch tran
 
   checkboxes[0].click()
   assert.equal(checkboxes[0].checked, false)
+  assert.equal(checkboxes[0].nextElementSibling.textContent, 'Выбрать')
   assert.equal(checkboxes[1].checked, true)
+  assert.equal(checkboxes[1].nextElementSibling.textContent, 'Выбран')
   assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object--source.is-primary-selected').dataset.id, checkboxes[1].dataset.translationSelect)
 
@@ -1170,8 +1218,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
 
   const initialObject = dom.window.document.querySelector('[data-id="object-1"]')
   initialObject.dispatchEvent(pointer('pointerdown', 100, 100))
-  assert.equal(dom.window.document.querySelector('#selection-title').textContent, 'Выбран 1 сегмент')
-  assert.equal(dom.window.document.querySelector('#selection-title .selection-title__count').textContent, '1')
+  assert.equal(dom.window.document.querySelector('#object-inspector').hidden, false)
+  assert.equal(dom.window.document.querySelector('#source-text').value, 'Source')
   let leftEdgeObject = dom.window.document.querySelector('[data-id="object-1"]')
   assert.equal(leftEdgeObject.style.left, '40px')
   assert.equal(leftEdgeObject.classList.contains('has-inset-drag-handle'), false)
@@ -1320,7 +1368,6 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const typographySelectAll = dom.window.document.querySelector('#typography-select-all')
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
-  assert.equal(dom.window.document.querySelector('#selection-title').textContent, 'Выбрано 2 сегмента')
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-primary-selected').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, focusedObjectId)
   assert.equal(typographySelectAll.getAttribute('aria-pressed'), 'true')
@@ -1893,6 +1940,12 @@ test('AI instruction library lists, searches, creates, edits, and deletes preset
 test('segments view highlights knowledge matches and keeps the AI translation as an alternative', async () => {
   const id = 'f'.repeat(32)
   const sourceText = 'SÜRELİDİR: Bu vekaletname geçerlidir.'
+  const glossary = { id: '00000000-0000-4000-8000-000000000001', name: 'Основной глоссарий', sourceLanguage: 'Turkish', targetLanguage: 'ru' }
+  const knowledgeEntry = {
+    id: 'entry-1', glossaryId: glossary.id, sourceText: 'SÜRELİDİR', translation: 'Имеет срок',
+    sourceLanguage: 'Turkish', targetLanguage: 'ru', updatedAt: '2026-09-13T08:00:00.000Z',
+  }
+  let knowledgeEntries = [knowledgeEntry]
   const scene = {
     title: 'Knowledge highlights', sourceLanguage: 'Turkish', targetLanguage: 'ru', knowledgeBaseMode: 'priority', gridSize: 8, snapToGrid: true,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
@@ -1916,15 +1969,21 @@ test('segments view highlights knowledge matches and keeps the AI translation as
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
     runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
   })
-  dom.window.fetch = async url => {
+  dom.window.fetch = async (url, options = {}) => {
     const value = String(url)
-    if (value.includes('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'postgres-pgvector', connected: true, persistent: true, entries: 1 }) }
-    if (value.includes('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Основной глоссарий' }] }) }
+    if (value.includes('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'postgres-pgvector', connected: true, persistent: true, entries: knowledgeEntries.length }) }
+    if (value.includes('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [glossary] }) }
+    if (value.includes('/knowledge-base/entries/entry-1') && options.method === 'DELETE') {
+      knowledgeEntries = []
+      return { ok: true, status: 204, json: async () => ({}) }
+    }
+    if (value.includes('/knowledge-base/entries')) return { ok: true, json: async () => ({ entries: knowledgeEntries, total: knowledgeEntries.length, limit: 25, offset: 0 }) }
     if (value.includes('/documents?scope=all')) return { ok: true, json: async () => ({ documents: [] }) }
     if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
     if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: true, translationModel: 'test', documentAnalysisMode: 'aitunnel', aiProviderConfigured: true }) }
     return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
   }
+  dom.window.confirm = () => true
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
   dom.window.eval(client)
@@ -1933,12 +1992,22 @@ test('segments view highlights knowledge matches and keeps the AI translation as
   const highlight = dom.window.document.querySelector('.scene-object--source .knowledge-highlight')
   assert.ok(highlight)
   assert.equal(highlight.textContent, 'SÜRELİDİR')
+  assert.match(styles, /\.knowledge-highlight\s*\{[^}]*padding:\s*1px 3px/)
   highlight.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, false)
   assert.match(dom.window.document.querySelector('#knowledge-suggestion-list').textContent, /Имеет срок/)
   dom.window.document.querySelector('#knowledge-suggestion-close').click()
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, true)
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-list').childElementCount, 0)
+  const preservedTranslation = scene.objects[0].translationUnits[0].translation
+  dom.window.document.querySelector('#knowledge-base-open-button').click()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelector('.scene-object--source .knowledge-highlight'), null)
+  assert.deepEqual(scene.objects[0].translationUnits[0].knowledgeMatches, [])
+  assert.equal(scene.objects[0].translationUnits[0].activeTranslationSource, 'manual')
+  assert.equal(scene.objects[0].translationUnits[0].translation, preservedTranslation)
   const alternative = dom.window.document.querySelector('.ai-translation-alternative')
   assert.match(alternative.textContent, /СРОЧНАЯ/)
   alternative.querySelector('button').click()

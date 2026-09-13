@@ -245,6 +245,7 @@ test('translation route proposes exact knowledge-base matches without silently a
     body: JSON.stringify({ sourceText: 'Power of attorney', translation: 'Доверенность', sourceLanguage: 'en', targetLanguage: 'ru' }),
   })
   assert.equal(response.status, 201)
+  const entryId = (await response.json()).results[0].entry.id
   response = await fetch(`${base}/documents/${id}/translate`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: ['object-1'] }),
   })
@@ -255,6 +256,14 @@ test('translation route proposes exact knowledge-base matches without silently a
   assert.equal(result.scene.objects[0].translation, '')
   assert.equal(result.scene.objects[0].translationUnits[0].memorySuggestion.translation, 'Доверенность')
   assert.equal(result.scene.objects[0].translationUnits[0].status, 'memory-suggested')
+  response = await fetch(`${base}/knowledge-base/entries/${entryId}`, { method: 'DELETE' })
+  assert.equal(response.status, 204)
+  response = await fetch(`${base}/documents/${id}`)
+  const synchronizedObject = (await response.json()).scene.objects[0]
+  assert.deepEqual(synchronizedObject.translationUnits[0].knowledgeMatches, [])
+  assert.equal(synchronizedObject.translationUnits[0].memorySuggestion, null)
+  assert.equal(synchronizedObject.translationUnits[0].status, 'new')
+  assert.equal(synchronizedObject.status, 'recognized')
 })
 
 test('priority knowledge-base mode preserves the independent AI variant and revises a matched term in context', async t => {
@@ -303,6 +312,7 @@ test('priority knowledge-base mode preserves the independent AI variant and revi
     body: JSON.stringify({ sourceText: 'SÜRELİDİR', translation: 'Имеет срок', sourceLanguage: 'Turkish', targetLanguage: 'ru' }),
   })
   assert.equal(response.status, 201)
+  const entryId = (await response.json()).results[0].entry.id
   response = await fetch(`${base}/documents/${id}/translate`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ objectIds: ['priority-object'] }),
   })
@@ -325,6 +335,66 @@ test('priority knowledge-base mode preserves the independent AI variant and revi
   const applied = await response.json()
   assert.equal(applied.source, 'memory-revised')
   assert.equal(applied.scene.objects[0].translationUnits[0].aiTranslation, unit.aiTranslation)
+  const preservedTranslation = applied.scene.objects[0].translationUnits[0].translation
+  response = await fetch(`${base}/knowledge-base/entries/${entryId}`, { method: 'DELETE' })
+  assert.equal(response.status, 204)
+  response = await fetch(`${base}/documents/${id}`)
+  const synchronizedUnit = (await response.json()).scene.objects[0].translationUnits[0]
+  assert.deepEqual(synchronizedUnit.knowledgeMatches, [])
+  assert.equal(synchronizedUnit.memorySuggestion, null)
+  assert.equal(synchronizedUnit.memoryEntryId, null)
+  assert.equal(synchronizedUnit.activeTranslationSource, 'manual')
+  assert.equal(synchronizedUnit.translation, preservedTranslation)
+})
+
+test('document loading removes orphaned knowledge-base highlights left by an earlier client', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-orphaned-memory-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = 'e'.repeat(32)
+  const entryId = '0c82dccf-e3e0-4594-94eb-35430af8c205'
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Orphaned memory', filename: 'orphaned.pdf', revision: 1, pageCount: 1, objectCount: 1,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Orphaned memory', sourceLanguage: 'Turkish', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'mersin-object', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'MERSİN', translation: 'Мерсин', status: 'memory-applied',
+      x: 40, y: 40, width: 200, height: 40, style: {}, originalBounds: { x: 40, y: 40, width: 200, height: 40 },
+      translationUnits: [{
+        id: 'mersin-unit', sourceText: 'MERSİN', separatorAfter: '', translation: 'Мерсин', status: 'memory-applied',
+        activeTranslationSource: 'memory', memoryEntryId: entryId,
+        memorySuggestion: { entryId, translation: 'Мерсин', score: 1, matchType: 'exact', targetLanguage: 'ru' },
+        knowledgeMatches: [{
+          id: `${entryId}:0:6:0`, entryId, glossaryId: '00000000-0000-4000-8000-000000000001', sourceText: 'mersin', translation: 'Мерсин',
+          sourceLanguage: 'Turkish', targetLanguage: 'ru', start: 0, end: 6, score: 1, matchType: 'exact', fullSegment: true,
+        }],
+      }],
+    }],
+  }))
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({
+    rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
+    runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
+  }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  const response = await fetch(`${base}/documents/${id}`)
+  assert.equal(response.status, 200)
+  const document = await response.json()
+  const object = document.scene.objects[0]
+  const unit = object.translationUnits[0]
+  assert.deepEqual(unit.knowledgeMatches, [])
+  assert.equal(unit.memorySuggestion, null)
+  assert.equal(unit.memoryEntryId, null)
+  assert.equal(unit.activeTranslationSource, 'manual')
+  assert.equal(unit.translation, 'Мерсин')
+  assert.equal(object.status, 'edited')
+  assert.equal(document.metadata.revision, 2)
 })
 
 test('multiple selected segments are translated, persisted, and leave unselected segments untouched', async t => {
