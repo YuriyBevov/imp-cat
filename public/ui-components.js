@@ -1,4 +1,18 @@
 (() => {
+  for (const demo of document.querySelectorAll('.component-inspector-navigation-demo')) {
+    const title = demo.querySelector('[data-component-inspector-title]')
+    const description = demo.querySelector('[data-component-inspector-description]:not(button)')
+    for (const button of demo.querySelectorAll('button[data-component-inspector-panel]')) {
+      button.addEventListener('click', () => {
+        for (const candidate of demo.querySelectorAll('button[data-component-inspector-panel]')) {
+          candidate.setAttribute('aria-pressed', String(candidate === button))
+        }
+        title.textContent = button.dataset.componentInspectorPanel
+        description.textContent = button.dataset.componentInspectorDescription
+      })
+    }
+  }
+
   const viewport = document.querySelector('.source-preview-demo__viewport')
   const shell = document.querySelector('#component-document-shell')
   const documentPage = document.querySelector('#component-document')

@@ -114,11 +114,6 @@
               <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
               <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
             </div>
-            <div class="toolbar-group inspector-controls" aria-label="Правая панель">
-              <button id="inspector-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть инспектор" aria-label="Скрыть инспектор" aria-controls="inspector-panel" aria-expanded="true">
-                <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-sidebar-right"></use></svg>
-              </button>
-            </div>
           </div>
         </div>
         <div id="canvas-scroll" class="canvas-scroll">
@@ -406,6 +401,23 @@
         </section>
 
         </div>
+        <nav class="inspector-panel__navigation" aria-label="Разделы инспектора">
+          <button id="inspector-global-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть перевод всего документа" aria-controls="inspector-global-translation-panel" aria-pressed="true" data-inspector-panel="global">
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg>
+          </button>
+          <button id="inspector-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть посегментный перевод" aria-controls="inspector-translation-panel" aria-pressed="false" data-inspector-panel="translation" data-requires-selection disabled>
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg>
+          </button>
+          <button id="inspector-typography-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть настройки типографики" aria-controls="inspector-typography-panel" aria-pressed="false" data-inspector-panel="typography" data-requires-selection disabled>
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg>
+          </button>
+          <button id="inspector-position-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть настройки расположения" aria-controls="inspector-position-panel" aria-pressed="false" data-inspector-panel="position" data-requires-selection disabled>
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg>
+          </button>
+          <button id="inspector-testing-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть инструменты тестирования" aria-controls="inspector-testing-panel" aria-pressed="false" data-inspector-panel="testing">
+            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg>
+          </button>
+        </nav>
       </aside>
 
       <section id="qa-panel" class="qa-panel" role="complementary" aria-labelledby="qa-title" aria-hidden="true" hidden>

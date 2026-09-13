@@ -124,35 +124,26 @@
 
         <details class="component-section">
           <summary class="component-section__summary">
-            <span>Аккордеон инспектора</span>
-            <code>InspectorAccordion</code>
+            <span>Навигация инспектора</span>
+            <code>InspectorNavigation</code>
           </summary>
           <div class="component-section__body">
             <div class="component-meta">
               <span class="component-status">Согласовано</span>
-              <p>Независимые разделы инспектора. Все разделы раскрыты по умолчанию; каждый заголовок управляет только своим содержимым.</p>
+              <p>Постоянная вертикальная рейка из пяти иконных кнопок. Активная кнопка открывает одну функциональную панель; недоступные без выбранного сегмента разделы используют нативное состояние disabled.</p>
             </div>
-            <div class="component-inspector-accordion-demo">
-              <details class="inspector-accordion" open>
-                <summary class="inspector-accordion__summary"><span>Перевод всего документа</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
-                <div class="inspector-accordion__content"><div class="layout-card"><strong>Языки, инструкции и массовый перевод</strong></div></div>
-              </details>
-              <details class="inspector-accordion" open>
-                <summary class="inspector-accordion__summary"><span>Посегментный перевод</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
-                <div class="inspector-accordion__content"><div class="layout-card"><strong>Инструменты выбранного сегмента</strong></div></div>
-              </details>
-              <details class="inspector-accordion" open>
-                <summary class="inspector-accordion__summary"><span>Типографика</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
-                <div class="inspector-accordion__content"><div class="layout-card"><strong>Параметры текста</strong><span class="layout-card__label">Содержимое демонстрационного раздела</span></div></div>
-              </details>
-              <details class="inspector-accordion" open>
-                <summary class="inspector-accordion__summary"><span>Расположение</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
-                <div class="inspector-accordion__content"><div class="layout-card"><strong>Геометрия сегментов</strong></div></div>
-              </details>
-              <details class="inspector-accordion" open>
-                <summary class="inspector-accordion__summary"><span>Тестирование</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
-                <div class="inspector-accordion__content"><div class="layout-card"><strong>Проверка макета, финальная проверка и отделённая снизу пересегментация</strong></div></div>
-              </details>
+            <div class="component-inspector-navigation-demo">
+              <section class="component-inspector-navigation-demo__panel">
+                <h2 class="inspector-section__title" data-component-inspector-title>Перевод всего документа</h2>
+                <p class="note note--muted" data-component-inspector-description>Языки, инструкции и массовый перевод.</p>
+              </section>
+              <nav class="inspector-panel__navigation" aria-label="Демонстрация разделов инспектора">
+                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть перевод всего документа" aria-pressed="true" data-component-inspector-panel="Перевод всего документа" data-component-inspector-description="Языки, инструкции и массовый перевод."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg></button>
+                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть посегментный перевод" aria-pressed="false" data-component-inspector-panel="Посегментный перевод" data-component-inspector-description="Инструменты перевода выбранного сегмента."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
+                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть настройки типографики" aria-pressed="false" data-component-inspector-panel="Типографика" data-component-inspector-description="Шрифт, начертание, цвет и выравнивание текста."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button>
+                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть настройки расположения" aria-pressed="false" data-component-inspector-panel="Расположение" data-component-inspector-description="Размеры, выравнивание и расстановка сегментов."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
+                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть инструменты тестирования" aria-pressed="false" data-component-inspector-panel="Тестирование" data-component-inspector-description="Проверка, исправление и пересегментация макета."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg></button>
+              </nav>
             </div>
           </div>
         </details>

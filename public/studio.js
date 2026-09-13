@@ -24,7 +24,7 @@
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     sourcePanelToggle: $('#source-panel-toggle'),
-    inspectorPanel: $('#inspector-panel'), inspectorPanelToggle: $('#inspector-panel-toggle'),
+    inspectorPanel: $('#inspector-panel'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'), sourcePreviewOpen: $('#source-preview-open'),
@@ -107,7 +107,7 @@
     lastTextSelection: null,
     focusedTranslationUnitId: null,
     sourceCollapsed: true,
-    inspectorOpen: true,
+    activeInspectorPanel: 'global',
     sourcePanCleanup: null,
     pendingWorkbenchZoom: null,
     pendingSourceZoom: null,
@@ -128,27 +128,44 @@
     sceneEditRevision: 0,
   }
 
-  function createInspectorAccordion(id, title, nodes, open = true) {
-    const accordion = document.createElement('details')
-    accordion.id = id
-    accordion.className = 'inspector-accordion'
-    accordion.open = open
-    const summary = document.createElement('summary')
-    summary.className = 'inspector-accordion__summary'
-    const label = document.createElement('span')
-    label.textContent = title
-    const indicator = document.createElement('span')
-    indicator.className = 'inspector-accordion__indicator'
-    indicator.innerHTML = iconMarkup('chevron-down')
-    summary.append(label, indicator)
+  function createInspectorPanel(id, key, title, nodes) {
+    const panel = document.createElement('section')
+    panel.id = id
+    panel.className = 'inspector-section'
+    panel.dataset.inspectorPanelContent = key
+    panel.setAttribute('aria-labelledby', `inspector-${key}-panel-title`)
+    const heading = document.createElement('h2')
+    heading.id = `inspector-${key}-panel-title`
+    heading.className = 'inspector-section__title'
+    heading.textContent = title
     const content = document.createElement('div')
-    content.className = 'inspector-accordion__content'
+    content.className = 'inspector-section__content'
     content.append(...nodes)
-    accordion.append(summary, content)
-    return accordion
+    panel.append(heading, content)
+    return panel
   }
 
-  function setupInspectorAccordions() {
+  function setActiveInspectorPanel(key) {
+    const button = elements.inspectorPanel.querySelector(`[data-inspector-panel="${key}"]`)
+    if (!button || button.disabled) return
+    state.activeInspectorPanel = key
+    for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-panel-content]')) {
+      panel.hidden = panel.dataset.inspectorPanelContent !== key
+    }
+    for (const candidate of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
+      candidate.setAttribute('aria-pressed', String(candidate.dataset.inspectorPanel === key))
+    }
+  }
+
+  function refreshInspectorNavigation(hasSelection) {
+    for (const button of elements.inspectorPanel.querySelectorAll('[data-requires-selection]')) {
+      button.disabled = !hasSelection
+    }
+    const activeButton = elements.inspectorPanel.querySelector(`[data-inspector-panel="${state.activeInspectorPanel}"]`)
+    if (activeButton?.disabled) setActiveInspectorPanel('global')
+  }
+
+  function setupInspectorPanels() {
     const inspectorBody = elements.objectInspector.parentElement
     const globalTranslationTools = inspectorBody.querySelector('.global-translation-tools')
     const finalTestingTools = inspectorBody.querySelector('#final-testing-tools')
@@ -165,27 +182,32 @@
     const notesIndex = correctionNodes.findIndex(node => node.id === 'segment-note')
     correctionNodes.splice(notesIndex >= 0 ? notesIndex + 1 : correctionNodes.length, 0, segmentWorkspace)
     for (const node of currentNodes) node.classList.remove('inspector-scope--layout', 'inspector-scope--segments')
-    const globalTranslationAccordion = createInspectorAccordion(
-      'inspector-global-translation-accordion',
+    const globalTranslationPanel = createInspectorPanel(
+      'inspector-global-translation-panel',
+      'global',
       'Перевод всего документа',
       [globalTranslationTools],
     )
-    globalTranslationAccordion.classList.add('inspector-accordion--global')
-    const finalTestingAccordion = createInspectorAccordion(
-      'inspector-final-testing-accordion',
+    const finalTestingPanel = createInspectorPanel(
+      'inspector-testing-panel',
+      'testing',
       'Тестирование',
       [finalTestingTools],
     )
-    const objectAccordions = [
-      createInspectorAccordion('inspector-translation-accordion', 'Посегментный перевод', correctionNodes),
-      createInspectorAccordion('inspector-typography-accordion', 'Типографика', [typography]),
-      createInspectorAccordion('inspector-position-accordion', 'Расположение', [segmentActions, placement]),
+    const objectPanels = [
+      createInspectorPanel('inspector-translation-panel', 'translation', 'Посегментный перевод', correctionNodes),
+      createInspectorPanel('inspector-typography-panel', 'typography', 'Типографика', [typography]),
+      createInspectorPanel('inspector-position-panel', 'position', 'Расположение', [segmentActions, placement]),
     ]
-    const accordions = [globalTranslationAccordion, ...objectAccordions, finalTestingAccordion]
-    elements.objectInspector.replaceChildren(...objectAccordions)
-    inspectorBody.insertBefore(globalTranslationAccordion, elements.objectInspector)
-    elements.objectInspector.after(finalTestingAccordion)
+    elements.objectInspector.replaceChildren(...objectPanels)
+    inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
+    elements.objectInspector.after(finalTestingPanel)
     elements.inspectorSegmentWorkspace = segmentWorkspace
+    for (const button of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
+      button.addEventListener('click', () => setActiveInspectorPanel(button.dataset.inspectorPanel))
+    }
+    setActiveInspectorPanel(state.activeInspectorPanel)
+    refreshInspectorNavigation(false)
   }
 
   function showToast(message, isError = false) {
@@ -1358,9 +1380,8 @@
     const hasSelectedInstruction = candidates.some(object => (
       state.translationSelected.has(object.id) && String(object.translationInstruction || '').trim()
     ))
-    const hasDocumentInstruction = candidates.some(object => String(object.translationInstruction || '').trim())
     elements.reviseSelected.disabled = selectedCount === 0 || (!hasGlobalInstruction && !hasSelectedInstruction)
-    elements.reviseDocument.disabled = total === 0 || (!hasGlobalInstruction && !hasDocumentInstruction)
+    elements.reviseDocument.disabled = total === 0 || !hasGlobalInstruction
     elements.translate.textContent = selectedCount === total && total > 0
       ? `Перевести весь документ (${total})`
       : `Перевести выбранные (${selectedCount})`
@@ -2685,18 +2706,6 @@
     elements.sourcePanelToggle.setAttribute('aria-expanded', String(!state.sourceCollapsed))
   }
 
-  function setInspectorOpen(open) {
-    state.inspectorOpen = Boolean(open)
-    if (!state.inspectorOpen && elements.inspectorPanel.contains(document.activeElement)) elements.inspectorPanelToggle.focus()
-    elements.studioView.classList.toggle('is-inspector-collapsed', !state.inspectorOpen)
-    const label = state.inspectorOpen ? 'Скрыть инспектор' : 'Показать инспектор'
-    elements.inspectorPanelToggle.title = label
-    elements.inspectorPanelToggle.setAttribute('aria-label', label)
-    elements.inspectorPanelToggle.setAttribute('aria-expanded', String(state.inspectorOpen))
-    elements.inspectorPanelToggle.classList.toggle('is-active', state.inspectorOpen)
-    elements.inspectorPanel.setAttribute('aria-hidden', String(!state.inspectorOpen))
-  }
-
   function setZoom(nextZoom, anchorEvent) {
     const next = Math.min(2.5, Math.max(.25, nextZoom))
     if (next === state.zoom) return
@@ -2987,16 +2996,13 @@
       node.classList.toggle('is-primary-selected', node.dataset.id === primaryId)
     }
     const selection = selectedObjects()
+    refreshInspectorNavigation(selection.length > 0)
     refreshSegmentGridCoordinates(selection)
     renderInspectorSegmentWorkspace(selection)
     updateQaSegmentCheckAvailability()
     elements.studioView.classList.remove('is-inspector-empty')
     elements.emptyInspector.hidden = selection.length > 0
     elements.objectInspector.hidden = false
-    for (const content of elements.objectInspector.querySelectorAll('.inspector-accordion__content')) {
-      content.toggleAttribute('inert', selection.length === 0)
-    }
-    elements.objectInspector.classList.toggle('is-awaiting-selection', selection.length === 0)
     elements.merge.disabled = selection.length < 2 || new Set(selection.map(item => item.pageIndex)).size !== 1
     const onePage = selection.length > 0 && new Set(selection.map(item => item.pageIndex)).size === 1
     document.querySelectorAll('[data-align-selection]').forEach(button => {
@@ -3896,7 +3902,10 @@
       String(object.translationInstruction || '').trim() && (scope === 'document' || requested.has(object.id))
     ))
     const globalInstruction = String(elements.globalTranslationInstruction.value || '').trim()
-    if (!globalInstruction && !hasSegmentInstruction) {
+    if (scope === 'document' && !globalInstruction) {
+      return showToast('Введите инструкцию для AI', true)
+    }
+    if (scope !== 'document' && !globalInstruction && !hasSegmentInstruction) {
       return showToast('Добавьте инструкцию для AI или комментарий к сегменту', true)
     }
     state.scene.globalTranslationInstruction = globalInstruction
@@ -4917,7 +4926,6 @@
     elements.zoomFit.addEventListener('click', fitWidth)
     elements.zoomActual.addEventListener('click', () => setZoom(1))
     elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
-    elements.inspectorPanelToggle.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen))
     elements.canvasScroll.addEventListener('wheel', event => {
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
@@ -5116,7 +5124,6 @@
           return
         }
         setAppbarMenuOpen(false)
-        if (state.inspectorOpen) setInspectorOpen(false)
         cancelPointerAction()
         stopSourcePan()
         closeKnowledgeSuggestion()
@@ -5514,7 +5521,7 @@
     }
   }
 
-  setupInspectorAccordions()
+  setupInspectorPanels()
   bindEvents()
   ;(async () => {
     await Promise.all([loadServiceStatus(), loadInstructionPresets().catch(() => {})])
