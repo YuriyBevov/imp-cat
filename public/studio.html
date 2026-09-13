@@ -78,7 +78,7 @@
       <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
-    <main id="studio-view" class="studio is-segments-mode" hidden>
+    <main id="studio-view" class="studio is-segments-mode is-source-collapsed" hidden>
       <aside class="pages-panel">
         <div id="page-thumbnails" class="page-thumbnails"></div>
       </aside>
@@ -104,14 +104,14 @@
       <section class="workbench">
         <div class="workbench-toolbar">
           <div class="workbench-toolbar__source-toggle">
-            <button id="source-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть оригинал" aria-label="Скрыть оригинал" aria-expanded="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
+            <button id="source-panel-toggle" class="icon-button icon-button--compact" type="button" title="Показать оригинал" aria-label="Показать оригинал" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
           </div>
           <div class="app-container workbench-toolbar__inner">
             <div class="toolbar-group view-controls workbench-toolbar__layout-controls" aria-label="Режим, масштаб и сетка документа">
               <button id="view-layout-button" class="icon-button icon-button--compact" type="button" title="Макет" aria-label="Макет" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button>
               <button id="view-segments-button" class="icon-button icon-button--compact is-active" type="button" title="Сегменты" aria-label="Сегменты" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button>
               <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
-              <output id="zoom-output">80%</output>
+              <output id="zoom-output">100%</output>
               <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
               <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
               <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
@@ -358,16 +358,16 @@
                 </div>
               </div>
               <div class="layout-axis-group">
-                <span class="layout-card__label">Выравнивание относительно документа, X</span>
-                <div class="layout-button-grid" aria-label="Выравнивание относительно документа, X">
+                <span class="layout-card__label">Выравнивание относительно док-та, X</span>
+                <div class="layout-button-grid" aria-label="Выравнивание относительно док-та, X">
                   <button data-align-document="left" type="button">Лево</button>
                   <button data-align-document="center-x" type="button">Центр X</button>
                   <button data-align-document="right" type="button">Право</button>
                 </div>
               </div>
               <div class="layout-axis-group">
-                <span class="layout-card__label">Выравнивание относительно документа, Y</span>
-                <div class="layout-button-grid" aria-label="Выравнивание относительно документа, Y">
+                <span class="layout-card__label">Выравнивание относительно док-та, Y</span>
+                <div class="layout-button-grid" aria-label="Выравнивание относительно док-та, Y">
                   <button data-align-document="top" type="button">Верх</button>
                   <button data-align-document="center-y" type="button">Центр Y</button>
                   <button data-align-document="bottom" type="button">Низ</button>

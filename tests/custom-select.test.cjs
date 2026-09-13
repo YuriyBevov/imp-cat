@@ -23,7 +23,7 @@ test('BaseSelect enhances native selects and preserves their change contract', a
   let changes = 0
   select.addEventListener('change', () => { changes += 1 })
   trigger.click()
-  assert.equal(dom.window.document.querySelector('#size-options').style.width, '84px')
+  assert.equal(dom.window.document.querySelector('#size-options').style.width, '180px')
   const option = [...dom.window.document.querySelectorAll('.base-select__item')].find(item => item.dataset.value === '4')
   option.click()
   assert.equal(select.value, '4')
@@ -40,4 +40,7 @@ test('BaseSelect ships shared trigger, portal, option, and state styling', () =>
   for (const className of ['base-select', 'base-select__content', 'base-select__item', 'base-select__indicator']) {
     assert.match(styles, new RegExp(`\\.${className}`))
   }
+  assert.match(styles, /\.base-select__viewport\s*\{[^}]*overflow-x:\s*hidden;/)
+  assert.match(styles, /\.base-select__item\s*\{[^}]*min-width:\s*0;/)
+  assert.match(styles, /\.base-select__item > span:first-child\s*\{[^}]*overflow-wrap:\s*anywhere;/)
 })

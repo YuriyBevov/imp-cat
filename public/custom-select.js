@@ -14,13 +14,15 @@
     if (instance.content.hidden) return
     const rect = instance.trigger.getBoundingClientRect()
     const viewportPadding = 12
+    const minimumWidth = 180
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding
     const desiredHeight = Math.min(280, instance.content.scrollHeight || 280)
     const placeAbove = availableBelow < Math.min(160, desiredHeight) && rect.top > availableBelow
     const top = placeAbove
       ? Math.max(viewportPadding, rect.top - desiredHeight - 4)
       : Math.min(window.innerHeight - viewportPadding, rect.bottom + 4)
-    const width = Math.max(rect.width, 1)
+    const availableWidth = Math.max(1, window.innerWidth - viewportPadding * 2)
+    const width = Math.min(availableWidth, Math.max(rect.width, minimumWidth))
     const left = Math.min(window.innerWidth - width - viewportPadding, Math.max(viewportPadding, rect.left))
     Object.assign(instance.content.style, { left: `${left}px`, top: `${top}px`, width: `${width}px` })
   }

@@ -79,7 +79,7 @@
   const state = {
     metadata: null,
     scene: null,
-    zoom: .8,
+    zoom: 1,
     sourceZoom: .5,
     sourceLightboxZoom: 1,
     sourceRenderedPage: null,
@@ -97,7 +97,7 @@
     lastTextSelection: null,
     focusedTranslationUnitId: null,
     viewMode: 'segments',
-    sourceCollapsed: false,
+    sourceCollapsed: true,
     inspectorOpen: true,
     sourcePanCleanup: null,
     pendingWorkbenchZoom: null,
@@ -911,6 +911,7 @@
             state.selected.add(object.id)
             refreshSelection()
           })
+          row.append(createSegmentRowMeta(object))
           const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
           if (selectable) {
             const selector = document.createElement('label')
@@ -940,6 +941,8 @@
           row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
           row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
           row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
+          const workspace = createSegmentWorkspace(object)
+          if (workspace) row.append(workspace)
           list.append(row)
         }
         surface.append(heading, columnHeadings, list)
@@ -1283,6 +1286,21 @@
   function hasTranslationSource(object) {
     return String(object?.sourceText || '').trim()
       || object?.type === 'signature' || object?.type === 'stamp' || object?.type === 'seal'
+  }
+
+  function setObjectType(object, type) {
+    object.type = type
+    if (object.type === 'table_cell') {
+      object.tableId ||= `manual-table-page-${object.pageIndex + 1}`
+      object.rowIndex = Number.isInteger(object.rowIndex) ? object.rowIndex : 0
+      object.columnIndex = Number.isInteger(object.columnIndex) ? object.columnIndex : 0
+      object.rowSpan ||= 1
+      object.columnSpan ||= 1
+    }
+    if (object.type === 'signature') {
+      object.translation = servicePlaceholder(object.type, object.sourceText)
+      object.translationUnits = []
+    } else if (!object.translation) object.translation = servicePlaceholder(object.type, object.sourceText)
   }
 
   function translationCandidates() {
@@ -1958,6 +1976,84 @@
     return control
   }
 
+  function createSegmentRowMeta(object) {
+    const meta = document.createElement('div')
+    meta.className = 'segment-translation-row__meta'
+
+    const notes = document.createElement('div')
+    notes.className = 'segment-agent-notes'
+    const agentNotes = String(object.agentNotes || '').trim()
+    notes.classList.toggle('is-empty', !agentNotes)
+    if (agentNotes) {
+      const warning = document.createElement('span')
+      warning.className = 'segment-agent-notes__icon'
+      warning.innerHTML = iconMarkup('alert-circle')
+      warning.title = 'Требуется внимание'
+      const notesText = document.createElement('span')
+      notesText.textContent = agentNotes
+      notes.append(warning, notesText)
+    } else notes.setAttribute('aria-hidden', 'true')
+
+    const confidence = document.createElement('div')
+    confidence.className = 'segment-row-confidence'
+    const confidenceLabel = document.createElement('span')
+    confidenceLabel.textContent = 'Уверенность распознавания'
+    const confidenceValue = document.createElement('strong')
+    confidenceValue.textContent = `${Math.round(object.confidence * 100)}%`
+    confidence.append(confidenceLabel, confidenceValue)
+
+    const type = document.createElement('label')
+    type.className = 'segment-row-type'
+    type.addEventListener('pointerdown', event => event.stopPropagation())
+    const typeLabelText = document.createElement('span')
+    typeLabelText.textContent = 'Тип содержимого'
+    const select = document.createElement('select')
+    select.setAttribute('aria-label', `Тип содержимого сегмента ${object.readingOrder || object.id}`)
+    for (const sourceOption of elements.objectType.options) select.append(sourceOption.cloneNode(true))
+    select.value = object.type
+    select.addEventListener('change', () => applySelectionChange(
+      selectedObject => setObjectType(selectedObject, select.value), true, false, [object],
+    ))
+    type.append(typeLabelText, select)
+
+    const controls = document.createElement('div')
+    controls.className = 'segment-translation-row__meta-controls'
+    controls.append(confidence, type)
+    meta.append(notes, controls)
+    return meta
+  }
+
+  function createAiTranslationAlternativeControl(object) {
+    const aiAlternative = aiAlternativeForObject(object)
+    if (!aiAlternative || aiAlternative === object.translation) return null
+    const alternative = document.createElement('aside')
+    alternative.className = 'ai-translation-alternative'
+    const label = document.createElement('strong')
+    label.textContent = 'Первоначальный вариант ИИ'
+    const value = document.createElement('p')
+    value.textContent = aiAlternative
+    const use = document.createElement('button')
+    use.className = 'button'
+    use.type = 'button'
+    use.textContent = 'Использовать перевод ИИ'
+    use.addEventListener('click', event => { event.stopPropagation(); useAiAlternative(object) })
+    alternative.append(label, value, use)
+    return alternative
+  }
+
+  function createSegmentWorkspace(object) {
+    const controls = []
+    if (isTranslatableType(object.type)) controls.push(createSegmentInstructionControl(object))
+    const alternative = createAiTranslationAlternativeControl(object)
+    if (alternative) controls.push(alternative)
+    if (!controls.length) return null
+    const workspace = document.createElement('section')
+    workspace.className = 'segment-translation-row__workspace'
+    workspace.setAttribute('aria-label', `Инструменты сегмента ${object.readingOrder || object.id}`)
+    workspace.append(...controls)
+    return workspace
+  }
+
   function createObjectElement(object, requestedField = null) {
     const displayField = requestedField || objectOutputField(object)
     const editField = requestedField || 'translation'
@@ -2045,25 +2141,6 @@
     resize.className = 'scene-object__resize'
     resize.addEventListener('pointerdown', event => beginResize(event, object.id))
     node.append(badge, handle, content)
-    if (requestedField === 'translation' && state.viewMode === 'segments' && isTranslatableType(object.type)) {
-      node.append(createSegmentInstructionControl(object))
-    }
-    const aiAlternative = requestedField === 'translation' ? aiAlternativeForObject(object) : ''
-    if (aiAlternative && aiAlternative !== object.translation) {
-      const alternative = document.createElement('aside')
-      alternative.className = 'ai-translation-alternative'
-      const label = document.createElement('strong')
-      label.textContent = 'Первоначальный вариант ИИ'
-      const value = document.createElement('p')
-      value.textContent = aiAlternative
-      const use = document.createElement('button')
-      use.className = 'button'
-      use.type = 'button'
-      use.textContent = 'Использовать перевод ИИ'
-      use.addEventListener('click', event => { event.stopPropagation(); useAiAlternative(object) })
-      alternative.append(label, value, use)
-      node.append(alternative)
-    }
     node.append(resize)
     return node
   }
@@ -4419,20 +4496,7 @@
   }
 
   function bindInspector() {
-    elements.objectType.addEventListener('change', () => applySelectionChange(object => {
-      object.type = elements.objectType.value
-      if (object.type === 'table_cell') {
-        object.tableId ||= `manual-table-page-${object.pageIndex + 1}`
-        object.rowIndex = Number.isInteger(object.rowIndex) ? object.rowIndex : 0
-        object.columnIndex = Number.isInteger(object.columnIndex) ? object.columnIndex : 0
-        object.rowSpan ||= 1
-        object.columnSpan ||= 1
-      }
-      if (object.type === 'signature') {
-        object.translation = servicePlaceholder(object.type, object.sourceText)
-        object.translationUnits = []
-      } else if (!object.translation) object.translation = servicePlaceholder(object.type, object.sourceText)
-    }))
+    elements.objectType.addEventListener('change', () => applySelectionChange(object => setObjectType(object, elements.objectType.value)))
     elements.tableId.addEventListener('change', () => applySelectionChange(object => { if (object.type === 'table_cell') object.tableId = elements.tableId.value.trim() || `manual-table-page-${object.pageIndex + 1}` }))
     const tableNumbers = [
       [elements.tableRow, 'rowIndex', 0, 999],

@@ -170,8 +170,8 @@ test('studio exposes the complete source-to-export workflow', () => {
   for (const label of [
     'Выровнять друг относительно друга, X',
     'Выровнять друг относительно друга, Y',
-    'Выравнивание относительно документа, X',
-    'Выравнивание относительно документа, Y',
+    'Выравнивание относительно док-та, X',
+    'Выравнивание относительно док-та, Y',
   ]) {
     const group = studioDocument.querySelector(`[aria-label="${label}"]`)
     assert.ok(group)
@@ -244,7 +244,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(html, /id="view-layout-button"[^>]*class="icon-button[^>]*[\s\S]*?icon-grid/)
   assert.match(html, /id="view-segments-button"[^>]*class="icon-button[^>]*[\s\S]*?icon-list-rows/)
   assert.match(html, /class="toolbar-group view-controls workbench-toolbar__layout-controls"[\s\S]*?id="view-layout-button"[\s\S]*?id="zoom-out"[\s\S]*?id="zoom-fit"[\s\S]*?id="grid-size"/)
-  assert.match(html, /id="source-panel-toggle"[^>]*class="icon-button[^>]*is-active[^>]*[\s\S]*?icon-layout/)
+  assert.match(html, /id="studio-view"[^>]*class="studio is-segments-mode is-source-collapsed"/)
+  assert.match(html, /id="source-panel-toggle"[^>]*class="icon-button icon-button--compact"[^>]*aria-label="Показать оригинал"[^>]*aria-expanded="false"[\s\S]*?icon-layout/)
+  assert.match(html, /id="zoom-output">100%<\/output>/)
   assert.ok(html.indexOf('id="source-panel-toggle"') < html.indexOf('id="view-layout-button"'))
   assert.match(html, /class="workbench-toolbar__source-toggle"[\s\S]*?id="source-panel-toggle"/)
   assert.doesNotMatch(html, /class="inspector-panel__header"/)
@@ -542,8 +544,10 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.match(uiKit, /\.base-checkbox__input:indeterminate \+ \.base-checkbox__control/)
   assert.match(styles, /\.studio:not\(\.is-segments-mode\) \.inspector-scope--segments/)
   assert.match(styles, /\.studio\.is-segments-mode \.inspector-scope--layout/)
-  assert.match(styles, /\.studio-page--segments \.scene-object--source \.scene-object__badge/)
+  assert.doesNotMatch(styles, /\.studio-page--segments \.scene-object--source \.scene-object__badge/)
   assert.match(styles, /\.studio-page--segments \.scene-object__badge\s*\{[^}]*display:\s*none\s*!important/)
+  assert.match(iconSprite, /<symbol id="icon-alert-circle"/)
+  assert.match(uiComponentsHtml, /icon-alert-circle/)
   assert.doesNotMatch(styles, /--minimum-checkbox-column-width/)
   assert.match(styles, /\.segment-translation-row\s*\{[^}]*background:\s*#f2f4f7/)
   assert.match(styles, /\.segment-translation-row\.is-translation-selected\s*\{[^}]*background:\s*#e7ebf5/)
@@ -933,7 +937,12 @@ test('segments view follows visual order and supports partial or full batch tran
     objects: [
       makeObject('top-right', 'Top right', 430, 43, 1),
       makeObject('second-left', 'Second left', 40, 100, 2),
-      makeObject('top-left', 'Top left', 40, 40, 99),
+      {
+        ...makeObject('top-left', 'Top left', 40, 40, 99),
+        confidence: .71,
+        agentNotes: 'Проверьте распознанное имя по оригиналу.',
+        style: { fontFamily: 'Times New Roman', fontSizePx: 24, fontWeight: 700, fontStyle: 'italic', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      },
       makeObject('second-right', 'Second right', 430, 104, 3),
       { ...makeObject('signature', '', 40, 170, 4), type: 'signature', translation: '/Подпись/' },
     ],
@@ -970,6 +979,9 @@ test('segments view follows visual order and supports partial or full batch tran
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#view-segments-button').click()
+  assert.equal(dom.window.document.querySelector('#zoom-output').value, '100%')
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), true)
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').getAttribute('aria-expanded'), 'false')
 
   const reanalyzeModal = dom.window.document.querySelector('#reanalyze-confirm-modal')
   assert.equal(reanalyzeModal.hidden, true)
@@ -984,7 +996,39 @@ test('segments view follows visual order and supports partial or full batch tran
   const order = [...dom.window.document.querySelectorAll('.segments-list .scene-object--source')].map(node => node.dataset.id)
   assert.deepEqual(order, ['top-left', 'top-right', 'second-left', 'second-right', 'signature'])
   assert.equal(dom.window.document.querySelectorAll('.segments-list .segment-translation-row').length, 5)
+  assert.equal(dom.window.document.querySelectorAll('.segment-translation-row__meta').length, 5)
+  const firstSegmentRow = dom.window.document.querySelector('.scene-object--source[data-id="top-left"]').closest('.segment-translation-row')
+  const firstSegmentMeta = firstSegmentRow.querySelector('.segment-translation-row__meta')
+  assert.match(firstSegmentMeta.querySelector('.segment-agent-notes').textContent, /Проверьте распознанное имя/)
+  assert.equal(firstSegmentMeta.querySelector('.segment-agent-notes use').getAttribute('href'), '/icons.svg#icon-alert-circle')
+  assert.equal(firstSegmentMeta.querySelector('.segment-agent-notes').firstElementChild.className, 'segment-agent-notes__icon')
+  assert.equal(firstSegmentMeta.querySelector('.segment-row-confidence strong').textContent, '71%')
+  assert.equal(firstSegmentMeta.querySelector('.segment-row-type select').value, 'text')
+  const typeTriggerProbe = dom.window.document.createElement('button')
+  firstSegmentMeta.querySelector('.segment-row-type').append(typeTriggerProbe)
+  const typePointerDown = new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })
+  typeTriggerProbe.dispatchEvent(typePointerDown)
+  assert.equal(typePointerDown.defaultPrevented, false)
+  typeTriggerProbe.remove()
+  assert.equal(firstSegmentMeta.querySelector('.segment-translation-row__meta-controls').children.length, 2)
+  const rowWithoutNotes = dom.window.document.querySelector('.scene-object--source[data-id="top-right"]').closest('.segment-translation-row')
+  assert.equal(rowWithoutNotes.querySelector('.segment-agent-notes').hidden, false)
+  assert.equal(rowWithoutNotes.querySelector('.segment-agent-notes').classList.contains('is-empty'), true)
+  assert.equal(rowWithoutNotes.querySelector('.segment-agent-notes').children.length, 0)
+  assert.equal(rowWithoutNotes.querySelector('.segment-agent-notes').getAttribute('aria-hidden'), 'true')
+  assert.ok(rowWithoutNotes.querySelector('.segment-translation-row__meta-controls .segment-row-confidence'))
+  assert.ok(rowWithoutNotes.querySelector('.segment-translation-row__meta-controls .segment-row-type'))
+  assert.equal(firstSegmentRow.querySelector('.scene-object--translation .segment-ai-instruction'), null)
+  assert.ok(firstSegmentRow.querySelector('.segment-translation-row__workspace > .segment-ai-instruction'))
   assert.equal(dom.window.document.querySelectorAll('.segment-ai-instruction textarea').length, 5)
+  assert.match(styles, /\.segment-translation-row__meta\s*\{[^}]*grid-column:\s*2 \/ -1;[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(styles, /\.segment-translation-row__meta-controls\s*\{[^}]*grid-column:\s*2;/)
+  assert.match(styles, /\.segment-translation-row__workspace\s*\{[^}]*grid-column:\s*2 \/ -1/)
+  assert.match(styles, /\.studio-page--segments \.scene-object\s*\{[^}]*min-height:\s*120px;/)
+  assert.match(styles, /\.studio-page--segments \.scene-object__content\s*\{[^}]*font-family:\s*Arial, sans-serif !important;[^}]*font-size:\s*16px !important;[^}]*font-weight:\s*400 !important;[^}]*font-style:\s*normal !important/)
+  assert.match(styles, /\.studio-page--segments \.scene-object__content\s*\{[^}]*min-height:\s*120px;/)
+  assert.match(styles, /\.scene-object--translation\.is-untranslated \.scene-object__content:empty::before\s*\{[^}]*content:\s*"Поле для перевода";[^}]*font:\s*400 14px\/1\.35 Arial, sans-serif/)
+  assert.doesNotMatch(styles, /\.studio-page--segments \.scene-object--translation\.is-untranslated \.scene-object__content:empty::before\s*\{[^}]*font-style:\s*italic/)
   const globalPresetSelect = dom.window.document.querySelector('#instruction-preset-select')
   const globalPresetSave = dom.window.document.querySelector('#instruction-preset-save')
   const reviseDocument = dom.window.document.querySelector('#revise-document-button')
@@ -1133,6 +1177,13 @@ test('segments view follows visual order and supports partial or full batch tran
   assert.equal(translationRequests.length, 2)
   assert.equal(translationRequests[1].objectIds.length, 4)
   assert.equal(translationRequests[1].objectIds.includes(focusedCheckbox.dataset.translationSelect), false)
+  const inlineType = dom.window.document.querySelector('.scene-object--source[data-id="top-left"]')
+    .closest('.segment-translation-row').querySelector('.segment-row-type select')
+  inlineType.value = 'stamp'
+  inlineType.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+  assert.equal(scene.objects.find(object => object.id === 'top-left').type, 'stamp')
+  assert.equal(dom.window.document.querySelector('.scene-object--source[data-id="top-left"]')
+    .closest('.segment-translation-row').querySelector('.segment-row-type select').value, 'stamp')
   dom.window.close()
 })
 
@@ -1259,15 +1310,18 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(edgeTop + Number.parseFloat(edgeObject.style.height) <= 1083)
   dom.window.document.querySelector('#undo-button').click()
 
-  dom.window.document.querySelector('#source-panel-toggle').click()
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), true)
   assert.equal(dom.window.document.querySelector('#source-panel-toggle').getAttribute('aria-label'), 'Показать оригинал')
   assert.equal(dom.window.document.querySelector('#source-panel-toggle').classList.contains('is-active'), false)
-  assert.match(dom.window.document.querySelector('#source-panel-toggle use').getAttribute('href'), /icon-layout$/)
   dom.window.document.querySelector('#source-panel-toggle').click()
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), false)
   assert.equal(dom.window.document.querySelector('#source-panel-toggle').getAttribute('aria-label'), 'Скрыть оригинал')
   assert.equal(dom.window.document.querySelector('#source-panel-toggle').classList.contains('is-active'), true)
+  assert.match(dom.window.document.querySelector('#source-panel-toggle use').getAttribute('href'), /icon-layout$/)
+  dom.window.document.querySelector('#source-panel-toggle').click()
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), true)
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').getAttribute('aria-label'), 'Показать оригинал')
+  assert.equal(dom.window.document.querySelector('#source-panel-toggle').classList.contains('is-active'), false)
 
   dom.window.document.querySelector('#source-preview-open').click()
   assert.equal(dom.window.document.querySelector('#source-preview-lightbox').hidden, false)
@@ -2009,6 +2063,8 @@ test('segments view highlights knowledge matches and keeps the AI translation as
   assert.equal(scene.objects[0].translationUnits[0].activeTranslationSource, 'manual')
   assert.equal(scene.objects[0].translationUnits[0].translation, preservedTranslation)
   const alternative = dom.window.document.querySelector('.ai-translation-alternative')
+  assert.ok(alternative.parentElement.classList.contains('segment-translation-row__workspace'))
+  assert.equal(dom.window.document.querySelector('.scene-object--translation .ai-translation-alternative'), null)
   assert.match(alternative.textContent, /СРОЧНАЯ/)
   alternative.querySelector('button').click()
   assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').textContent, 'СРОЧНАЯ: доверенность действительна.')
