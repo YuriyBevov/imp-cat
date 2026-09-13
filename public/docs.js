@@ -184,7 +184,7 @@
         return link
       }))
     } catch (error) {
-      content.innerHTML = `<p class="docs-error">${escapeHtml(error.message)}</p>`
+      content.innerHTML = `<p class="note note--danger docs-error">${escapeHtml(error.message)}</p>`
       toc.replaceChildren()
     }
   }

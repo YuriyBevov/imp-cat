@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const { applyLayoutReview, buildLayoutReviewPrompt, normalizeLayoutReview } = require('../lib/layout-review-agent.cjs')
 
 function fixture() {
-  const page = { index: 0, widthPx: 794, heightPx: 1123 }
+  const page = { index: 0, widthPx: 794, heightPx: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }
   const objects = [{
     id: 'stamp-1', pageIndex: 0, type: 'stamp', sourceText: 'STAMP', translation: '/Штамп: STAMP/',
     x: 100, y: 100, width: 180, height: 40,
@@ -27,7 +27,7 @@ test('layout review normalizes only existing object IDs', () => {
   assert.match(buildLayoutReviewPrompt(page, objects), /ОРИГИНАЛ|оригинал/i)
 })
 
-test('layout review applies confident geometry and leaves doubtful changes as recommendations', () => {
+test('layout review applies confident position and typography but preserves user-controlled size', () => {
   const { page, objects } = fixture()
   const scene = { pages: [page], objects }
   const result = applyLayoutReview(scene, [{ pageIndex: 0, adjustments: [
@@ -35,7 +35,11 @@ test('layout review applies confident geometry and leaves doubtful changes as re
     { objectId: 'stamp-1', x: 10, y: 10, width: null, height: null, fontSizePx: null, textAlign: null, confidence: 0.4, reason: 'Uncertain' },
   ] }])
   assert.equal(objects[0].x, 300)
+  assert.equal(objects[0].y, 250)
+  assert.equal(objects[0].width, 180)
+  assert.equal(objects[0].height, 40)
   assert.equal(objects[0].style.fontSizePx, 12)
   assert.equal(result.applied.length, 1)
-  assert.equal(result.recommendations.length, 1)
+  assert.equal(result.recommendations.length, 2)
+  assert.match(result.recommendations[0].reason, /только пользователем/)
 })

@@ -13,7 +13,7 @@
     appbarMenu: $('#appbar-menu'), appbarMenuButton: $('#appbar-menu-button'), appbarActionsMenu: $('#appbar-actions-menu'),
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
-    viewLayout: $('#view-layout-button'), viewSegments: $('#view-segments-button'), sourcePanelToggle: $('#source-panel-toggle'),
+    sourcePanelToggle: $('#source-panel-toggle'),
     inspectorPanel: $('#inspector-panel'), inspectorPanelToggle: $('#inspector-panel-toggle'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
     gridSize: $('#grid-size'),
@@ -33,10 +33,10 @@
     instructionPresetSave: $('#instruction-preset-save'), instructionPresetEdit: $('#instruction-preset-edit'), instructionPresetDelete: $('#instruction-preset-delete'),
     instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
     instructionPresetEditSave: $('#instruction-preset-edit-save'),
-    emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'), addObject: $('#add-object-button'),
+    emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'),
     objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
-    sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), agentNotes: $('#agent-notes'),
+    sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), segmentNote: $('#segment-note'),
     translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
     translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
     translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
@@ -96,7 +96,6 @@
     serviceStatus: null,
     lastTextSelection: null,
     focusedTranslationUnitId: null,
-    viewMode: 'segments',
     sourceCollapsed: true,
     inspectorOpen: true,
     sourcePanCleanup: null,
@@ -118,12 +117,77 @@
     instructionPresets: [],
   }
 
+  function createInspectorAccordion(id, title, nodes, open = true) {
+    const accordion = document.createElement('details')
+    accordion.id = id
+    accordion.className = 'inspector-accordion'
+    accordion.open = open
+    const summary = document.createElement('summary')
+    summary.className = 'inspector-accordion__summary'
+    const label = document.createElement('span')
+    label.textContent = title
+    const indicator = document.createElement('span')
+    indicator.className = 'inspector-accordion__indicator'
+    indicator.innerHTML = iconMarkup('chevron-down')
+    summary.append(label, indicator)
+    const content = document.createElement('div')
+    content.className = 'inspector-accordion__content'
+    content.append(...nodes)
+    accordion.append(summary, content)
+    return accordion
+  }
+
+  function setupInspectorAccordions() {
+    const inspectorBody = elements.objectInspector.parentElement
+    const globalTranslationTools = inspectorBody.querySelector('.global-translation-tools')
+    const finalTestingTools = inspectorBody.querySelector('#final-testing-tools')
+    const currentNodes = [...elements.objectInspector.children]
+    const typography = elements.objectInspector.querySelector('.typography-card')
+    const segmentActions = elements.objectInspector.querySelector('.segment-actions-card')
+    const placement = currentNodes.find(node => (
+      node.classList.contains('layout-card') && node !== typography && node !== segmentActions
+    ))
+    const correctionNodes = currentNodes.filter(node => ![typography, segmentActions, placement].includes(node))
+    const segmentWorkspace = document.createElement('div')
+    segmentWorkspace.id = 'inspector-segment-workspace'
+    segmentWorkspace.className = 'inspector-segment-workspace'
+    const notesIndex = correctionNodes.findIndex(node => node.id === 'segment-note')
+    correctionNodes.splice(notesIndex >= 0 ? notesIndex + 1 : correctionNodes.length, 0, segmentWorkspace)
+    for (const node of currentNodes) node.classList.remove('inspector-scope--layout', 'inspector-scope--segments')
+    const globalTranslationAccordion = createInspectorAccordion(
+      'inspector-global-translation-accordion',
+      'Перевод всего документа',
+      [globalTranslationTools],
+    )
+    globalTranslationAccordion.classList.add('inspector-accordion--global')
+    const finalTestingAccordion = createInspectorAccordion(
+      'inspector-final-testing-accordion',
+      'Тестирование',
+      [finalTestingTools],
+    )
+    const objectAccordions = [
+      createInspectorAccordion('inspector-translation-accordion', 'Посегментный перевод', correctionNodes),
+      createInspectorAccordion('inspector-typography-accordion', 'Типографика', [typography]),
+      createInspectorAccordion('inspector-position-accordion', 'Расположение', [segmentActions, placement]),
+    ]
+    const accordions = [globalTranslationAccordion, ...objectAccordions, finalTestingAccordion]
+    elements.objectInspector.replaceChildren(...objectAccordions)
+    inspectorBody.insertBefore(globalTranslationAccordion, elements.objectInspector)
+    elements.objectInspector.after(finalTestingAccordion)
+    elements.inspectorSegmentWorkspace = segmentWorkspace
+  }
+
   function showToast(message, isError = false) {
     clearTimeout(state.toastTimer)
     elements.toast.textContent = message
     elements.toast.classList.toggle('is-error', isError)
     elements.toast.classList.add('is-visible')
     state.toastTimer = setTimeout(() => elements.toast.classList.remove('is-visible'), 4200)
+  }
+
+  function setNoteVariant(element, variant) {
+    for (const name of ['muted', 'info', 'success', 'warning', 'danger']) element.classList.remove(`note--${name}`)
+    element.classList.add(`note--${variant}`)
   }
 
   async function api(url, options = {}) {
@@ -169,7 +233,7 @@
     elements.removeAitunnelKey.hidden = !settings.keyConfigured
     if (settings.keyPersisted || !settings.keyConfigured) elements.aitunnelPersistKey.checked = true
     const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelConfigured
-    elements.aiProviderStatus.classList.toggle('is-error', !activeReady)
+    setNoteVariant(elements.aiProviderStatus, activeReady ? 'success' : 'danger')
     elements.aiProviderStatus.textContent = settings.activeProvider === 'codex'
       ? settings.codexConfigured
         ? 'Codex готов: распознавание, проверка и перевод идут через текущий вход ChatGPT.'
@@ -236,7 +300,7 @@
       renderAitunnelModels(Array.isArray(catalog.models) ? catalog.models : [], catalog.authenticationError)
     } catch (error) {
       elements.aitunnelModelNote.textContent = `Не удалось загрузить каталог: ${error.message}`
-      elements.aiProviderStatus.classList.add('is-error')
+      setNoteVariant(elements.aiProviderStatus, 'danger')
       elements.aiProviderStatus.textContent = error.message
     } finally {
       elements.aitunnelModel.disabled = false
@@ -245,12 +309,13 @@
 
   async function openProviderSettings() {
     elements.aiSettingsModal.hidden = false
+    setNoteVariant(elements.aiProviderStatus, 'info')
     elements.aiProviderStatus.textContent = 'Проверяем настройки…'
     try {
       await loadProviderSettings()
       await loadAitunnelModels()
     } catch (error) {
-      elements.aiProviderStatus.classList.add('is-error')
+      setNoteVariant(elements.aiProviderStatus, 'danger')
       elements.aiProviderStatus.textContent = error.message
     }
   }
@@ -288,7 +353,7 @@
       closeProviderSettings()
     } catch (error) {
       elements.aitunnelApiKey.value = ''
-      elements.aiProviderStatus.classList.add('is-error')
+      setNoteVariant(elements.aiProviderStatus, 'danger')
       elements.aiProviderStatus.textContent = error.message
     } finally {
       elements.saveAiSettings.disabled = false
@@ -297,7 +362,7 @@
 
   async function testAiConnection() {
     elements.testAiConnection.disabled = true
-    elements.aiProviderStatus.classList.remove('is-error')
+    setNoteVariant(elements.aiProviderStatus, 'info')
     elements.aiProviderStatus.textContent = 'Проверяем ключ и доступность модели…'
     try {
       const shouldPersist = elements.aiProviderSelect.value === 'aitunnel' && elements.aitunnelPersistKey.checked
@@ -309,12 +374,12 @@
       const result = await response.json()
       await loadProviderSettings()
       await loadServiceStatus()
-      elements.aiProviderStatus.classList.remove('is-error')
+      setNoteVariant(elements.aiProviderStatus, 'success')
       elements.aiProviderStatus.textContent = result.message
       showToast('Подключение работает')
     } catch (error) {
       elements.aitunnelApiKey.value = ''
-      elements.aiProviderStatus.classList.add('is-error')
+      setNoteVariant(elements.aiProviderStatus, 'danger')
       elements.aiProviderStatus.textContent = error.message
     } finally {
       elements.testAiConnection.disabled = false
@@ -765,6 +830,7 @@
     state.history = []
     state.future = []
     state.activePage = 0
+    state.zoom = 1
     state.sourceRenderedPage = null
     if (activeTab) {
       activeTab.documentId = documentData.metadata.id
@@ -797,7 +863,13 @@
     elements.exportPdf.disabled = false
     setView('studio')
     renderDocument()
-    requestAnimationFrame(() => { fitWidth(); fitSourceWidth() })
+    requestAnimationFrame(() => {
+      if (fitObjectsToRenderedContent(state.scene.objects, true)) {
+        rebuildClientTables()
+        scheduleSave()
+      }
+      fitSourceWidth()
+    })
     refreshUndoButtons()
   }
 
@@ -853,12 +925,6 @@
     rebuildClientTables()
     renderThumbnails()
     elements.gridSize.value = currentGridDensity()
-    elements.viewLayout.classList.toggle('is-active', state.viewMode === 'layout')
-    elements.viewSegments.classList.toggle('is-active', state.viewMode === 'segments')
-    elements.viewLayout.setAttribute('aria-pressed', String(state.viewMode === 'layout'))
-    elements.viewSegments.setAttribute('aria-pressed', String(state.viewMode === 'segments'))
-    elements.studioView.classList.toggle('is-segments-mode', state.viewMode === 'segments')
-    elements.canvas.classList.toggle('is-segments-view', state.viewMode === 'segments')
     elements.canvas.replaceChildren()
     for (const page of state.scene.pages) {
       const shell = document.createElement('div')
@@ -866,148 +932,55 @@
       shell.dataset.pageIndex = page.index
       const surface = document.createElement('section')
       surface.className = 'studio-page'
-      if (state.viewMode === 'segments') surface.classList.add('studio-page--segments')
       surface.dataset.pageIndex = page.index
       surface.style.width = `${page.widthPx}px`
-      surface.style.height = state.viewMode === 'segments' ? 'auto' : `${page.heightPx}px`
+      surface.style.height = `${page.heightPx}px`
       applyGridToSurface(surface)
       surface.addEventListener('pointerdown', beginMarquee)
 
       const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
-      if (state.viewMode === 'segments') {
-        const heading = document.createElement('div')
-        heading.className = 'segments-page-heading'
-        heading.innerHTML = `<span>Страница ${page.index + 1}</span><small>${pageObjects.length} сегм.</small>`
-        const list = document.createElement('div')
-        list.className = 'segments-list'
-        const columnHeadings = document.createElement('div')
-        columnHeadings.className = 'segments-column-headings'
-        const selectPage = document.createElement('button')
-        selectPage.className = 'compact-button segments-select-all'
-        selectPage.type = 'button'
-        selectPage.textContent = 'Все'
-        selectPage.title = `Выбрать все сегменты страницы ${page.index + 1}`
-        selectPage.setAttribute('aria-label', selectPage.title)
-        selectPage.setAttribute('aria-pressed', 'false')
-        selectPage.dataset.pageIndex = String(page.index)
-        selectPage.addEventListener('pointerdown', event => event.stopPropagation())
-        selectPage.addEventListener('click', event => {
-          event.stopPropagation()
-          togglePageSegmentSelection(page.index)
-        })
-        const sourceHeading = document.createElement('span')
-        sourceHeading.textContent = 'Распознанный исходник'
-        const translationHeading = document.createElement('span')
-        translationHeading.textContent = 'Перевод'
-        columnHeadings.append(selectPage, sourceHeading, translationHeading)
-        for (const object of visualReadingOrder(pageObjects)) {
-          const row = document.createElement('div')
-          row.className = 'segment-translation-row'
-          row.addEventListener('pointerdown', event => {
-            if (event.button !== 0 || event.target !== row) return
-            event.stopPropagation()
-            if (!state.selected.has(object.id) && !state.translationSelected.has(object.id)) return
-            state.selected.delete(object.id)
-            state.selected.add(object.id)
-            refreshSelection()
-          })
-          row.append(createSegmentRowMeta(object))
-          const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
-          if (selectable) {
-            const selector = document.createElement('label')
-            selector.className = 'segment-translation-selector'
-            const checkbox = document.createElement('input')
-            checkbox.type = 'checkbox'
-            checkbox.className = 'segment-translation-selector__input'
-            checkbox.dataset.translationSelect = object.id
-            checkbox.checked = state.translationSelected.has(object.id)
-            checkbox.setAttribute('aria-label', `Выбрать сегмент ${object.readingOrder || object.id} для перевода`)
-            selector.addEventListener('pointerdown', event => event.stopPropagation())
-            checkbox.addEventListener('change', () => {
-              changeTranslationSegmentSelection(object.id, checkbox, selector)
-            })
-            const label = document.createElement('span')
-            label.className = 'segment-translation-selector__label'
-            label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
-            label.setAttribute('aria-hidden', 'true')
-            selector.append(checkbox, label)
-            row.append(selector)
-          } else {
-            const placeholder = document.createElement('span')
-            placeholder.className = 'segment-translation-selector is-disabled'
-            placeholder.title = 'Этот тип объекта не переводится автоматически'
-            row.append(placeholder)
-          }
-          row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
-          row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
-          row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
-          const workspace = createSegmentWorkspace(object)
-          if (workspace) row.append(workspace)
-          list.append(row)
-        }
-        surface.append(heading, columnHeadings, list)
-      } else {
-        const boundary = document.createElement('div')
-        boundary.className = 'content-boundary'
-        Object.assign(boundary.style, {
-          left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
-          width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
-        })
-        const boundaryResize = document.createElement('button')
-        boundaryResize.className = 'content-boundary__resize'
-        boundaryResize.type = 'button'
-        boundaryResize.title = 'Изменить высоту рабочей области документа'
-        boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
-        boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
-        boundary.append(boundaryResize)
-        surface.append(boundary)
+      const boundary = document.createElement('div')
+      boundary.className = 'content-boundary'
+      Object.assign(boundary.style, {
+        left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
+        width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
+      })
+      const boundaryResize = document.createElement('button')
+      boundaryResize.className = 'content-boundary__resize'
+      boundaryResize.type = 'button'
+      boundaryResize.title = 'Изменить высоту рабочей области документа'
+      boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
+      boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
+      boundary.append(boundaryResize)
+      surface.append(boundary)
 
-        for (const table of state.scene.tables || []) {
-          if (table.pageIndex !== page.index) continue
-          const tableBoundary = document.createElement('div')
-          tableBoundary.className = 'table-structure-boundary'
-          tableBoundary.title = `Структурная таблица: ${table.rowCount} × ${table.columnCount}`
-          Object.assign(tableBoundary.style, {
-            left: `${table.x}px`, top: `${table.y}px`, width: `${table.width}px`, height: `${table.height}px`,
-          })
-          const label = document.createElement('span')
-          label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
-          tableBoundary.append(label)
-          surface.append(tableBoundary)
-        }
-
-        for (const object of pageObjects) surface.append(createObjectElement(object))
-        const number = document.createElement('span')
-        number.className = 'page-number'
-        number.textContent = `${page.index + 1} / ${state.scene.pages.length}`
-        surface.append(number)
+      for (const table of state.scene.tables || []) {
+        if (table.pageIndex !== page.index) continue
+        const tableBoundary = document.createElement('div')
+        tableBoundary.className = 'table-structure-boundary'
+        tableBoundary.title = `Структурная таблица: ${table.rowCount} × ${table.columnCount}`
+        Object.assign(tableBoundary.style, {
+          left: `${table.x}px`, top: `${table.y}px`, width: `${table.width}px`, height: `${table.height}px`,
+        })
+        const label = document.createElement('span')
+        label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
+        tableBoundary.append(label)
+        surface.append(tableBoundary)
       }
+
+      for (const object of pageObjects) surface.append(createObjectElement(object))
+      const number = document.createElement('span')
+      number.className = 'page-number'
+      number.textContent = `${page.index + 1} / ${state.scene.pages.length}`
+      surface.append(number)
       shell.append(surface)
       elements.canvas.append(shell, createPageActions(page))
     }
-    if (state.viewMode === 'segments') refreshSegmentsViewHeights()
     applyZoom()
     renderSourcePreview()
     refreshSelection()
     refreshTranslationSelectionControls()
-    if (state.viewMode === 'layout') requestAnimationFrame(expandClippedObjects)
-  }
-
-  function visualReadingOrder(objects) {
-    const rows = []
-    const sorted = [...objects].sort((left, right) => left.y - right.y || left.x - right.x)
-    for (const object of sorted) {
-      const tolerance = Math.max(4, Math.min(24, (Number(object.style?.fontSizePx) || 14) * .65))
-      const row = rows[rows.length - 1]
-      if (!row || Math.abs(object.y - row.anchorY) > Math.max(tolerance, row.tolerance)) {
-        rows.push({ anchorY: object.y, tolerance, objects: [object] })
-        continue
-      }
-      row.objects.push(object)
-      row.anchorY = row.objects.reduce((sum, item) => sum + item.y, 0) / row.objects.length
-      row.tolerance = Math.max(row.tolerance, tolerance)
-    }
-    return rows.flatMap(row => row.objects.sort((left, right) => left.x - right.x || left.y - right.y))
+    requestAnimationFrame(expandClippedObjects)
   }
 
   function renderSourcePreview() {
@@ -1337,75 +1310,6 @@
     elements.translate.textContent = selectedCount === total && total > 0
       ? `Перевести весь документ (${total})`
       : `Перевести выбранные (${selectedCount})`
-    for (const checkbox of elements.canvas.querySelectorAll('[data-translation-select]')) {
-      checkbox.checked = state.translationSelected.has(checkbox.dataset.translationSelect)
-      const row = checkbox.closest('.segment-translation-row')
-      const selector = checkbox.closest('.segment-translation-selector')
-      row?.classList.toggle('is-translation-selected', checkbox.checked)
-      const label = selector?.querySelector('.segment-translation-selector__label')
-      if (label) label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
-      if (selector) selector.title = checkbox.checked ? 'Сегмент выбран для перевода' : 'Добавить сегмент в пакет перевода'
-    }
-    for (const button of elements.canvas.querySelectorAll('.segments-select-all')) {
-      const pageIndex = Number(button.dataset.pageIndex)
-      const pageCandidates = candidates.filter(object => object.pageIndex === pageIndex)
-      const allSelected = pageCandidates.length > 0 && pageCandidates.every(object => state.translationSelected.has(object.id))
-      const label = `${allSelected ? 'Снять выбор со всех' : 'Выбрать все'} сегментов страницы ${pageIndex + 1}`
-      button.classList.toggle('is-active', allSelected)
-      button.setAttribute('aria-pressed', String(allSelected))
-      button.setAttribute('aria-label', label)
-      button.title = label
-    }
-  }
-
-  function changeTranslationSegmentSelection(objectId, checkbox, selector) {
-    const wasPrimary = primarySelectedObject()?.id === objectId
-
-    if (!checkbox.checked && wasPrimary) {
-      state.translationSelected.delete(objectId)
-      state.selected.delete(objectId)
-      if (state.lastTextSelection?.objectId === objectId) state.lastTextSelection = null
-      refreshTranslationSelectionControls()
-      refreshSelection()
-      return
-    }
-
-    // A selected, but inactive row needs one click to become primary. Only a
-    // second click on that primary row removes it from the group.
-    state.translationSelected.add(objectId)
-    checkbox.checked = true
-    focusTranslationSegment(objectId, selector)
-    refreshTranslationSelectionControls()
-  }
-
-  function togglePageSegmentSelection(pageIndex) {
-    const objects = visualReadingOrder(state.scene?.objects.filter(object => object.pageIndex === pageIndex && !object.excluded) || [])
-    const candidates = objects.filter(object => isTranslatableType(object.type) && hasTranslationSource(object))
-    const allSelected = candidates.length > 0 && candidates.every(object => state.translationSelected.has(object.id))
-    for (const object of objects) {
-      if (allSelected) state.selected.delete(object.id)
-      else state.selected.add(object.id)
-    }
-    for (const object of candidates) {
-      if (allSelected) state.translationSelected.delete(object.id)
-      else state.translationSelected.add(object.id)
-    }
-    state.activePage = pageIndex
-    state.lastTextSelection = null
-    refreshSelection()
-    refreshTranslationSelectionControls()
-  }
-
-  function focusTranslationSegment(objectId, selector) {
-    const object = state.scene?.objects.find(item => item.id === objectId)
-    if (!object) return
-    state.activePage = object.pageIndex
-    state.selected.delete(objectId)
-    state.selected.add(objectId)
-    refreshSelection()
-    selector.closest('.segment-translation-row')
-      ?.querySelector('.scene-object--source .scene-object__content')
-      ?.focus({ preventScroll: true })
   }
 
   function selectAllTranslationObjects(selected) {
@@ -1506,14 +1410,12 @@
     }
   }
 
-  function showKnowledgeSuggestion(event, objectId, unitId, matchIds) {
-    const object = state.scene?.objects.find(item => item.id === objectId)
-    const unit = object && ensureObjectTranslationUnits(object).find(item => item.id === unitId)
-    const requested = new Set(matchIds)
-    const matches = (unit?.knowledgeMatches || []).filter(match => requested.has(match.id))
+  function openKnowledgeSuggestionPopover(event, objectId, matches) {
     if (!matches.length) return
-    state.activeKnowledgeSuggestion = { objectId, unitId, matchIds }
-    elements.knowledgeSuggestionTitle.textContent = `БЗ: ${matches[0].sourceText}`
+    state.activeKnowledgeSuggestion = { objectId, matches: matches.map(match => ({ unitId: match.unitId, id: match.id })) }
+    elements.knowledgeSuggestionTitle.textContent = matches.length === 1
+      ? `БЗ: ${matches[0].sourceText}`
+      : `Совпадения с БЗ: ${matches.length}`
     elements.knowledgeSuggestionList.replaceChildren()
     for (const match of matches) {
       const row = document.createElement('article')
@@ -1551,7 +1453,7 @@
       apply.className = 'button button--primary'
       apply.type = 'button'
       apply.textContent = 'Использовать'
-      apply.addEventListener('click', () => applyKnowledgeMatch(objectId, unitId, match.entryId, apply))
+      apply.addEventListener('click', () => applyKnowledgeMatch(objectId, match.unitId, match.entryId, apply))
       actions.append(openEntry, apply)
       row.append(pair, score, actions)
       elements.knowledgeSuggestionList.append(row)
@@ -1566,6 +1468,20 @@
       ? below
       : Math.max(12, rect.top - estimatedHeight - 10)
     Object.assign(elements.knowledgeSuggestionPopover.style, { left: `${left}px`, top: `${top}px` })
+  }
+
+  function showKnowledgeSuggestion(event, objectId, unitId, matchIds) {
+    const object = state.scene?.objects.find(item => item.id === objectId)
+    const unit = object && ensureObjectTranslationUnits(object).find(item => item.id === unitId)
+    const requested = new Set(matchIds)
+    const matches = (unit?.knowledgeMatches || [])
+      .filter(match => requested.has(match.id))
+      .map(match => ({ ...match, unitId }))
+    openKnowledgeSuggestionPopover(event, objectId, matches)
+  }
+
+  function showObjectKnowledgeSuggestions(event, object) {
+    openKnowledgeSuggestionPopover(event, object.id, knowledgeMatchesForObject(object))
   }
 
   function aiAlternativeForObject(object) {
@@ -1599,8 +1515,7 @@
     const text = requestedField ? String(object[field] || '') : objectOutput(object)
     content.dataset.outputField = field
     const ranges = styleRanges(object, field).filter(range => range.end > range.start && range.start < text.length)
-    const knowledgeMatches = field === 'sourceText' && state.viewMode === 'segments' ? knowledgeMatchesForObject(object) : []
-    if (!ranges.length && !knowledgeMatches.length) {
+    if (!ranges.length) {
       content.textContent = text
       return
     }
@@ -1608,10 +1523,6 @@
     for (const range of ranges) {
       points.add(Math.max(0, Math.min(text.length, range.start)))
       points.add(Math.max(0, Math.min(text.length, range.end)))
-    }
-    for (const match of knowledgeMatches) {
-      points.add(Math.max(0, Math.min(text.length, match.start)))
-      points.add(Math.max(0, Math.min(text.length, match.end)))
     }
     const sorted = [...points].sort((left, right) => left - right)
     const fragment = document.createDocumentFragment()
@@ -1621,8 +1532,7 @@
       if (end <= start) continue
       const value = text.slice(start, end)
       const runStyle = effectiveTextStyle(object, field, start)
-      const activeMatches = knowledgeMatches.filter(match => match.start <= start && match.end >= end)
-      if (!Object.keys(runStyle).length && !activeMatches.length) {
+      if (!Object.keys(runStyle).length) {
         fragment.append(document.createTextNode(value))
         continue
       }
@@ -1634,17 +1544,6 @@
       if (runStyle.fontWeight != null) span.style.fontWeight = runStyle.fontWeight
       if (runStyle.fontStyle != null) span.style.fontStyle = runStyle.fontStyle
       if (runStyle.color != null) span.style.color = runStyle.color
-      if (activeMatches.length) {
-        span.classList.add('knowledge-highlight')
-        span.title = 'Найдены варианты в Базе знаний'
-        const unitId = activeMatches[0].unitId
-        const matchIds = activeMatches.map(match => match.id)
-        span.addEventListener('click', event => {
-          event.preventDefault()
-          event.stopPropagation()
-          showKnowledgeSuggestion(event, object.id, unitId, matchIds)
-        })
-      }
       fragment.append(span)
     }
     content.replaceChildren(fragment)
@@ -1976,53 +1875,6 @@
     return control
   }
 
-  function createSegmentRowMeta(object) {
-    const meta = document.createElement('div')
-    meta.className = 'segment-translation-row__meta'
-
-    const notes = document.createElement('div')
-    notes.className = 'segment-agent-notes'
-    const agentNotes = String(object.agentNotes || '').trim()
-    notes.classList.toggle('is-empty', !agentNotes)
-    if (agentNotes) {
-      const warning = document.createElement('span')
-      warning.className = 'segment-agent-notes__icon'
-      warning.innerHTML = iconMarkup('alert-circle')
-      warning.title = 'Требуется внимание'
-      const notesText = document.createElement('span')
-      notesText.textContent = agentNotes
-      notes.append(warning, notesText)
-    } else notes.setAttribute('aria-hidden', 'true')
-
-    const confidence = document.createElement('div')
-    confidence.className = 'segment-row-confidence'
-    const confidenceLabel = document.createElement('span')
-    confidenceLabel.textContent = 'Уверенность распознавания'
-    const confidenceValue = document.createElement('strong')
-    confidenceValue.textContent = `${Math.round(object.confidence * 100)}%`
-    confidence.append(confidenceLabel, confidenceValue)
-
-    const type = document.createElement('label')
-    type.className = 'segment-row-type'
-    type.addEventListener('pointerdown', event => event.stopPropagation())
-    const typeLabelText = document.createElement('span')
-    typeLabelText.textContent = 'Тип содержимого'
-    const select = document.createElement('select')
-    select.setAttribute('aria-label', `Тип содержимого сегмента ${object.readingOrder || object.id}`)
-    for (const sourceOption of elements.objectType.options) select.append(sourceOption.cloneNode(true))
-    select.value = object.type
-    select.addEventListener('change', () => applySelectionChange(
-      selectedObject => setObjectType(selectedObject, select.value), true, false, [object],
-    ))
-    type.append(typeLabelText, select)
-
-    const controls = document.createElement('div')
-    controls.className = 'segment-translation-row__meta-controls'
-    controls.append(confidence, type)
-    meta.append(notes, controls)
-    return meta
-  }
-
   function createAiTranslationAlternativeControl(object) {
     const aiAlternative = aiAlternativeForObject(object)
     if (!aiAlternative || aiAlternative === object.translation) return null
@@ -2048,10 +1900,24 @@
     if (alternative) controls.push(alternative)
     if (!controls.length) return null
     const workspace = document.createElement('section')
-    workspace.className = 'segment-translation-row__workspace'
+    workspace.className = 'segment-translation-workspace'
     workspace.setAttribute('aria-label', `Инструменты сегмента ${object.readingOrder || object.id}`)
     workspace.append(...controls)
     return workspace
+  }
+
+  function renderInspectorSegmentWorkspace(selection) {
+    if (!elements.inspectorSegmentWorkspace) return
+    elements.inspectorSegmentWorkspace.replaceChildren()
+    if (selection.length !== 1) {
+      const hint = document.createElement('small')
+      hint.className = 'note note--muted note--compact inspector-segment-workspace__hint'
+      hint.textContent = 'Для корректировки через AI выберите один сегмент.'
+      elements.inspectorSegmentWorkspace.append(hint)
+      return
+    }
+    const workspace = createSegmentWorkspace(selection[0])
+    if (workspace) elements.inspectorSegmentWorkspace.append(workspace)
   }
 
   function createObjectElement(object, requestedField = null) {
@@ -2080,6 +1946,21 @@
     const badge = document.createElement('span')
     badge.className = 'scene-object__badge'
     badge.textContent = typeLabel(object.type)
+    const knowledgeMatches = requestedField === 'sourceText' ? [] : knowledgeMatchesForObject(object)
+    const knowledgeIndicator = knowledgeMatches.length ? document.createElement('button') : null
+    if (knowledgeIndicator) {
+      knowledgeIndicator.className = 'scene-object__knowledge-match'
+      knowledgeIndicator.type = 'button'
+      knowledgeIndicator.textContent = `БЗ · ${knowledgeMatches.length}`
+      knowledgeIndicator.title = `Найдены совпадения с Базой знаний: ${knowledgeMatches.length}`
+      knowledgeIndicator.setAttribute('aria-label', knowledgeIndicator.title)
+      knowledgeIndicator.addEventListener('pointerdown', event => event.stopPropagation())
+      knowledgeIndicator.addEventListener('click', event => {
+        event.preventDefault()
+        event.stopPropagation()
+        showObjectKnowledgeSuggestions(event, object)
+      })
+    }
     const handle = document.createElement('button')
     handle.className = 'icon-button icon-button--tiny icon-button--filled scene-object__handle'
     handle.type = 'button'
@@ -2133,14 +2014,14 @@
       }
       scheduleSave()
       requestAnimationFrame(() => {
-        fitObjectsToRenderedContent([object], state.viewMode === 'layout')
-        if (state.viewMode === 'segments') refreshSegmentsViewHeights()
+        fitObjectsToRenderedContent([object], true)
       })
     })
     const resize = document.createElement('span')
     resize.className = 'scene-object__resize'
     resize.addEventListener('pointerdown', event => beginResize(event, object.id))
     node.append(badge, handle, content)
+    if (knowledgeIndicator) node.append(knowledgeIndicator)
     node.append(resize)
     return node
   }
@@ -2153,7 +2034,7 @@
   }
 
   function growObjectToContent(node, object) {
-    if (!node || !object || state.viewMode !== 'layout') return false
+    if (!node || !object || object.manualHeight !== false) return false
     const content = node.querySelector('.scene-object__content')
     if (!content) return false
     // The visible content has min-height: 100%. Measuring that rendered box and
@@ -2170,7 +2051,7 @@
   }
 
   function expandClippedObjects() {
-    if (!state.scene || state.viewMode !== 'layout') return
+    if (!state.scene) return
     let changed = false
     for (const node of elements.canvas.querySelectorAll('.scene-object')) {
       const object = state.scene.objects.find(item => item.id === node.dataset.id)
@@ -2212,7 +2093,21 @@
     const naturalWidth = Math.max(12, ...sourceLines.map(line => line.length * averageCharacterWidth + 10))
     if (width == null) return { width: naturalWidth, height: Math.max(12, sourceLines.length * fontSize * lineHeight + 4) }
     const innerWidth = Math.max(4, width - 8)
-    const visualLines = sourceLines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length * averageCharacterWidth / innerWidth)), 0)
+    const visualLines = sourceLines.reduce((sum, line) => {
+      const words = line.trim().split(/\s+/u).filter(Boolean)
+      if (!words.length) return sum + 1
+      let lines = 1
+      let currentWidth = 0
+      for (const word of words) {
+        const wordWidth = word.length * averageCharacterWidth
+        const nextWidth = currentWidth ? currentWidth + averageCharacterWidth * .5 + wordWidth : wordWidth
+        if (currentWidth && nextWidth > innerWidth) {
+          lines += 1
+          currentWidth = wordWidth
+        } else currentWidth = nextWidth
+      }
+      return sum + lines
+    }, 0)
     return { width, height: Math.max(12, visualLines * fontSize * lineHeight + 4) }
   }
 
@@ -2242,7 +2137,7 @@
       minWidth: '12px', minHeight: '12px', maxWidth: 'none', boxSizing: 'border-box',
       padding: '1px 3px', border: '1px solid transparent', transform: 'none', visibility: 'hidden',
       pointerEvents: 'none', overflow: 'visible', zIndex: '-1',
-      whiteSpace: width == null ? 'pre' : 'pre-wrap', overflowWrap: width == null ? 'normal' : 'anywhere',
+      whiteSpace: width == null ? 'pre' : 'pre-wrap', overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none',
       fontFamily: object.style?.fontFamily || 'Arial', fontSize: `${object.style?.fontSizePx || 14}px`,
       fontWeight: object.style?.fontWeight || 400, fontStyle: object.style?.fontStyle || 'normal',
       lineHeight: object.style?.lineHeight || 1.2, textAlign: object.style?.textAlign || 'left',
@@ -2272,7 +2167,7 @@
       width: 'min-content', height: 'auto', minWidth: '12px', minHeight: '12px', maxWidth: 'none',
       boxSizing: 'border-box', padding: '1px 3px', border: '1px solid transparent', transform: 'none',
       visibility: 'hidden', pointerEvents: 'none', overflow: 'visible', zIndex: '-1',
-      whiteSpace: 'pre-wrap', overflowWrap: 'normal', wordBreak: 'normal',
+      whiteSpace: 'pre-wrap', overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none',
       fontFamily: object.style?.fontFamily || 'Arial', fontSize: `${object.style?.fontSizePx || 14}px`,
       fontWeight: object.style?.fontWeight || 400, fontStyle: object.style?.fontStyle || 'normal',
       lineHeight: object.style?.lineHeight || 1.2, textAlign: object.style?.textAlign || 'left',
@@ -2292,23 +2187,41 @@
     const page = state.scene.pages[object.pageIndex]
     const maximum = Math.max(12, page.contentBounds.y + page.contentBounds.height - object.y)
     const requested = Math.min(maximum, Math.max(12, requestedHeight))
-    // When the content itself is taller than the remaining page area, preserving
-    // readable content takes precedence. QA will still report the page overflow.
-    return Math.max(minimumObjectHeight(object, width), requested)
+    return Math.min(maximum, Math.max(minimumObjectHeight(object, width), requested))
   }
 
   function canFitObjectToText(object) {
     return Boolean(object && !object.excluded && object.type !== 'image' && object.type !== 'logo' && state.scene?.pages?.[object.pageIndex])
   }
 
-  function fitObjectGeometryToContent(object) {
-    if (!canFitObjectToText(object)) return false
-    const page = state.scene.pages[object.pageIndex]
-    const natural = measureObjectContent(object)
+  function constrainObjectToWorkArea(object) {
+    const page = state.scene?.pages?.[object?.pageIndex]
+    if (!object || !page) return false
     const area = page.contentBounds
-    const width = Math.min(area.width, Math.max(12, contentSize(natural.width)))
+    const width = Math.min(area.width, Math.max(12, Number(object.width) || 12))
+    const height = Math.min(area.height, Math.max(12, Number(object.height) || 12))
+    const x = Math.max(area.x, Math.min(Number(object.x) || 0, area.x + area.width - width))
+    const y = Math.max(area.y, Math.min(Number(object.y) || 0, area.y + area.height - height))
+    const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5
+      || Math.abs(object.x - x) > .5 || Math.abs(object.y - y) > .5
+    Object.assign(object, { x, y, width, height })
+    return changed
+  }
+
+  function fitObjectGeometryToContent(object, options = {}) {
+    if (!canFitObjectToText(object)) return constrainObjectToWorkArea(object)
+    const page = state.scene.pages[object.pageIndex]
+    const area = page.contentBounds
+    const fitWidth = options.forceWidth || object.manualWidth === false
+    const fitHeight = options.forceHeight || object.manualHeight === false
+    const natural = fitWidth ? measureObjectContent(object) : null
+    const width = fitWidth
+      ? Math.min(area.width, Math.max(12, contentSize(natural.width)))
+      : Math.min(area.width, Math.max(12, Number(object.width) || 12))
     const wrapped = measureObjectContent(object, width)
-    const height = Math.max(12, contentSize(wrapped.height))
+    const height = fitHeight
+      ? Math.min(area.height, Math.max(12, contentSize(wrapped.height)))
+      : Math.min(area.height, Math.max(12, Number(object.height) || 12))
     const x = Math.max(area.x, Math.min(object.x, area.x + area.width - width))
     const y = Math.max(area.y, Math.min(object.y, area.y + area.height - height))
     const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5 || Math.abs(object.x - x) > .5 || Math.abs(object.y - y) > .5
@@ -2316,10 +2229,10 @@
     return changed
   }
 
-  function fitObjectsToRenderedContent(objects, updateNodes = false) {
+  function fitObjectsToRenderedContent(objects, updateNodes = false, options = {}) {
     let changed = false
     for (const object of objects) {
-      if (!fitObjectGeometryToContent(object)) continue
+      if (!fitObjectGeometryToContent(object, options)) continue
       changed = true
       if (updateNodes) {
         for (const node of elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)) positionObjectNode(node, object)
@@ -2328,9 +2241,9 @@
     return changed
   }
 
-  function renderDocumentWithContentFit(objects) {
+  function renderDocumentWithContentFit(objects, options = {}) {
     renderDocument()
-    if (fitObjectsToRenderedContent(objects)) renderDocument()
+    if (fitObjectsToRenderedContent(objects, false, options)) renderDocument()
   }
 
   function fitSelectionToContent(mode) {
@@ -2340,22 +2253,23 @@
     checkpoint()
     for (const object of objects) {
       const page = state.scene.pages[object.pageIndex]
-      let width = object.width
       if (mode === 'both') {
-        fitObjectGeometryToContent(object)
+        object.manualWidth = false
+        object.manualHeight = false
+        fitObjectGeometryToContent(object, { forceWidth: true, forceHeight: true })
         continue
       }
-      if (mode === 'width' || mode === 'min-width') {
-        const naturalWidth = mode === 'min-width' ? measureObjectMinContentWidth(object) : measureObjectContent(object).width
-        width = Math.min(page.contentBounds.width, Math.max(12, contentSize(naturalWidth)))
-        object.width = width
+      if (mode === 'width') {
+        object.manualWidth = false
+        fitObjectGeometryToContent(object, { forceWidth: true })
+      } else if (mode === 'min-width') {
+        object.manualWidth = true
+        object.width = Math.min(page.contentBounds.width, Math.max(12, contentSize(measureObjectMinContentWidth(object))))
         object.x = Math.max(page.contentBounds.x, Math.min(object.x, page.contentBounds.x + page.contentBounds.width - object.width))
-      }
-      if (mode === 'height') {
-        const wrapped = measureObjectContent(object, width)
-        object.height = Math.max(12, contentSize(wrapped.height))
-      } else if (mode === 'width' || mode === 'min-width') {
-        object.height = Math.max(object.height, minimumObjectHeight(object, width))
+        fitObjectGeometryToContent(object)
+      } else if (mode === 'height') {
+        object.manualHeight = false
+        fitObjectGeometryToContent(object, { forceHeight: true })
       }
     }
     renderDocument()
@@ -2376,10 +2290,13 @@
       if (axis === 'width') {
         object.x = area.x
         object.width = area.width
-        object.height = Math.max(object.height, minimumObjectHeight(object, object.width))
+        object.manualWidth = true
+        fitObjectGeometryToContent(object)
       } else {
         object.y = area.y
-        object.height = Math.max(area.height, minimumObjectHeight(object, object.width))
+        object.height = area.height
+        object.manualHeight = true
+        constrainObjectToWorkArea(object)
       }
     }
     renderDocument()
@@ -2417,37 +2334,10 @@
       const page = state.scene.pages[Number(shell.dataset.pageIndex)]
       shell.style.width = `${page.widthPx * state.zoom}px`
       const surface = shell.querySelector('.studio-page')
-      const naturalHeight = state.viewMode === 'segments' ? Number(shell.dataset.naturalHeight || 120) : page.heightPx
-      shell.style.height = `${naturalHeight * state.zoom}px`
+      shell.style.height = `${page.heightPx * state.zoom}px`
       surface.style.transform = `scale(${state.zoom})`
     }
     elements.zoomOutput.value = `${Math.round(state.zoom * 100)}%`
-  }
-
-  function refreshSegmentsViewHeights() {
-    if (state.viewMode !== 'segments') return
-    for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
-      const surface = shell.querySelector('.studio-page--segments')
-      if (!surface) continue
-      surface.style.height = 'auto'
-      const pageIndex = Number(shell.dataset.pageIndex)
-      const objects = state.scene.objects.filter(object => object.pageIndex === pageIndex && !object.excluded)
-      const fallback = 58 + objects.reduce((sum, object) => sum + Math.max(44, Math.min(240, object.height)) + 10, 0)
-      const naturalHeight = Math.max(120, surface.scrollHeight || fallback)
-      surface.style.height = `${naturalHeight}px`
-      shell.dataset.naturalHeight = String(naturalHeight)
-      shell.style.height = `${naturalHeight * state.zoom}px`
-    }
-  }
-
-  function setDocumentView(mode) {
-    if (!state.scene || mode === state.viewMode) return
-    state.viewMode = mode
-    elements.viewLayout.classList.toggle('is-active', mode === 'layout')
-    elements.viewSegments.classList.toggle('is-active', mode === 'segments')
-    elements.viewLayout.setAttribute('aria-pressed', String(mode === 'layout'))
-    elements.viewSegments.setAttribute('aria-pressed', String(mode === 'segments'))
-    renderDocument()
   }
 
   function toggleSourcePanel() {
@@ -2530,14 +2420,6 @@
   function selectFromPointer(event, id) {
     if (event.button !== 0 || event.target.closest('.scene-object__handle, .scene-object__resize')) return
     event.stopPropagation()
-    if (state.viewMode === 'segments' && state.translationSelected.has(id)) {
-      const currentPrimaryId = primarySelectedObject()?.id
-      for (const selectedId of state.translationSelected) state.selected.add(selectedId)
-      if (currentPrimaryId && state.selected.has(currentPrimaryId)) {
-        state.selected.delete(currentPrimaryId)
-        state.selected.add(currentPrimaryId)
-      }
-    }
     if (event.metaKey || event.ctrlKey) {
       if (!state.selected.has(id)) {
         state.selected.add(id)
@@ -2689,7 +2571,7 @@
         save.disabled = !unit.translation.trim()
         save.textContent = 'Сохранить эту пару в БЗ'
         renderSelectedText('translation')
-        fitObjectsToRenderedContent([object], state.viewMode === 'layout')
+        fitObjectsToRenderedContent([object], true)
         scheduleSave()
       })
       input.addEventListener('blur', () => { state.textCheckpoint = false })
@@ -2760,21 +2642,25 @@
   }
 
   function refreshSelection() {
+    const candidateIds = new Set(translationCandidates().map(object => object.id))
+    state.translationSelected = new Set([...state.selected].filter(id => candidateIds.has(id)))
+    rememberTranslationSelection()
+    refreshTranslationSelectionControls()
     const primaryId = primarySelectedObject()?.id || null
     for (const node of elements.canvas.querySelectorAll('.scene-object')) {
       node.classList.toggle('is-selected', state.selected.has(node.dataset.id))
       node.classList.toggle('is-primary-selected', node.dataset.id === primaryId)
     }
-    for (const row of elements.canvas.querySelectorAll('.segment-translation-row')) {
-      const objectId = row.querySelector('[data-translation-select]')?.dataset.translationSelect
-        || row.querySelector('.scene-object')?.dataset.id
-      row.classList.toggle('is-primary-selected', Boolean(objectId) && objectId === primaryId)
-    }
     const selection = selectedObjects()
+    renderInspectorSegmentWorkspace(selection)
     updateQaSegmentCheckAvailability()
-    elements.studioView.classList.toggle('is-inspector-empty', state.viewMode === 'segments' && selection.length === 0)
+    elements.studioView.classList.remove('is-inspector-empty')
     elements.emptyInspector.hidden = selection.length > 0
-    elements.objectInspector.hidden = selection.length === 0
+    elements.objectInspector.hidden = false
+    for (const content of elements.objectInspector.querySelectorAll('.inspector-accordion__content')) {
+      content.toggleAttribute('inert', selection.length === 0)
+    }
+    elements.objectInspector.classList.toggle('is-awaiting-selection', selection.length === 0)
     elements.merge.disabled = selection.length < 2 || new Set(selection.map(item => item.pageIndex)).size !== 1
     const onePage = selection.length > 0 && new Set(selection.map(item => item.pageIndex)).size === 1
     document.querySelectorAll('[data-align-selection]').forEach(button => {
@@ -2786,10 +2672,13 @@
     document.querySelectorAll('[data-flex-layout]').forEach(button => { button.disabled = !onePage || selection.length < 2 })
     refreshFormattingToolbar()
     refreshFormattingSelectionToggle()
-    elements.agentNotes.hidden = true
+    elements.segmentNote.hidden = true
     elements.tableCellFields.hidden = !selection.length || selection.some(item => item.type !== 'table_cell')
     if (!selection.length) {
-      elements.translationText.disabled = false
+      elements.objectType.value = ''
+      elements.sourceText.value = ''
+      elements.translationText.value = ''
+      elements.confidence.textContent = '—'
       elements.translationUnitsCard.hidden = true
       elements.translationUnitsList.replaceChildren()
       return
@@ -2810,8 +2699,8 @@
     elements.translationText.title = units.length > 1 ? 'Переводите части во внутренних сегментах ниже' : ''
     elements.confidence.textContent = selection.length === 1 ? `${Math.round(first.confidence * 100)}%` : 'несколько'
     if (selection.length === 1 && first.agentNotes) {
-      elements.agentNotes.textContent = first.agentNotes
-      elements.agentNotes.hidden = false
+      elements.segmentNote.textContent = first.agentNotes
+      elements.segmentNote.hidden = false
     }
     renderTranslationUnits(selection)
   }
@@ -3069,8 +2958,11 @@
       if (horizontal) {
         object.width = nextLength
         object.height = Math.max(12, object.height * factor)
+        object.manualWidth = true
+        object.manualHeight = true
       } else {
         object.height = nextLength
+        object.manualHeight = true
       }
       scaleObjectTypography(object, factor)
       if (horizontal) object.height = Math.max(object.height, estimatedContentSize(object, object.width).height)
@@ -3310,7 +3202,7 @@
   }
 
   function pageSurfaceAtPoint(clientX, clientY) {
-    const surfaces = [...elements.canvas.querySelectorAll('.studio-page:not(.studio-page--segments)')]
+    const surfaces = [...elements.canvas.querySelectorAll('.studio-page')]
     let nearest = null
     let nearestDistance = Infinity
     for (const surface of surfaces) {
@@ -3357,7 +3249,11 @@
     const handle = event.currentTarget
     const historyLength = state.history.length
     checkpoint()
-    const start = { x: event.clientX, y: event.clientY, width: object.width, height: object.height, xPosition: object.x, yPosition: object.y }
+    const start = {
+      x: event.clientX, y: event.clientY, width: object.width, height: object.height,
+      xPosition: object.x, yPosition: object.y,
+      manualWidth: object.manualWidth, manualHeight: object.manualHeight,
+    }
     const action = { kind: 'resize', pointerId: event.pointerId, object, start }
     const update = current => {
       const page = state.scene.pages[object.pageIndex]
@@ -3367,9 +3263,17 @@
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (node) positionObjectNode(node, object)
     }
-    const finish = () => { refreshSelection(); scheduleSave() }
+    const finish = () => {
+      if (Math.abs(object.width - start.width) > .5) object.manualWidth = true
+      if (Math.abs(object.height - start.height) > .5) object.manualHeight = true
+      refreshSelection()
+      scheduleSave()
+    }
     const cancel = () => {
-      Object.assign(object, { x: start.xPosition, y: start.yPosition, width: start.width, height: start.height })
+      Object.assign(object, {
+        x: start.xPosition, y: start.yPosition, width: start.width, height: start.height,
+        manualWidth: start.manualWidth, manualHeight: start.manualHeight,
+      })
       state.history.length = historyLength
       refreshUndoButtons()
       const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
@@ -3675,7 +3579,7 @@
     elements.layoutReview.setAttribute('aria-label', actionLabel)
     elements.layoutReview.dataset.action = pending ? 'cancel' : 'start'
     elements.layoutReview.classList.toggle('button--danger', pending)
-    elements.layoutReviewStatus.classList.toggle('is-error', job?.status === 'failed')
+    setNoteVariant(elements.layoutReviewStatus, job?.status === 'failed' ? 'danger' : pending ? 'info' : state.scene?.layoutReview?.reviewedAt ? 'success' : 'muted')
     if (job) {
       const pageDetail = Number.isFinite(Number(job.details?.totalPages))
         ? ` · страниц ${Number(job.details?.processedPages) || 0}/${Number(job.details.totalPages)}`
@@ -3991,6 +3895,8 @@
     first.y = Math.min(...objects.map(item => item.y))
     first.width = right - first.x
     first.height = bottom - first.y
+    first.manualWidth = false
+    first.manualHeight = false
     first.sourceText = source.text
     first.sourceTextStyles = source.ranges
     first.translation = translation.text
@@ -4002,7 +3908,7 @@
     const removed = new Set(objects.slice(1).map(item => item.id))
     state.scene.objects = state.scene.objects.filter(item => !removed.has(item.id))
     state.selected = new Set([first.id])
-    renderDocument()
+    renderDocumentWithContentFit([first], { forceWidth: true, forceHeight: true })
     scheduleSave()
   }
 
@@ -4074,13 +3980,14 @@
       sourceText, translation: '', confidence: 1,
       sourceTextStyles: [], translationTextStyles: [],
       x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42, rotation: 0,
+      manualWidth: false, manualHeight: false,
       excluded: false, status: 'manual', sourceLineIds: [],
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
       originalBounds: { x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42 },
     })
     state.activePage = page.index
     state.selected = new Set([id])
-    renderDocument()
+    renderDocumentWithContentFit([state.scene.objects.at(-1)], { forceWidth: true, forceHeight: true })
     scheduleSave()
     return id
   }
@@ -4128,6 +4035,8 @@
     object[styleField] = end > start
       ? rangesAfterRemoval(originalRanges, start, end)
       : clippedRanges(originalRanges, 0, start)
+    object.manualWidth = false
+    object.manualHeight = false
 
     const page = state.scene.pages[object.pageIndex]
     const id = `manual-${Date.now().toString(36)}`
@@ -4137,6 +4046,8 @@
     next.sourceLineIds = []
     next.confidence = 1
     next.status = 'manual-split'
+    next.manualWidth = false
+    next.manualHeight = false
     next.sourceText = field === 'sourceText' ? extractedText : ''
     next.translation = field === 'translation' ? extractedText : ''
     next.sourceTextStyles = field === 'sourceText' ? clippedRanges(originalRanges, start, extractedEnd, start) : []
@@ -4151,7 +4062,7 @@
     state.scene.objects.push(next)
     state.selected = new Set([id])
     state.lastTextSelection = null
-    renderDocument()
+    renderDocumentWithContentFit([object, next], { forceWidth: true, forceHeight: true })
     scheduleSave()
     showToast(end > start ? 'Выделенный текст перенесён в новый сегмент' : 'Сегмент разделён по позиции курсора')
   }
@@ -4419,7 +4330,12 @@
     const objects = selectedObjects()
     if (!objects.length) return
     checkpoint()
-    for (const object of objects) Object.assign(object, object.originalBounds)
+    for (const object of objects) {
+      Object.assign(object, object.originalBounds)
+      object.manualWidth = true
+      object.manualHeight = true
+      constrainObjectToWorkArea(object)
+    }
     renderDocument()
     scheduleSave()
   }
@@ -4536,7 +4452,7 @@
         }
         renderSelectedText(field === 'sourceText' ? 'sourceText' : field)
         if (field === 'sourceText') renderSelectedText('translation')
-        fitObjectsToRenderedContent(objects, state.viewMode === 'layout')
+        fitObjectsToRenderedContent(objects, true)
         renderTranslationUnits(selectedObjects())
         scheduleSave()
       })
@@ -4555,12 +4471,10 @@
       for (const node of nodes) {
         const content = node.querySelector('.scene-object__content')
         if (!content) continue
-        const requestedField = state.viewMode === 'segments' ? content.dataset.editField : null
-        if (state.viewMode !== 'segments' || requestedField === field) renderTextContent(content, object, requestedField)
+        renderTextContent(content, object)
         node.classList.toggle('is-untranslated', content.dataset.editField !== 'sourceText' && !object.translation && isTranslatableType(object.type))
       }
     }
-    if (state.viewMode === 'segments') requestAnimationFrame(refreshSegmentsViewHeights)
   }
 
   function bindEvents() {
@@ -4622,8 +4536,6 @@
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
     elements.zoomActual.addEventListener('click', () => setZoom(1))
-    elements.viewLayout.addEventListener('click', () => setDocumentView('layout'))
-    elements.viewSegments.addEventListener('click', () => setDocumentView('segments'))
     elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
     elements.inspectorPanelToggle.addEventListener('click', () => setInspectorOpen(!state.inspectorOpen))
     elements.canvasScroll.addEventListener('wheel', event => {
@@ -4726,7 +4638,6 @@
     elements.qa.addEventListener('click', runQa)
     elements.qaRecheckSelection.addEventListener('click', recheckQaSelection)
     elements.qaClose.addEventListener('click', () => setQaPanelOpen(false))
-    elements.addObject.addEventListener('click', () => addObject())
     elements.memorySearch.addEventListener('click', findMemory)
     elements.glossaryAdd.addEventListener('click', createGlossary)
     elements.glossarySelect.addEventListener('change', () => {
@@ -4854,7 +4765,7 @@
     document.addEventListener('pointerdown', event => {
       if (!elements.appbarActionsMenu.hidden && !elements.appbarMenu.contains(event.target)) setAppbarMenuOpen(false)
       if (elements.knowledgeSuggestionPopover.hidden) return
-      if (elements.knowledgeSuggestionPopover.contains(event.target) || event.target.closest?.('.knowledge-highlight')) return
+      if (elements.knowledgeSuggestionPopover.contains(event.target)) return
       closeKnowledgeSuggestion()
     })
     window.addEventListener('pagehide', () => {
@@ -5058,6 +4969,19 @@
     return true
   }
 
+  async function refreshCurrentKnowledgeBaseMatches() {
+    if (!state.scene || !state.metadata) return 0
+    const response = await api(`/api/studio/documents/${state.metadata.id}/knowledge-matches/refresh`, { method: 'POST' })
+    const data = await response.json()
+    state.metadata = data.metadata
+    state.scene = data.scene
+    const activeTab = state.tabs.get(state.activeTabKey)
+    if (activeTab?.status === 'completed') activeTab.documentData = { metadata: state.metadata, scene: state.scene }
+    closeKnowledgeSuggestion()
+    renderDocument()
+    return Number(data.matchCount) || 0
+  }
+
   async function saveKnowledgeBaseEntry(event) {
     event.preventDefault()
     const id = elements.knowledgeBaseEntryId.value
@@ -5070,8 +4994,8 @@
     }
     if (!payload.sourceText || !payload.translation || !payload.glossaryId) return showToast('Заполните оригинал, перевод и глоссарий', true)
     try {
+      if (state.scene && state.metadata) await saveScene(true)
       if (id) {
-        if (state.scene && state.metadata) await saveScene(true)
         await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(id)}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         })
@@ -5084,9 +5008,11 @@
         const conflict = result.results?.find(item => item.status === 'conflict' || item.status === 'existing')
         if (conflict) throw new Error(conflict.status === 'existing' ? 'Такая запись уже существует' : 'Для этой исходной фразы уже сохранён другой перевод')
       }
+      const matchCount = await refreshCurrentKnowledgeBaseMatches()
       closeKnowledgeBaseEntryForm()
       await Promise.all([loadKnowledgeBaseEntries(), loadKnowledgeBase()])
-      showToast(id ? 'Запись Базы знаний обновлена' : 'Запись добавлена в Базу знаний')
+      const message = id ? 'Запись Базы знаний обновлена' : 'Запись добавлена в Базу знаний'
+      showToast(matchCount ? `${message} · совпадения в документе обновлены` : message)
     } catch (error) { showToast(error.message, true) }
   }
 
@@ -5096,6 +5022,7 @@
       if (state.scene && state.metadata) await saveScene(true)
       await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
       invalidateKnowledgeBaseEntryReferences(entry.id)
+      await refreshCurrentKnowledgeBaseMatches()
       if (elements.knowledgeBaseEntryId.value === entry.id) closeKnowledgeBaseEntryForm()
       await Promise.all([loadKnowledgeBaseEntries(), loadKnowledgeBase()])
       showToast('Запись удалена из Базы знаний')
@@ -5105,7 +5032,7 @@
   async function loadKnowledgeBase() {
     const statusResponse = await api('/api/studio/knowledge-base/status')
     const status = await statusResponse.json()
-    elements.knowledgeBaseStatus.classList.toggle('is-error', status.connected === false || !status.persistent)
+    setNoteVariant(elements.knowledgeBaseStatus, status.connected === false ? 'danger' : status.persistent ? 'success' : 'warning')
     elements.knowledgeBaseStatus.textContent = status.mode === 'postgres-pgvector'
       ? status.connected === false
         ? `PostgreSQL недоступен: ${status.error || 'проверьте DATABASE_URL'}`
@@ -5116,7 +5043,7 @@
       const glossariesResponse = await api('/api/studio/knowledge-base/glossaries')
       ;({ glossaries } = await glossariesResponse.json())
     } catch (error) {
-      elements.knowledgeBaseStatus.classList.add('is-error')
+      setNoteVariant(elements.knowledgeBaseStatus, 'danger')
       elements.knowledgeBaseStatus.textContent = `База знаний недоступна: ${error.message}`
       elements.glossarySelect.replaceChildren(new Option('Глоссарии недоступны', ''))
       elements.glossarySelect.disabled = true
@@ -5202,6 +5129,7 @@
     }
   }
 
+  setupInspectorAccordions()
   bindEvents()
   ;(async () => {
     await Promise.all([loadServiceStatus(), loadInstructionPresets().catch(() => {})])

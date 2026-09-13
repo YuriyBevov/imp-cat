@@ -80,6 +80,83 @@
           </div>
         </details>
 
+        <details class="component-section" open>
+          <summary class="component-section__summary">
+            <span>Заметка</span>
+            <code>Note</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Базовый компонент для информационных сообщений. Смысл задаётся абстрактным вариантом, а контекстный класс отвечает только за размещение или поведение.</p>
+            </div>
+            <div class="component-note-demo">
+              <p class="note note--muted">Нейтральная заметка</p>
+              <p class="note note--info">Информационная заметка</p>
+              <p class="note note--success">Операция выполнена успешно</p>
+              <p class="note note--warning">Обратите внимание на это условие</p>
+              <p class="note note--danger">Операцию выполнить не удалось</p>
+              <p class="note note--info note--compact">Компактная информационная заметка</p>
+              <p class="note note--warning note--roomy">Просторная предупреждающая заметка</p>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section">
+          <summary class="component-section__summary">
+            <span>Скроллбар</span>
+            <code>BaseScrollbar</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Общий тонкий скроллбар по образцу briefing-app: прозрачная дорожка, контрастный скруглённый ползунок и усиление цвета при наведении. Автоматически применяется ко всем прокручиваемым областям проекта.</p>
+            </div>
+            <div class="component-scrollbar-demo" tabindex="0" aria-label="Демонстрация скроллбара">
+              <div class="component-scrollbar-demo__content">
+                <strong>Прокручиваемая область</strong>
+                <p>Этот пример использует те же глобальные стили, что холст, инспектор, списки документов, модальные окна и страницы документации.</p>
+                <p>Прокрутите содержимое вниз, чтобы проверить дорожку и ползунок.</p>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section">
+          <summary class="component-section__summary">
+            <span>Аккордеон инспектора</span>
+            <code>InspectorAccordion</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Независимые разделы инспектора. Все разделы раскрыты по умолчанию; каждый заголовок управляет только своим содержимым.</p>
+            </div>
+            <div class="component-inspector-accordion-demo">
+              <details class="inspector-accordion" open>
+                <summary class="inspector-accordion__summary"><span>Перевод всего документа</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
+                <div class="inspector-accordion__content"><div class="layout-card"><strong>Языки, инструкции и массовый перевод</strong></div></div>
+              </details>
+              <details class="inspector-accordion" open>
+                <summary class="inspector-accordion__summary"><span>Посегментный перевод</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
+                <div class="inspector-accordion__content"><div class="layout-card"><strong>Инструменты выбранного сегмента</strong></div></div>
+              </details>
+              <details class="inspector-accordion" open>
+                <summary class="inspector-accordion__summary"><span>Типографика</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
+                <div class="inspector-accordion__content"><div class="layout-card"><strong>Параметры текста</strong><span class="layout-card__label">Содержимое демонстрационного раздела</span></div></div>
+              </details>
+              <details class="inspector-accordion" open>
+                <summary class="inspector-accordion__summary"><span>Расположение</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
+                <div class="inspector-accordion__content"><div class="layout-card"><strong>Геометрия сегментов</strong></div></div>
+              </details>
+              <details class="inspector-accordion" open>
+                <summary class="inspector-accordion__summary"><span>Тестирование</span><span class="inspector-accordion__indicator"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-chevron-down"></use></svg></span></summary>
+                <div class="inspector-accordion__content"><div class="layout-card"><strong>Проверка макета, финальная проверка и отделённая снизу пересегментация</strong></div></div>
+              </details>
+            </div>
+          </div>
+        </details>
+
         <details class="component-section">
           <summary class="component-section__summary">
             <span>Выбор цвета</span>

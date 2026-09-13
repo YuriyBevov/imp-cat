@@ -107,9 +107,8 @@ button, input { font: inherit; }
 .button:hover { filter: brightness(.96); }
 .button[aria-disabled="true"] { opacity: .5; pointer-events: none; }
 
-.error {
+.upload-error {
   margin: 16px 0 0;
-  color: #b42323 !important;
   white-space: pre-line;
 }
 
@@ -140,11 +139,6 @@ button, input { font: inherit; }
 
 .editor-note {
   flex: 0 0 auto;
-  padding: 8px 18px;
-  color: #5c687a;
-  background: #f7f9fc;
-  border-bottom: 1px solid #e2e7ef;
-  font-size: 12px;
 }
 
 .editor-workspace {
@@ -219,13 +213,6 @@ button, input { font: inherit; }
 
 .segment-panel__note {
   margin: 0 16px 12px;
-  padding: 10px 11px;
-  border: 1px solid #dbe5fb;
-  border-radius: 9px;
-  color: #526176;
-  background: #f0f5ff;
-  font-size: 12px;
-  line-height: 1.4;
 }
 
 .segment-search {

@@ -207,18 +207,12 @@ button {
 }
 
 .inspector__section--note {
-  padding: 16px;
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-  background: #fffbeb;
+  margin-top: 26px;
 }
 
 .inspector__section--note p:last-child,
 .hint {
   margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
 }
 
 .editor-toolbar {
@@ -401,11 +395,6 @@ button {
 
 .empty-selection {
   margin-top: 12px;
-  padding: 14px;
-  border-radius: 10px;
-  color: #7c869a;
-  background: #f6f8fb;
-  font-size: 12px;
 }
 
 .selection-details {

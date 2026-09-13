@@ -160,32 +160,10 @@ def normalize_scene(scene: dict) -> dict:
     }
 
 
-def split_long_word(word: str, font_name: str, font_size: float, width: float) -> list[str]:
-    pieces: list[str] = []
-    current = ""
-    for character in word:
-        candidate = current + character
-        if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > width:
-            pieces.append(current)
-            current = character
-        else:
-            current = candidate
-    if current:
-        pieces.append(current)
-    return pieces
-
-
 def wrap_text(text: str, font_name: str, font_size: float, width: float) -> list[str]:
     result: list[str] = []
     for paragraph in text.split("\n"):
-        words: list[str] = []
-        for word in re.split(r"\s+", paragraph.strip()):
-            if not word:
-                continue
-            if pdfmetrics.stringWidth(word, font_name, font_size) > width:
-                words.extend(split_long_word(word, font_name, font_size, width))
-            else:
-                words.append(word)
+        words = [word for word in re.split(r"\s+", paragraph.strip()) if word]
         if not words:
             result.append("")
             continue
@@ -225,43 +203,46 @@ def run_font(segment: dict, run: dict) -> tuple[str, float]:
 def wrap_styled_runs(segment: dict, available_width: float) -> list[list[tuple[str, dict]]]:
     lines: list[list[tuple[str, dict]]] = [[]]
     line_width = 0.0
+    pending_word: list[tuple[str, dict]] = []
+    pending_space: list[tuple[str, dict]] = []
+
+    def parts_width(parts: list[tuple[str, dict]]) -> float:
+        return sum(pdfmetrics.stringWidth(text, *run_font(segment, run)) for text, run in parts)
+
+    def append_word() -> None:
+        nonlocal line_width, pending_word, pending_space
+        if not pending_word:
+            return
+        leading = pending_space if lines[-1] else []
+        candidate = [*leading, *pending_word]
+        candidate_width = parts_width(candidate)
+        if lines[-1] and line_width + candidate_width > available_width:
+            lines.append([])
+            line_width = 0.0
+            candidate = pending_word
+            candidate_width = parts_width(candidate)
+        lines[-1].extend(candidate)
+        line_width += candidate_width
+        pending_word = []
+        pending_space = []
+
     for run in segment.get("runs") or [{"text": segment["text"]}]:
-        font_name, font_size = run_font(segment, run)
-        for token in re.split(r"(\n|\s+)", str(run.get("text", ""))):
+        for token in re.split(r"(\n|[^\S\n]+)", str(run.get("text", ""))):
             if not token:
                 continue
             if token == "\n":
+                append_word()
+                pending_space = []
                 lines.append([])
                 line_width = 0.0
                 continue
-            token_width = pdfmetrics.stringWidth(token, font_name, font_size)
-            if token.isspace() and not lines[-1]:
+            if token.isspace():
+                append_word()
+                if lines[-1]:
+                    pending_space.append((token, run))
                 continue
-            if line_width + token_width <= available_width:
-                lines[-1].append((token, run))
-                line_width += token_width
-                continue
-            if lines[-1]:
-                lines.append([])
-                line_width = 0.0
-                if token.isspace():
-                    continue
-            if token_width <= available_width:
-                lines[-1].append((token, run))
-                line_width = token_width
-                continue
-            current = ""
-            for character in token:
-                candidate = current + character
-                if current and pdfmetrics.stringWidth(candidate, font_name, font_size) > available_width:
-                    lines[-1].append((current, run))
-                    lines.append([])
-                    current = character
-                else:
-                    current = candidate
-            if current:
-                lines[-1].append((current, run))
-                line_width = pdfmetrics.stringWidth(current, font_name, font_size)
+            pending_word.append((token, run))
+    append_word()
     return lines
 
 

@@ -99,6 +99,20 @@ test('knowledge base locates an exact glossary term inside a longer segment', as
   assert.equal(matches[0].fullSegment, false)
 })
 
+test('knowledge base matches a lowercase Turkish entry against dotted uppercase letters', async () => {
+  const kb = createKnowledgeBase({ embeddingProvider })
+  await kb.addMany([{
+    sourceText: 'mersin 4. noterliği', translation: 'четвертая нотариальная контора г. мерсин', sourceLanguage: 'Turkish', targetLanguage: 'ru',
+  }])
+  const sourceText = 'MERSİN 4. NOTERLİĞİ'
+  const matches = await kb.findMatchesInText(sourceText, 'ru', { sourceLanguage: 'Turkish' })
+  assert.equal(matches.length, 1)
+  assert.equal(matches[0].matchType, 'exact')
+  assert.equal(matches[0].fullSegment, true)
+  assert.equal(sourceText.slice(matches[0].start, matches[0].end), sourceText)
+  assert.equal(matches[0].translation, 'ЧЕТВЕРТАЯ НОТАРИАЛЬНАЯ КОНТОРА Г. МЕРСИН')
+})
+
 test('knowledge base proposes text-similar variants when there is no exact phrase', async () => {
   const kb = createKnowledgeBase()
   await kb.addMany([{

@@ -266,6 +266,56 @@ test('translation route proposes exact knowledge-base matches without silently a
   assert.equal(synchronizedObject.status, 'recognized')
 })
 
+test('document loading discovers a newly added Turkish match without overwriting the current translation', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-memory-refresh-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = '9'.repeat(32)
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Turkish memory refresh', filename: 'turkish.pdf', revision: 1, pageCount: 1, objectCount: 1,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Turkish memory refresh', sourceLanguage: 'Turkish', targetLanguage: 'ru', knowledgeBaseMode: 'suggestions', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'notary-object', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'MERSİN 4. NOTERLİĞİ', translation: 'Ч', confidence: 1,
+      x: 40, y: 40, width: 260, height: 40, style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      originalBounds: { x: 40, y: 40, width: 260, height: 40 },
+    }],
+  }))
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({
+    rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
+    runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
+  }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  let response = await fetch(`${base}/knowledge-base/entries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceText: 'mersin 4. noterliği', translation: 'четвертая нотариальная контора г. мерсин', sourceLanguage: 'Turkish', targetLanguage: 'ru',
+    }),
+  })
+  assert.equal(response.status, 201)
+  response = await fetch(`${base}/documents/${id}`)
+  assert.equal(response.status, 200)
+  const refreshed = await response.json()
+  const unit = refreshed.scene.objects[0].translationUnits[0]
+  assert.equal(unit.translation, 'Ч')
+  assert.equal(unit.knowledgeMatches[0].matchType, 'exact')
+  assert.equal(unit.knowledgeMatches[0].translation, 'ЧЕТВЕРТАЯ НОТАРИАЛЬНАЯ КОНТОРА Г. МЕРСИН')
+  assert.equal(unit.memorySuggestion.entryId, unit.knowledgeMatches[0].entryId)
+  assert.equal(refreshed.metadata.revision, 2)
+
+  response = await fetch(`${base}/documents/${id}`)
+  assert.equal(response.status, 200)
+  const unchanged = await response.json()
+  assert.equal(unchanged.metadata.revision, 2)
+})
+
 test('priority knowledge-base mode preserves the independent AI variant and revises a matched term in context', async t => {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-priority-memory-'))
   t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))

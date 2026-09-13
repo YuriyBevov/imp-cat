@@ -78,7 +78,7 @@
       <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
-    <main id="studio-view" class="studio is-segments-mode is-source-collapsed" hidden>
+    <main id="studio-view" class="studio is-source-collapsed" hidden>
       <aside class="pages-panel">
         <div id="page-thumbnails" class="page-thumbnails"></div>
       </aside>
@@ -107,9 +107,7 @@
             <button id="source-panel-toggle" class="icon-button icon-button--compact" type="button" title="Показать оригинал" aria-label="Показать оригинал" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
           </div>
           <div class="app-container workbench-toolbar__inner">
-            <div class="toolbar-group view-controls workbench-toolbar__layout-controls" aria-label="Режим, масштаб и сетка документа">
-              <button id="view-layout-button" class="icon-button icon-button--compact" type="button" title="Макет" aria-label="Макет" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button>
-              <button id="view-segments-button" class="icon-button icon-button--compact is-active" type="button" title="Сегменты" aria-label="Сегменты" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button>
+            <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб и сетка документа">
               <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
               <output id="zoom-output">100%</output>
               <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
@@ -139,13 +137,10 @@
 
       <aside id="inspector-panel" class="inspector-panel" aria-label="Инспектор документа">
         <div class="inspector-panel__body">
-        <div class="agent-card">
-          <div class="agent-card__title inspector-scope--segments"><span class="agent-dot"></span><strong>Агент-переводчик</strong></div>
-          <p id="agent-status" class="inspector-scope--segments">Документ распознан и структурирован агентом.</p>
-          <div class="agent-card__title inspector-scope--layout"><span class="agent-dot"></span><strong>Расстановка макета</strong></div>
-          <p class="inspector-scope--layout">Настройте положение и размеры сегментов, затем проверьте макет.</p>
-          <button id="reanalyze-button" class="button button--danger button--danger-filled reanalyze-button inspector-scope--segments" type="button">Пересегментация макета</button>
-          <div class="language-card inspector-scope--segments">
+        <aside id="empty-inspector" class="note note--info note--compact" role="status">Выберите сегмент для работы с ним</aside>
+        <div class="global-translation-tools">
+          <p id="agent-status" class="visually-hidden" aria-live="polite"></p>
+          <div class="language-card">
             <label>Язык исходника
               <select id="source-language"><option value="auto">Определить автоматически</option><option value="tr">Турецкий</option><option value="en">Английский</option><option value="de">Немецкий</option><option value="ru">Русский</option></select>
             </label>
@@ -154,43 +149,43 @@
               <select id="target-language"><option value="ru">Русский</option><option value="en">Английский</option><option value="tr">Турецкий</option><option value="de">Немецкий</option></select>
             </label>
           </div>
-          <div class="translation-instruction-card inspector-scope--segments">
+          <div class="translation-instruction-card">
             <label for="translation-global-instruction">Инструкция для AI</label>
             <div class="translation-instruction-card__primary-row">
               <textarea id="translation-global-instruction" rows="3" maxlength="10000" placeholder="Например: переводи все имена в документе; все печати не включай в сборку"></textarea>
               <div class="translation-instruction-card__actions">
-                <button id="instruction-preset-save" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Сохранить инструкцию в список инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-save"></use></svg></button>
-                <button id="revise-document-button" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Исправить весь документ с учетом инструкции" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg></button>
-                <button id="revise-selected-button" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Исправить выбранные сегменты с учетом инструкции" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
+                <button id="instruction-preset-save" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Сохранить инструкцию в список инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-save"></use></svg></button>
+                <button id="revise-document-button" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Исправить весь документ с учетом инструкции" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg></button>
+                <button id="revise-selected-button" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Исправить выбранные сегменты с учетом инструкции" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
               </div>
             </div>
             <div class="instruction-preset-picker">
               <select id="instruction-preset-select" aria-label="Сохраненные инструкции">
                 <option value="">Сохраненные инструкции…</option>
               </select>
-              <button id="instruction-preset-apply" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Использовать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
-              <button id="instruction-preset-edit" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Редактировать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-edit"></use></svg></button>
-              <button id="instruction-preset-delete" class="icon-button icon-button--compact icon-button--inverse icon-button--danger" type="button" aria-label="Удалить инструкцию из списка инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-trash"></use></svg></button>
+              <button id="instruction-preset-apply" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Использовать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              <button id="instruction-preset-edit" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Редактировать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-edit"></use></svg></button>
+              <button id="instruction-preset-delete" class="icon-button icon-button--compact icon-button--ghost icon-button--danger" type="button" aria-label="Удалить инструкцию из списка инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-trash"></use></svg></button>
             </div>
             <div id="instruction-preset-editor" class="instruction-preset-editor" hidden>
               <label for="instruction-preset-text">Инструкция</label>
               <textarea id="instruction-preset-text" rows="4" maxlength="10000"></textarea>
               <div>
-                <button id="instruction-preset-edit-cancel" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Отмена"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
-                <button id="instruction-preset-edit-save" class="icon-button icon-button--compact icon-button--inverse" type="button" aria-label="Сохранить изменения"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg></button>
+                <button id="instruction-preset-edit-cancel" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Отмена"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+                <button id="instruction-preset-edit-save" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Сохранить изменения"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg></button>
               </div>
             </div>
           </div>
-          <div class="agent-knowledge-mode inspector-scope--segments">
+          <div class="agent-knowledge-mode">
             <label class="memory-card__mode">Использование БЗ
               <select id="knowledge-base-mode">
                 <option value="suggestions">Только подсказки</option>
                 <option value="priority">БЗ имеет приоритет</option>
               </select>
             </label>
-            <small class="memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
+            <small class="note note--muted note--compact memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
           </div>
-          <div class="translation-batch-controls inspector-scope--segments">
+          <div class="translation-batch-controls">
             <small id="translation-selection-count">Выбрано: 0 из 0 сегментов</small>
             <div class="translation-batch-controls__actions">
               <label class="base-checkbox base-checkbox--inverse">
@@ -201,22 +196,19 @@
               <button id="translation-clear-selection" class="compact-button" type="button" disabled>Снять выбор</button>
             </div>
           </div>
-          <div class="agent-actions agent-actions--translation inspector-scope--segments">
+          <div class="global-translation-actions">
             <button id="translate-button" class="button button--primary" type="button" disabled>Перевести выбранные</button>
           </div>
-          <div class="agent-actions inspector-scope--layout">
-            <button id="layout-review-button" class="button" type="button">Проверить и исправить макет</button>
-            <button id="qa-button" class="button" type="button">Финальная проверка</button>
-          </div>
-          <small id="layout-review-status" class="layout-review-status inspector-scope--layout">Сравнение с оригиналом ещё не запускалось.</small>
         </div>
 
-        <section id="empty-inspector" class="empty-inspector">
-          <div>⌁</div>
-          <h2>Выберите сегмент</h2>
-          <p>Кликните по текстовому блоку на странице. Cmd/Ctrl + клик добавляет блоки к выделению.</p>
-          <button id="add-object-button" class="button inspector-scope--segments" type="button">Добавить пустой сегмент</button>
-        </section>
+        <div id="final-testing-tools" class="final-testing-tools">
+          <div class="final-testing-actions">
+            <button id="layout-review-button" class="button" type="button">Проверить и исправить макет</button>
+            <button id="qa-button" class="button" type="button">Финальная проверка макета</button>
+            <button id="reanalyze-button" class="button button--danger button--danger-filled reanalyze-button" type="button">Пересегментация макета</button>
+          </div>
+          <small id="layout-review-status" class="note note--muted note--compact layout-review-status">Сравнение с оригиналом ещё не запускалось.</small>
+        </div>
 
         <section id="object-inspector" class="object-inspector" hidden>
           <div class="segment-properties-row inspector-scope--segments">
@@ -244,7 +236,7 @@
               <textarea id="translation-text" rows="7" spellcheck="true" placeholder="Введите перевод или примените предложение агента"></textarea>
             </label>
           </div>
-          <p id="agent-notes" class="agent-notes inspector-scope--segments" hidden></p>
+          <p id="segment-note" class="note note--warning note--compact inspector-scope--segments" hidden></p>
           <section id="translation-units-card" class="translation-units-card inspector-scope--segments" hidden>
             <div class="translation-units-card__heading">
               <div><strong>Термины и части сегмента</strong><small>Внешний блок на странице останется единым</small></div>
@@ -411,7 +403,7 @@
               <select id="glossary-select" aria-label="Активный глоссарий"><option value="">Загружаем глоссарии…</option></select>
               <button id="glossary-add-button" class="button button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg><span>Новый</span></button>
             </div>
-            <small id="knowledge-base-status" class="memory-card__status">Проверяем PostgreSQL/pgvector…</small>
+            <small id="knowledge-base-status" class="note note--muted note--compact memory-card__status">Проверяем PostgreSQL/pgvector…</small>
             <div id="memory-results" class="memory-results"><small>Сначала выберите текстовый сегмент.</small></div>
           </div>
           <div class="object-actions inspector-scope--segments">
@@ -466,7 +458,7 @@
           <div><p class="eyebrow">Опасное действие</p><h2 id="reanalyze-confirm-title">Пересегментировать макет?</h2></div>
           <button id="reanalyze-confirm-close" class="icon-button icon-button--danger" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
-        <div id="reanalyze-confirm-description" class="reanalyze-confirm-warning">
+        <div id="reanalyze-confirm-description" class="note note--danger note--roomy reanalyze-confirm-warning">
           <strong>Вся текущая работа с переводами сегментов будет потеряна.</strong>
           <p>Пересегментация заново построит сегменты документа и заменит текущую сцену, включая переводы, инструкции, ручные правки, стили и расположение сегментов.</p>
           <p>Резервная версия на этом этапе не создаётся, поэтому восстановить текущую работу после подтверждения не получится.</p>
@@ -503,7 +495,7 @@
           <input id="knowledge-base-entry-id" type="hidden" />
           <label>Исходный текст<textarea id="knowledge-base-entry-source" rows="4" maxlength="100000" required></textarea></label>
           <label>Перевод<textarea id="knowledge-base-entry-translation" rows="4" maxlength="100000" required></textarea></label>
-          <small class="knowledge-base-entry-form__note">Исходный текст и перевод сохраняются в нижнем регистре. При применении регистр перевода восстанавливается по написанию исходника в документе.</small>
+          <small class="note note--muted note--compact knowledge-base-entry-form__note">Исходный текст и перевод сохраняются в нижнем регистре. При применении регистр перевода восстанавливается по написанию исходника в документе.</small>
           <div class="knowledge-base-entry-form__meta">
             <label>Глоссарий<select id="knowledge-base-entry-glossary" required></select></label>
             <label>Язык оригинала<input id="knowledge-base-entry-source-language" maxlength="20" value="auto" required /></label>
@@ -568,7 +560,7 @@
           <label class="credential-persistence"><input id="aitunnel-persist-key" type="checkbox" checked /><span>Сохранить ключ на сервере после перезапуска</span></label>
           <small>В браузере ключ передаётся в RSA-OAEP-шифротексте. Backend сохраняет его в исключённом из Git файле `.env` с правами `0600` и отправляет AITunnel только по HTTPS.</small>
         </div>
-        <div id="ai-provider-status" class="provider-status">Проверяем настройки…</div>
+        <div id="ai-provider-status" class="note note--info provider-status">Проверяем настройки…</div>
         <div class="settings-dialog__actions">
           <button id="remove-aitunnel-key" class="button button--danger" type="button">Удалить ключ</button>
           <button id="test-ai-connection" class="button" type="button">Проверить подключение</button>

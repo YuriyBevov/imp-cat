@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ICAT × ONLYOFFICE POC</title>
+    <link rel="stylesheet" href="/ui-kit.css" />
     <link rel="stylesheet" href="/onlyoffice.css" />
   </head>
   <body>
@@ -27,7 +28,7 @@
         </div>
         <input id="document-input" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
         <label id="upload-button" class="button button--primary" for="document-input">Выбрать DOCX</label>
-        <p id="upload-error" class="error" hidden></p>
+        <p id="upload-error" class="note note--danger upload-error" hidden></p>
       </section>
 
       <section id="editor-panel" class="editor-panel" hidden>
@@ -42,7 +43,7 @@
             <a id="download-button" class="button button--primary" href="#" download>Скачать сохранённый DOCX</a>
           </div>
         </div>
-        <div class="editor-note">
+        <div class="note note--muted note--banner editor-note">
           Для принудительного сохранения нажмите значок дискеты внутри ONLYOFFICE. ICAT получит обновлённый DOCX через callback.
         </div>
         <div id="editor-workspace" class="editor-workspace">
@@ -57,7 +58,7 @@
               </div>
               <span id="segment-progress" class="segment-progress">0 / 0</span>
             </div>
-            <p class="segment-panel__note">
+            <p class="note note--info segment-panel__note">
               Сегменты привязаны к структуре DOCX, а не к координатам экрана. Переводы пока сохраняются как локальные черновики и не изменяют документ.
             </p>
             <label class="segment-search">

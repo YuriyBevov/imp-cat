@@ -102,6 +102,7 @@ test('buildSceneFromAgent preserves normalized geometry and labels special objec
   assert.ok(scene.objects[0].style.fontSizePx <= 14)
   assert.equal(scene.objects[1].translation, '/Подпись/')
   assert.equal(scene.objects[1].status, 'needs-review')
+  assert.ok(scene.objects.every(object => object.manualWidth === false && object.manualHeight === false))
   assert.equal(scene.recognition.mode, 'codex')
 })
 
@@ -156,6 +157,10 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   input.pages[0].imageUrl = 'https://invalid.example/source.png'
   input.objects[0].style.fontFamily = 'Times New Roman'
   input.objects[0].style.color = 'javascript:red'
+  input.objects[0].x = -500
+  input.objects[0].y = 5_000
+  input.objects[0].width = 5_000
+  input.objects[0].height = 5_000
   input.snapToGrid = false
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
@@ -164,7 +169,25 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.gridSize, 8)
   assert.equal(normalized.gridDensity, 'xs')
   assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(normalized.pages[0].widthPx, normalized.pages[0].heightPx))
+  assert.equal(normalized.objects[0].manualWidth, false)
+  assert.equal(normalized.objects[0].manualHeight, false)
+  assert.equal(normalized.objects[0].x, normalized.pages[0].contentBounds.x)
+  assert.equal(normalized.objects[0].y, normalized.pages[0].contentBounds.y)
+  assert.equal(normalized.objects[0].width, normalized.pages[0].contentBounds.width)
+  assert.equal(normalized.objects[0].height, normalized.pages[0].contentBounds.height)
   assert.equal(normalized.snapToGrid, true)
+})
+
+test('normalizeScene preserves legacy dimensions that differ from original bounds', () => {
+  const input = buildScene(analysisFixture(), { documentId: 'e'.repeat(32) })
+  const object = input.objects[0]
+  delete object.manualWidth
+  delete object.manualHeight
+  object.width += 30
+  object.height += 20
+  const normalized = normalizeScene(input, 'e'.repeat(32), 'Legacy')
+  assert.equal(normalized.objects[0].manualWidth, true)
+  assert.equal(normalized.objects[0].manualHeight, true)
 })
 
 test('short source pages use an A4-height workspace without stretching the source frame', () => {

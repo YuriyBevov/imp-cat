@@ -66,6 +66,23 @@ class StudioExporterTests(unittest.TestCase):
                 self.assertNotIn("Не экспортировать", xml)
             self.assertTrue(pdf_path.read_bytes().startswith(b"%PDF"))
 
+    def test_wrap_keeps_long_words_indivisible(self):
+        long_word = "неразрываемоедлинноеслово"
+        self.assertEqual(MODULE.wrap_text(long_word, "Helvetica", 12, 20), [long_word])
+
+        segment = {
+            "text": long_word,
+            "fontFamily": "Arial", "fontSizePx": 16, "fontWeight": 400,
+            "fontStyle": "normal", "lineHeight": 1.2,
+            "runs": [
+                {"text": "неразрываемое", "fontWeight": 700},
+                {"text": "длинноеслово", "fontWeight": 400},
+            ],
+        }
+        lines = MODULE.wrap_styled_runs(segment, 20)
+        self.assertEqual(len(lines), 1)
+        self.assertEqual("".join(text for text, _ in lines[0]), long_word)
+
     def test_exports_structural_cells_as_one_native_word_table(self):
         scene = self.scene()
         for row in range(2):
