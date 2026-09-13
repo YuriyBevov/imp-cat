@@ -50,7 +50,11 @@ test('documents can be archived, restored and permanently deleted with confirmat
 
   const scene = {
     documentId: id, title: 'Archive test', sourceLanguage: 'en', targetLanguage: 'ru',
-    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    pages: [{
+      index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123,
+      contentBounds: { x: 40, y: 40, width: 704, height: 1034 },
+      gridAvailableBounds: { width: 714, height: 1043 },
+    }],
     objects: [
       { id: 'lower', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'Lower', x: 40, y: 200, width: 200, height: 40, style: {} },
       { id: 'upper-right', pageIndex: 0, type: 'text', readingOrder: 2, sourceText: 'Upper right', x: 300, y: 40, width: 200, height: 40, style: {} },
@@ -66,6 +70,8 @@ test('documents can be archived, restored and permanently deleted with confirmat
     savedDocument.scene.objects.slice().sort((left, right) => left.readingOrder - right.readingOrder).map(object => object.id),
     ['upper-left', 'upper-right', 'lower'],
   )
+  assert.deepEqual(savedDocument.scene.pages[0].contentBounds, { x: 40, y: 40, width: 704, height: 1034 })
+  assert.deepEqual(savedDocument.scene.pages[0].gridAvailableBounds, { width: 714, height: 1043 })
   assert.ok(savedDocument.report)
 
   response = await fetch(`${base}/documents`)
@@ -371,7 +377,7 @@ test('priority knowledge-base mode preserves the independent AI variant and revi
   const unit = result.scene.objects[0].translationUnits[0]
   assert.equal(prompts.length, 2)
   assert.doesNotMatch(prompts[0], /Имеет срок/)
-  assert.match(prompts[1], /"source":"sürelidir","translation":"ИМЕЕТ СРОК"/)
+  assert.match(prompts[1], /"source":"Sürelidir","translation":"ИМЕЕТ СРОК"/)
   assert.equal(unit.knowledgeMatches[0].matchType, 'exact-fragment')
   assert.equal(sourceText.slice(unit.knowledgeMatches[0].start, unit.knowledgeMatches[0].end), 'SÜRELİDİR')
   assert.equal(unit.aiTranslation, 'СРОЧНАЯ: доверенность действует до 25.08.2026.')

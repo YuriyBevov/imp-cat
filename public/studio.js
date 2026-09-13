@@ -2,7 +2,17 @@
   const $ = selector => document.querySelector(selector)
   const iconMarkup = name => `<svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-${name}"></use></svg>`
   const translationUnits = window.IcatTranslationUnits
-  const GRID_DENSITY_COLUMNS = Object.freeze({ xs: 64, sm: 48, md: 32, lg: 24, xl: 16, xxl: 8 })
+  const GRID_XL_COLUMNS = 16
+  const GRID_XL_SCALE = 1.5
+  const GRID_FINE_DIVISIONS = 4
+  const LANGUAGE_LABELS = Object.freeze({
+    auto: 'Авто',
+    tr: 'Турецкий', turkish: 'Турецкий', 'türkçe': 'Турецкий', 'турецкий': 'Турецкий',
+    en: 'Английский', english: 'Английский', 'английский': 'Английский',
+    ru: 'Русский', russian: 'Русский', 'русский': 'Русский',
+    de: 'Немецкий', german: 'Немецкий', deutsch: 'Немецкий', 'немецкий': 'Немецкий',
+  })
+  const languageLabel = value => LANGUAGE_LABELS[String(value || 'auto').trim().toLocaleLowerCase()] || String(value || 'Авто')
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
@@ -16,7 +26,6 @@
     sourcePanelToggle: $('#source-panel-toggle'),
     inspectorPanel: $('#inspector-panel'), inspectorPanelToggle: $('#inspector-panel-toggle'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
-    gridSize: $('#grid-size'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'), sourcePreviewOpen: $('#source-preview-open'),
     sourceLightbox: $('#source-preview-lightbox'), sourceLightboxTitle: $('#source-preview-lightbox-title'), sourceLightboxClose: $('#source-preview-lightbox-close'),
@@ -37,6 +46,7 @@
     objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), segmentNote: $('#segment-note'),
+    segmentGridCoordinates: $('#segment-grid-coordinates'),
     translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
     translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
     translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
@@ -115,6 +125,7 @@
     knowledgeBaseTotal: 0,
     activeKnowledgeSuggestion: null,
     instructionPresets: [],
+    sceneEditRevision: 0,
   }
 
   function createInspectorAccordion(id, title, nodes, open = true) {
@@ -829,6 +840,7 @@
       : new Set()
     state.history = []
     state.future = []
+    state.sceneEditRevision = 0
     state.activePage = 0
     state.zoom = 1
     state.sourceRenderedPage = null
@@ -849,7 +861,6 @@
     elements.globalTranslationInstruction.value = state.scene.globalTranslationInstruction || ''
     refreshGlobalInstructionControls()
     loadKnowledgeBase().catch(() => {})
-    elements.gridSize.value = currentGridDensity()
     const recognition = state.scene.recognition
     const recognitionSummary = recognition?.mode === 'codex'
       ? `Документ полностью разобран агентом${recognition.model ? ` ${recognition.model}` : ''}.`
@@ -878,6 +889,14 @@
       if (page.sourcePageIndex === undefined) {
         const match = String(page.imageUrl || '').match(/\/pages\/(\d+)\/image(?:$|[?#])/)
         page.sourcePageIndex = page.isAdded || !page.imageUrl ? null : Number(match?.[1] ?? index)
+      }
+      if (!page.gridAvailableBounds
+        || !Number.isFinite(Number(page.gridAvailableBounds.width))
+        || !Number.isFinite(Number(page.gridAvailableBounds.height))) {
+        page.gridAvailableBounds = {
+          width: Number(page.contentBounds?.width) || 1,
+          height: Number(page.contentBounds?.height) || 1,
+        }
       }
     }
     reindexScenePages(scene)
@@ -922,9 +941,10 @@
 
   function renderDocument() {
     closeKnowledgeSuggestion()
+    const gridBoundsChanged = normalizeSceneGridBounds()
+    const gridGeometryChanged = snapObjectsToGridCells(state.scene.objects)
     rebuildClientTables()
     renderThumbnails()
-    elements.gridSize.value = currentGridDensity()
     elements.canvas.replaceChildren()
     for (const page of state.scene.pages) {
       const shell = document.createElement('div')
@@ -951,7 +971,7 @@
       boundaryResize.title = 'Изменить высоту рабочей области документа'
       boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
       boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
-      boundary.append(boundaryResize)
+      boundary.append(createGridCoordinateLabels(page), boundaryResize)
       surface.append(boundary)
 
       for (const table of state.scene.tables || []) {
@@ -981,6 +1001,40 @@
     refreshSelection()
     refreshTranslationSelectionControls()
     requestAnimationFrame(expandClippedObjects)
+    if (gridBoundsChanged || gridGeometryChanged) scheduleSave()
+  }
+
+  function gridColumnLabel(index) {
+    let value = Math.max(0, Math.trunc(index)) + 1
+    let label = ''
+    while (value > 0) {
+      value -= 1
+      label = String.fromCharCode(65 + (value % 26)) + label
+      value = Math.floor(value / 26)
+    }
+    return label
+  }
+
+  function createGridCoordinateLabels(page) {
+    const labels = document.createElement('div')
+    labels.className = 'grid-coordinate-labels'
+    labels.setAttribute('aria-hidden', 'true')
+    const { outerSize, outerColumns, outerRows } = currentGridMetrics(page)
+    for (let index = 0; index < outerColumns; index += 1) {
+      const label = document.createElement('span')
+      label.className = 'grid-coordinate-label grid-coordinate-label--column'
+      label.textContent = gridColumnLabel(index)
+      Object.assign(label.style, { left: `${index * outerSize}px`, width: `${outerSize}px` })
+      labels.append(label)
+    }
+    for (let index = 0; index < outerRows; index += 1) {
+      const label = document.createElement('span')
+      label.className = 'grid-coordinate-label grid-coordinate-label--row'
+      label.textContent = String(index + 1)
+      Object.assign(label.style, { top: `${index * outerSize}px`, height: `${outerSize}px` })
+      labels.append(label)
+    }
+    return labels
   }
 
   function renderSourcePreview() {
@@ -1389,7 +1443,7 @@
   async function applyKnowledgeMatch(objectId, unitId, entryId, button) {
     if (!state.metadata) return
     button.disabled = true
-    button.textContent = 'Применяем…'
+    button.setAttribute('aria-busy', 'true')
     try {
       checkpoint()
       const response = await api(`/api/studio/documents/${state.metadata.id}/translate/apply-memory`, {
@@ -1405,57 +1459,55 @@
       showToast(data.source === 'memory' ? 'Применён полный перевод из БЗ' : 'Перевод скорректирован с учётом термина БЗ')
     } catch (error) {
       button.disabled = false
-      button.textContent = 'Использовать'
+      button.removeAttribute('aria-busy')
       showToast(error.message, true)
     }
   }
 
-  function openKnowledgeSuggestionPopover(event, objectId, matches) {
+  function openKnowledgeSuggestionPopover(event, objectId, matches, displayedField = null) {
     if (!matches.length) return
+    const object = state.scene.objects.find(item => item.id === objectId)
+    const currentField = displayedField || (object ? objectOutputField(object) : 'sourceText')
+    const currentIsTranslation = currentField === 'translation'
     state.activeKnowledgeSuggestion = { objectId, matches: matches.map(match => ({ unitId: match.unitId, id: match.id })) }
-    elements.knowledgeSuggestionTitle.textContent = matches.length === 1
-      ? `БЗ: ${matches[0].sourceText}`
-      : `Совпадения с БЗ: ${matches.length}`
     elements.knowledgeSuggestionList.replaceChildren()
     for (const match of matches) {
       const row = document.createElement('article')
       row.className = 'knowledge-suggestion'
       const pair = document.createElement('div')
       pair.className = 'knowledge-suggestion__pair'
-      const source = document.createElement('span')
-      source.textContent = match.sourceText
+      const current = document.createElement('span')
+      current.className = 'knowledge-suggestion__value knowledge-suggestion__value--current'
+      current.dataset.language = languageLabel(currentIsTranslation ? match.targetLanguage : match.sourceLanguage)
+      current.textContent = currentIsTranslation ? match.translation : match.sourceText
       const arrow = document.createElement('span')
       arrow.className = 'knowledge-suggestion__arrow'
       arrow.innerHTML = iconMarkup('arrow-right')
-      const translation = document.createElement('span')
-      translation.textContent = match.translation
-      pair.append(source, arrow, translation)
-      const score = document.createElement('strong')
-      score.className = 'knowledge-suggestion__score'
-      const matchLabel = match.matchType === 'vector'
-        ? 'смысловое'
-        : match.matchType === 'fuzzy'
-          ? 'текстовое'
-          : 'точное'
-      score.textContent = `${Math.round(match.score * 100)}% ${matchLabel}`
+      const opposite = document.createElement('span')
+      opposite.className = 'knowledge-suggestion__value'
+      opposite.dataset.language = languageLabel(currentIsTranslation ? match.sourceLanguage : match.targetLanguage)
+      opposite.textContent = currentIsTranslation ? match.sourceText : match.translation
+      pair.append(current, arrow, opposite)
       const actions = document.createElement('div')
       actions.className = 'knowledge-suggestion__actions'
       const openEntry = document.createElement('button')
-      openEntry.className = 'button'
+      openEntry.className = 'icon-button icon-button--compact icon-button--ghost'
       openEntry.type = 'button'
-      openEntry.textContent = 'Открыть в БЗ'
+      openEntry.setAttribute('aria-label', 'Открыть в БЗ')
+      openEntry.innerHTML = iconMarkup('database')
       openEntry.addEventListener('click', async () => {
         closeKnowledgeSuggestion()
         elements.knowledgeBaseQuery.value = match.sourceText
         await openKnowledgeBase()
       })
       const apply = document.createElement('button')
-      apply.className = 'button button--primary'
+      apply.className = 'icon-button icon-button--compact icon-button--filled'
       apply.type = 'button'
-      apply.textContent = 'Использовать'
+      apply.setAttribute('aria-label', 'Использовать')
+      apply.innerHTML = iconMarkup('check')
       apply.addEventListener('click', () => applyKnowledgeMatch(objectId, match.unitId, match.entryId, apply))
       actions.append(openEntry, apply)
-      row.append(pair, score, actions)
+      row.append(pair, actions)
       elements.knowledgeSuggestionList.append(row)
     }
     elements.knowledgeSuggestionPopover.hidden = false
@@ -1468,20 +1520,6 @@
       ? below
       : Math.max(12, rect.top - estimatedHeight - 10)
     Object.assign(elements.knowledgeSuggestionPopover.style, { left: `${left}px`, top: `${top}px` })
-  }
-
-  function showKnowledgeSuggestion(event, objectId, unitId, matchIds) {
-    const object = state.scene?.objects.find(item => item.id === objectId)
-    const unit = object && ensureObjectTranslationUnits(object).find(item => item.id === unitId)
-    const requested = new Set(matchIds)
-    const matches = (unit?.knowledgeMatches || [])
-      .filter(match => requested.has(match.id))
-      .map(match => ({ ...match, unitId }))
-    openKnowledgeSuggestionPopover(event, objectId, matches)
-  }
-
-  function showObjectKnowledgeSuggestions(event, object) {
-    openKnowledgeSuggestionPopover(event, object.id, knowledgeMatchesForObject(object))
   }
 
   function aiAlternativeForObject(object) {
@@ -1510,12 +1548,53 @@
     showToast('Использован первоначальный перевод ИИ')
   }
 
+  function displayedKnowledgeMatches(object, field, text) {
+    const matches = knowledgeMatchesForObject(object)
+    if (!matches.length || !text.length) return []
+    if (field === 'sourceText') return matches
+    const loweredText = text.toLocaleLowerCase()
+    const nextSearchOffset = new Map()
+    return matches.map(match => {
+      const suggestion = String(match.translation || '').trim()
+      if (suggestion) {
+        const loweredSuggestion = suggestion.toLocaleLowerCase()
+        const from = nextSearchOffset.get(loweredSuggestion) || 0
+        const start = loweredText.indexOf(loweredSuggestion, from)
+        if (start >= 0) {
+          nextSearchOffset.set(loweredSuggestion, start + suggestion.length)
+          return { ...match, start, end: start + suggestion.length }
+        }
+      }
+      const sourceText = String(object.sourceText || '')
+      const sourceLineStart = sourceText.lastIndexOf('\n', Math.max(0, match.start - 1)) + 1
+      const sourceLineBreak = sourceText.indexOf('\n', match.end)
+      const sourceLineEnd = sourceLineBreak < 0 ? sourceText.length : sourceLineBreak
+      const sourceLine = sourceText.slice(sourceLineStart, sourceLineEnd)
+      const leadingWhitespace = sourceLine.length - sourceLine.trimStart().length
+      const trimmedStart = sourceLineStart + leadingWhitespace
+      const trimmedEnd = sourceLineEnd - (sourceLine.length - sourceLine.trimEnd().length)
+      if (match.start > trimmedStart || match.end < trimmedEnd) return null
+      const sourceLineIndex = sourceText.slice(0, sourceLineStart).split('\n').length - 1
+      const translatedLines = text.split('\n')
+      if (!translatedLines[sourceLineIndex]?.trim()) return null
+      const translatedStart = translatedLines.slice(0, sourceLineIndex).reduce((offset, line) => offset + line.length + 1, 0)
+      const translatedLine = translatedLines[sourceLineIndex]
+      const translatedLeading = translatedLine.length - translatedLine.trimStart().length
+      return {
+        ...match,
+        start: translatedStart + translatedLeading,
+        end: translatedStart + translatedLine.trimEnd().length,
+      }
+    }).filter(Boolean)
+  }
+
   function renderTextContent(content, object, requestedField = null) {
     const field = requestedField || objectOutputField(object)
     const text = requestedField ? String(object[field] || '') : objectOutput(object)
     content.dataset.outputField = field
     const ranges = styleRanges(object, field).filter(range => range.end > range.start && range.start < text.length)
-    if (!ranges.length) {
+    const knowledgeMatches = displayedKnowledgeMatches(object, field, text)
+    if (!ranges.length && !knowledgeMatches.length) {
       content.textContent = text
       return
     }
@@ -1523,6 +1602,10 @@
     for (const range of ranges) {
       points.add(Math.max(0, Math.min(text.length, range.start)))
       points.add(Math.max(0, Math.min(text.length, range.end)))
+    }
+    for (const match of knowledgeMatches) {
+      points.add(Math.max(0, Math.min(text.length, match.start)))
+      points.add(Math.max(0, Math.min(text.length, match.end)))
     }
     const sorted = [...points].sort((left, right) => left - right)
     const fragment = document.createDocumentFragment()
@@ -1532,7 +1615,8 @@
       if (end <= start) continue
       const value = text.slice(start, end)
       const runStyle = effectiveTextStyle(object, field, start)
-      if (!Object.keys(runStyle).length) {
+      const activeMatches = knowledgeMatches.filter(match => match.start <= start && match.end >= end)
+      if (!Object.keys(runStyle).length && !activeMatches.length) {
         fragment.append(document.createTextNode(value))
         continue
       }
@@ -1544,6 +1628,21 @@
       if (runStyle.fontWeight != null) span.style.fontWeight = runStyle.fontWeight
       if (runStyle.fontStyle != null) span.style.fontStyle = runStyle.fontStyle
       if (runStyle.color != null) span.style.color = runStyle.color
+      if (activeMatches.length) {
+        span.classList.add('knowledge-highlight')
+        span.title = 'Найдена запись в Базе знаний'
+        span.setAttribute('role', 'button')
+        span.tabIndex = 0
+        const openMatches = event => {
+          event.preventDefault()
+          event.stopPropagation()
+          openKnowledgeSuggestionPopover(event, object.id, activeMatches, field)
+        }
+        span.addEventListener('click', openMatches)
+        span.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') openMatches(event)
+        })
+      }
       fragment.append(span)
     }
     content.replaceChildren(fragment)
@@ -1946,19 +2045,19 @@
     const badge = document.createElement('span')
     badge.className = 'scene-object__badge'
     badge.textContent = typeLabel(object.type)
-    const knowledgeMatches = requestedField === 'sourceText' ? [] : knowledgeMatchesForObject(object)
+    const knowledgeMatches = knowledgeMatchesForObject(object)
     const knowledgeIndicator = knowledgeMatches.length ? document.createElement('button') : null
     if (knowledgeIndicator) {
-      knowledgeIndicator.className = 'scene-object__knowledge-match'
+      knowledgeIndicator.className = 'icon-button icon-button--tiny icon-button--danger icon-button--shadow scene-object__knowledge-icon'
       knowledgeIndicator.type = 'button'
-      knowledgeIndicator.textContent = `БЗ · ${knowledgeMatches.length}`
-      knowledgeIndicator.title = `Найдены совпадения с Базой знаний: ${knowledgeMatches.length}`
+      knowledgeIndicator.innerHTML = iconMarkup('alert-circle')
+      knowledgeIndicator.title = 'Найдена запись в Базе знаний'
       knowledgeIndicator.setAttribute('aria-label', knowledgeIndicator.title)
       knowledgeIndicator.addEventListener('pointerdown', event => event.stopPropagation())
       knowledgeIndicator.addEventListener('click', event => {
         event.preventDefault()
         event.stopPropagation()
-        showObjectKnowledgeSuggestions(event, object)
+        openKnowledgeSuggestionPopover(event, object.id, knowledgeMatches, displayField)
       })
     }
     const handle = document.createElement('button')
@@ -1986,8 +2085,16 @@
       if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
     })
     for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
-    content.addEventListener('blur', () => { state.textCheckpoint = false; scheduleSave() })
+    let knowledgeTextChanged = false
+    content.addEventListener('blur', () => {
+      state.textCheckpoint = false
+      if (!knowledgeTextChanged) return scheduleSave()
+      knowledgeTextChanged = false
+      refreshKnowledgeBaseAfterSegmentEdit()
+    })
     content.addEventListener('input', () => {
+      knowledgeTextChanged = true
+      state.sceneEditRevision += 1
       object[editField] = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
       object[stylesField] = extractInlineStyles(content, object[editField])
@@ -2044,8 +2151,12 @@
     const requiredHeight = minimumObjectHeight(object, object.width)
     if (!Number.isFinite(requiredHeight) || requiredHeight <= object.height + 1) return false
     const page = state.scene.pages[object.pageIndex]
+    const anchorRect = objectGridCellRect(object, page)
     const areaBottom = page.contentBounds.y + page.contentBounds.height
     object.height = Math.min(Math.max(12, areaBottom - object.y), Math.max(12, requiredHeight))
+    snapObjectToGridCells(object)
+    fitObjectAxisIntoFreeGridCells(object, 'y', anchorRect)
+    positionObjectNode(node, object)
     node.style.height = `${object.height}px`
     return true
   }
@@ -2060,24 +2171,240 @@
     if (changed) scheduleSave()
   }
 
-  function currentGridDensity() {
-    return GRID_DENSITY_COLUMNS[state.scene?.gridDensity] ? state.scene.gridDensity : 'xs'
+  function gridAvailableBounds(page) {
+    const fallback = page?.contentBounds || {}
+    return {
+      width: Math.max(1, Number(page?.gridAvailableBounds?.width) || Number(fallback.width) || 1),
+      height: Math.max(1, Number(page?.gridAvailableBounds?.height) || Number(fallback.height) || 1),
+    }
+  }
+
+  function currentGridMetrics(page = state.scene?.pages?.[state.activePage] || state.scene?.pages?.[0]) {
+    const available = gridAvailableBounds(page)
+    const approximateOuterSize = available.width / GRID_XL_COLUMNS * GRID_XL_SCALE
+    const outerSize = Math.max(GRID_FINE_DIVISIONS, Math.round(approximateOuterSize / GRID_FINE_DIVISIONS) * GRID_FINE_DIVISIONS)
+    const middleSize = outerSize / 2
+    const size = outerSize / GRID_FINE_DIVISIONS
+    const outerColumns = Math.max(1, Math.floor(available.width / outerSize))
+    const outerRows = Math.max(1, Math.floor(available.height / outerSize))
+    const columns = outerColumns * GRID_FINE_DIVISIONS
+    const rows = outerRows * GRID_FINE_DIVISIONS
+    return {
+      size, middleSize, outerSize, columns, rows, outerColumns, outerRows,
+      width: outerColumns * outerSize,
+      height: outerRows * outerSize,
+    }
   }
 
   function currentGridSize(page = state.scene?.pages?.[state.activePage] || state.scene?.pages?.[0]) {
-    const columns = GRID_DENSITY_COLUMNS[currentGridDensity()]
-    return page?.contentBounds?.width > 0 ? page.contentBounds.width / columns : 8
+    return currentGridMetrics(page).size
   }
 
-  function snapCoordinate(value, page, axis = 'x') {
+  function normalizePageGridBounds(page) {
+    if (!page?.contentBounds) return false
+    const metrics = currentGridMetrics(page)
+    const changed = Math.abs(page.contentBounds.width - metrics.width) > 0.001
+      || Math.abs(page.contentBounds.height - metrics.height) > 0.001
+    page.contentBounds.width = metrics.width
+    page.contentBounds.height = metrics.height
+    return changed
+  }
+
+  function normalizeSceneGridBounds(scene = state.scene) {
+    let changed = false
+    for (const page of scene?.pages || []) {
+      if (normalizePageGridBounds(page)) changed = true
+    }
+    return changed
+  }
+
+  function snapAxisToGridCells(position, length, page, axis = 'x') {
     const size = currentGridSize(page)
-    const area = page?.contentBounds || { x: 0, y: 0, width: page?.widthPx || 0, height: page?.heightPx || 0 }
+    const area = page.contentBounds
     const origin = axis === 'y' ? area.y : area.x
-    const boundary = origin + (axis === 'y' ? area.height : area.width)
-    const line = origin + Math.round((value - origin) / size) * size
-    // The bottom boundary is also a valid line when the page aspect ratio
-    // leaves a partial final row.
-    return Math.min(boundary, Math.max(origin, line))
+    const extent = axis === 'y' ? area.height : area.width
+    const requestedLength = Math.min(extent, Math.max(12, Number(length) || 12))
+    const totalCells = Math.max(1, Math.floor(extent / size + 0.000001))
+    let cells = Math.max(1, Math.min(totalCells, Math.ceil(requestedLength / size - 0.000001)))
+    const requestedStartIndex = Math.round(((Number(position) || origin) - origin) / size)
+    let maximumStartIndex = Math.max(0, totalCells - cells)
+    let startIndex = Math.min(maximumStartIndex, Math.max(0, requestedStartIndex))
+    let snappedPosition = origin + startIndex * size
+    const snappedEnd = origin + (startIndex + cells) * size
+    return { position: snappedPosition, length: snappedEnd - snappedPosition }
+  }
+
+  function snapObjectToGridCells(object) {
+    const page = state.scene?.pages?.[object?.pageIndex]
+    if (!object || !page || object.excluded) return false
+    const horizontal = snapAxisToGridCells(object.x, object.width, page, 'x')
+    const vertical = snapAxisToGridCells(object.y, object.height, page, 'y')
+    const changed = Math.abs(object.x - horizontal.position) > 0.001
+      || Math.abs(object.y - vertical.position) > 0.001
+      || Math.abs(object.width - horizontal.length) > 0.001
+      || Math.abs(object.height - vertical.length) > 0.001
+    Object.assign(object, {
+      x: horizontal.position,
+      y: vertical.position,
+      width: horizontal.length,
+      height: vertical.length,
+    })
+    return changed
+  }
+
+  function snapObjectsToGridCells(objects) {
+    let changed = false
+    for (const object of objects || []) {
+      if (snapObjectToGridCells(object)) changed = true
+    }
+    return changed
+  }
+
+  function objectGridCellRect(object, page = state.scene?.pages?.[object?.pageIndex]) {
+    if (!object || !page) return null
+    const area = page.contentBounds
+    const size = currentGridSize(page)
+    const { columns, rows } = currentGridMetrics(page)
+    const left = Math.min(columns - 1, Math.max(0, Math.floor((object.x - area.x) / size + 0.000001)))
+    const top = Math.min(rows - 1, Math.max(0, Math.floor((object.y - area.y) / size + 0.000001)))
+    const right = Math.min(columns, Math.max(left + 1, Math.ceil((object.x + object.width - area.x) / size - 0.000001)))
+    const bottom = Math.min(rows, Math.max(top + 1, Math.ceil((object.y + object.height - area.y) / size - 0.000001)))
+    return { left, top, right, bottom, columns, rows }
+  }
+
+  function gridRangesOverlap(firstStart, firstEnd, secondStart, secondEnd) {
+    return firstStart < secondEnd && firstEnd > secondStart
+  }
+
+  function fitObjectAxisIntoFreeGridCells(object, axis, anchorRect, reservedRects = null) {
+    const page = state.scene?.pages?.[object?.pageIndex]
+    if (!object || !page || !anchorRect) return false
+    const horizontal = axis === 'x'
+    const area = page.contentBounds
+    const size = currentGridSize(page)
+    const candidateRect = objectGridCellRect(object, page)
+    const axisStartKey = horizontal ? 'left' : 'top'
+    const axisEndKey = horizontal ? 'right' : 'bottom'
+    const crossStartKey = horizontal ? 'top' : 'left'
+    const crossEndKey = horizontal ? 'bottom' : 'right'
+    const extent = horizontal ? candidateRect.columns : candidateRect.rows
+    const requestedLength = horizontal ? object.width : object.height
+    const requestedCells = Math.max(1, Math.min(extent, Math.ceil(requestedLength / size - 0.000001)))
+    const anchorStart = anchorRect[axisStartKey]
+    const blocked = []
+
+    for (const obstacle of state.scene.objects) {
+      if (obstacle.id === object.id || obstacle.excluded || obstacle.pageIndex !== object.pageIndex) continue
+      const obstacleRect = reservedRects?.get(obstacle.id) || objectGridCellRect(obstacle, page)
+      if (!gridRangesOverlap(
+        candidateRect[crossStartKey], candidateRect[crossEndKey],
+        obstacleRect[crossStartKey], obstacleRect[crossEndKey],
+      )) continue
+      let blockedStart = obstacleRect[axisStartKey]
+      let blockedEnd = obstacleRect[axisEndKey]
+      if (reservedRects?.has(obstacle.id)) {
+        if (blockedStart >= anchorRect[axisEndKey]) {
+          blockedStart = Math.round((anchorRect[axisEndKey] + blockedStart) / 2)
+        } else if (blockedEnd <= anchorStart) {
+          blockedEnd = Math.round((blockedEnd + anchorStart) / 2)
+        } else {
+          const anchorCenter = (anchorStart + anchorRect[axisEndKey]) / 2
+          const obstacleCenter = (blockedStart + blockedEnd) / 2
+          const boundary = Math.round((anchorCenter + obstacleCenter) / 2)
+          if (obstacleCenter >= anchorCenter) blockedStart = boundary
+          else blockedEnd = boundary
+        }
+      }
+      blocked.push({ start: blockedStart, end: blockedEnd })
+    }
+    blocked.sort((first, second) => first.start - second.start || first.end - second.end)
+    const merged = []
+    for (const interval of blocked) {
+      const previous = merged.at(-1)
+      if (previous && interval.start <= previous.end) previous.end = Math.max(previous.end, interval.end)
+      else merged.push({ ...interval })
+    }
+    const freeRuns = []
+    let cursor = 0
+    for (const interval of merged) {
+      if (interval.start > cursor) freeRuns.push({ start: cursor, end: interval.start })
+      cursor = Math.max(cursor, interval.end)
+    }
+    if (cursor < extent) freeRuns.push({ start: cursor, end: extent })
+    if (!freeRuns.length) return false
+    const candidates = freeRuns.map(run => {
+      const cells = Math.min(requestedCells, run.end - run.start)
+      const start = Math.min(run.end - cells, Math.max(run.start, anchorStart))
+      return {
+        ...run,
+        cells,
+        start,
+        complete: cells === requestedCells,
+        distance: Math.abs(start - anchorStart),
+      }
+    }).sort((first, second) => (
+      first.distance - second.distance
+      || Number(second.complete) - Number(first.complete)
+      || second.cells - first.cells
+      || first.start - second.start
+    ))
+    const selected = candidates[0]
+    const occupiedCells = selected.cells
+    const start = selected.start
+    const origin = horizontal ? area.x : area.y
+    const areaExtent = horizontal ? area.width : area.height
+    const position = origin + start * size
+    const end = Math.min(origin + areaExtent, origin + (start + occupiedCells) * size)
+    const length = Math.max(0, end - position)
+    const previousPosition = horizontal ? object.x : object.y
+    const previousLength = horizontal ? object.width : object.height
+    if (horizontal) Object.assign(object, { x: position, width: length })
+    else Object.assign(object, { y: position, height: length })
+    return Math.abs(previousPosition - position) > 0.001 || Math.abs(previousLength - length) > 0.001
+  }
+
+  function fitObjectSizeIntoFreeGridCells(object, anchorRect = objectGridCellRect(object), reservedRects = null) {
+    if (!object || !anchorRect) return false
+    const requested = { x: object.x, y: object.y, width: object.width, height: object.height }
+    const targetRect = objectGridCellRect(object)
+    const horizontalChanged = targetRect.left !== anchorRect.left || targetRect.right !== anchorRect.right
+    const verticalChanged = targetRect.top !== anchorRect.top || targetRect.bottom !== anchorRect.bottom
+    if (horizontalChanged) fitObjectAxisIntoFreeGridCells(object, 'x', anchorRect, reservedRects)
+    if (verticalChanged) fitObjectAxisIntoFreeGridCells(object, 'y', anchorRect, reservedRects)
+    return Math.abs(requested.x - object.x) > 0.001
+      || Math.abs(requested.y - object.y) > 0.001
+      || Math.abs(requested.width - object.width) > 0.001
+      || Math.abs(requested.height - object.height) > 0.001
+  }
+
+  function objectGridCoordinates(object) {
+    const page = state.scene?.pages?.[object?.pageIndex]
+    if (!object || !page) return ''
+    const area = page.contentBounds
+    const size = currentGridSize(page)
+    const { columns, rows } = currentGridMetrics(page)
+    const left = Math.min(columns - 1, Math.max(0, Math.round((object.x - area.x) / size)))
+    const top = Math.min(rows - 1, Math.max(0, Math.round((object.y - area.y) / size)))
+    const right = Math.min(columns - 1, Math.max(left, Math.ceil((object.x + object.width - area.x) / size - 0.000001) - 1))
+    const bottom = Math.min(rows - 1, Math.max(top, Math.ceil((object.y + object.height - area.y) / size - 0.000001) - 1))
+    const hierarchicalCoordinate = (column, row) => {
+      const outerColumn = Math.floor(column / GRID_FINE_DIVISIONS)
+      const outerRow = Math.floor(row / GRID_FINE_DIVISIONS)
+      const localColumn = column % GRID_FINE_DIVISIONS
+      const localRow = row % GRID_FINE_DIVISIONS
+      const middleQuadrant = Math.floor(localRow / 2) * 2 + Math.floor(localColumn / 2) + 1
+      const innerQuadrant = (localRow % 2) * 2 + localColumn % 2 + 1
+      return `${gridColumnLabel(outerColumn)}${outerRow + 1}.${middleQuadrant}.${innerQuadrant}`
+    }
+    return `${hierarchicalCoordinate(left, top)}(левый верхний угол) - ${hierarchicalCoordinate(right, bottom)}(правый нижний угол)`
+  }
+
+  function refreshSegmentGridCoordinates(selection = selectedObjects()) {
+    if (!elements.segmentGridCoordinates) return
+    elements.segmentGridCoordinates.hidden = selection.length !== 1
+    elements.segmentGridCoordinates.textContent = selection.length === 1
+      ? `Координаты: ${objectGridCoordinates(selection[0])}`
+      : 'Координаты: —'
   }
 
   function contentSize(value) {
@@ -2226,7 +2553,7 @@
     const y = Math.max(area.y, Math.min(object.y, area.y + area.height - height))
     const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5 || Math.abs(object.x - x) > .5 || Math.abs(object.y - y) > .5
     Object.assign(object, { x, y, width, height })
-    return changed
+    return snapObjectToGridCells(object) || changed
   }
 
   function fitObjectsToRenderedContent(objects, updateNodes = false, options = {}) {
@@ -2251,15 +2578,16 @@
     if (!objects.length) return showToast('Сначала выберите текстовый сегмент', true)
     cancelPointerAction()
     checkpoint()
+    let limitedByOccupiedCells = 0
+    const reservedRects = new Map(objects.map(object => [object.id, objectGridCellRect(object)]))
     for (const object of objects) {
       const page = state.scene.pages[object.pageIndex]
+      const anchorRect = reservedRects.get(object.id)
       if (mode === 'both') {
         object.manualWidth = false
         object.manualHeight = false
         fitObjectGeometryToContent(object, { forceWidth: true, forceHeight: true })
-        continue
-      }
-      if (mode === 'width') {
+      } else if (mode === 'width') {
         object.manualWidth = false
         fitObjectGeometryToContent(object, { forceWidth: true })
       } else if (mode === 'min-width') {
@@ -2271,13 +2599,14 @@
         object.manualHeight = false
         fitObjectGeometryToContent(object, { forceHeight: true })
       }
+      if (fitObjectSizeIntoFreeGridCells(object, anchorRect, reservedRects)) limitedByOccupiedCells += 1
     }
     renderDocument()
     scheduleSave()
     const label = mode === 'width' ? 'Ширина по содержимому'
       : mode === 'min-width' ? 'Минимальная ширина по содержимому'
         : mode === 'height' ? 'Высота по содержимому' : 'Ширина и высота по содержимому'
-    showToast(`${label}: ${objects.length} сегм.`)
+    showToast(`${label}: ${objects.length} сегм.${limitedByOccupiedCells ? ` · учтены занятые ячейки: ${limitedByOccupiedCells}` : ''}`)
   }
 
   function stretchSelectionToWorkArea(axis) {
@@ -2285,8 +2614,11 @@
     if (!objects.length) return showToast('Сначала выберите текстовый сегмент', true)
     cancelPointerAction()
     checkpoint()
+    let limitedByOccupiedCells = 0
+    const reservedRects = new Map(objects.map(object => [object.id, objectGridCellRect(object)]))
     for (const object of objects) {
       const area = state.scene.pages[object.pageIndex].contentBounds
+      const anchorRect = reservedRects.get(object.id)
       if (axis === 'width') {
         object.x = area.x
         object.width = area.width
@@ -2298,16 +2630,19 @@
         object.manualHeight = true
         constrainObjectToWorkArea(object)
       }
+      if (fitObjectSizeIntoFreeGridCells(object, anchorRect, reservedRects)) limitedByOccupiedCells += 1
     }
     renderDocument()
     scheduleSave()
-    showToast(`Сегменты растянуты на ${axis === 'width' ? 'ширину' : 'высоту'} рабочей области: ${objects.length}`)
+    showToast(`Сегменты растянуты на ${axis === 'width' ? 'ширину' : 'высоту'} свободных ячеек: ${objects.length}${limitedByOccupiedCells ? ` · ограничено: ${limitedByOccupiedCells}` : ''}`)
   }
 
   function applyGridToSurface(surface) {
     const page = state.scene.pages[Number(surface.dataset.pageIndex)] || state.scene.pages[0]
-    const size = currentGridSize(page)
+    const { size, middleSize, outerSize } = currentGridMetrics(page)
     surface.style.setProperty('--grid-size', `${size}px`)
+    surface.style.setProperty('--grid-size-middle', `${middleSize}px`)
+    surface.style.setProperty('--grid-size-outer', `${outerSize}px`)
   }
 
   function captureZoomAnchor(scroller, surface, anchorEvent, zoom) {
@@ -2652,6 +2987,7 @@
       node.classList.toggle('is-primary-selected', node.dataset.id === primaryId)
     }
     const selection = selectedObjects()
+    refreshSegmentGridCoordinates(selection)
     renderInspectorSegmentWorkspace(selection)
     updateQaSegmentCheckAvailability()
     elements.studioView.classList.remove('is-inspector-empty')
@@ -3153,9 +3489,11 @@
         const origin = origins.get(object.id)
         object.x = origin.x + deltaX
         object.y = origin.y + deltaY
+        snapObjectToGridCells(object)
         const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
         if (node) positionObjectNode(node, object)
       }
+      refreshSegmentGridCoordinates()
       markPageDropTarget(pageSurfaceAtPoint(current.clientX, current.clientY))
     }
     const finish = current => {
@@ -3172,7 +3510,7 @@
         const shift = clampGroupShift(group, 0, 0)
         for (const object of group) { object.x += shift.x; object.y += shift.y }
       }
-      snapObjectGroups(objects)
+      snapObjectsToGridCells(objects)
       renderDocument()
       scheduleSave()
     }
@@ -3236,6 +3574,28 @@
     state.activePage = pageIndex
   }
 
+  function finalizeResizedObjectGeometry(object) {
+    const page = state.scene.pages[object.pageIndex]
+    const area = page.contentBounds
+    const requestedWidth = object.width
+    const requestedHeight = object.height
+    const minimumWidth = canFitObjectToText(object)
+      ? contentSize(measureObjectMinContentWidth(object))
+      : 12
+    const horizontal = snapAxisToGridCells(object.x, Math.max(requestedWidth, minimumWidth), page, 'x')
+    object.x = horizontal.position
+    object.width = horizontal.length
+
+    // Height must be measured only after width has reached its final grid value:
+    // line wrapping and therefore the permitted minimum height depend on it.
+    const minimumHeight = canFitObjectToText(object)
+      ? minimumObjectHeight(object, object.width)
+      : 12
+    const vertical = snapAxisToGridCells(object.y, Math.max(requestedHeight, minimumHeight), page, 'y')
+    object.y = vertical.position
+    object.height = Math.min(area.height, vertical.length)
+  }
+
   function beginResize(event, id) {
     if (event.button !== 0) return
     cancelPointerAction()
@@ -3255,29 +3615,34 @@
       manualWidth: object.manualWidth, manualHeight: object.manualHeight,
     }
     const action = { kind: 'resize', pointerId: event.pointerId, object, start }
+    const objectNode = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
+    objectNode?.classList.add('is-resizing')
     const update = current => {
       const page = state.scene.pages[object.pageIndex]
       const area = page.contentBounds
-      object.width = Math.min(area.x + area.width - object.x, Math.max(12, start.width + (current.clientX - start.x) / state.zoom))
-      object.height = constrainObjectHeight(object, start.height + (current.clientY - start.y) / state.zoom, object.width)
-      const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
-      if (node) positionObjectNode(node, object)
+      object.width = Math.min(area.x + area.width - object.x, Math.max(0, start.width + (current.clientX - start.x) / state.zoom))
+      object.height = Math.min(area.y + area.height - object.y, Math.max(0, start.height + (current.clientY - start.y) / state.zoom))
+      if (objectNode) positionObjectNode(objectNode, object)
+      refreshSegmentGridCoordinates()
     }
     const finish = () => {
+      objectNode?.classList.remove('is-resizing')
+      finalizeResizedObjectGeometry(object)
       if (Math.abs(object.width - start.width) > .5) object.manualWidth = true
       if (Math.abs(object.height - start.height) > .5) object.manualHeight = true
+      if (objectNode) positionObjectNode(objectNode, object)
       refreshSelection()
       scheduleSave()
     }
     const cancel = () => {
+      objectNode?.classList.remove('is-resizing')
       Object.assign(object, {
         x: start.xPosition, y: start.yPosition, width: start.width, height: start.height,
         manualWidth: start.manualWidth, manualHeight: start.manualHeight,
       })
       state.history.length = historyLength
       refreshUndoButtons()
-      const node = elements.canvas.querySelector(`[data-id="${CSS.escape(id)}"]`)
-      if (node) positionObjectNode(node, object)
+      if (objectNode) positionObjectNode(objectNode, object)
     }
     startPointerAction(event, handle, action, { move: update, commit: finish, cancel })
   }
@@ -3313,21 +3678,27 @@
     const boundary = handle.closest('.content-boundary')
     const historyLength = state.history.length
     checkpoint()
-    const start = { clientY: event.clientY, height: page.contentBounds.height }
+    const start = {
+      clientY: event.clientY,
+      height: page.contentBounds.height,
+      availableHeight: gridAvailableBounds(page).height,
+    }
     const minimum = minimumContentBoundaryHeight(page)
     const maximum = maximumContentBoundaryHeight(page)
     const update = current => {
       const requested = start.height + (current.clientY - start.clientY) / state.zoom
-      page.contentBounds.height = snapContentBoundaryHeight(requested, page, minimum, maximum)
+      page.gridAvailableBounds.height = snapContentBoundaryHeight(requested, page, minimum, maximum)
+      normalizePageGridBounds(page)
       if (boundary) boundary.style.height = `${page.contentBounds.height}px`
     }
     const finish = () => {
-      refreshSelection()
+      renderDocument()
       scheduleSave()
       showToast(`Высота рабочей области: ${Math.round(page.contentBounds.height)} px`)
     }
     const cancel = () => {
       page.contentBounds.height = start.height
+      page.gridAvailableBounds.height = start.availableHeight
       state.history.length = historyLength
       refreshUndoButtons()
       if (boundary) boundary.style.height = `${start.height}px`
@@ -3930,6 +4301,7 @@
       imageUrl: null,
       sourceFrame: { x: 0, y: 0, width: reference.widthPx, height: reference.heightPx },
       contentBounds: { ...reference.contentBounds },
+      gridAvailableBounds: { ...gridAvailableBounds(reference) },
       languages: [],
       recognitionStats: { manualPage: true },
     }
@@ -4427,8 +4799,11 @@
       })
     }
     const bindText = (control, field) => {
+      let knowledgeTextChanged = false
       control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
       control.addEventListener('input', () => {
+        knowledgeTextChanged = true
+        state.sceneEditRevision += 1
         const objects = selectedObjects()
         for (const object of objects) {
           object[field] = control.value
@@ -4456,7 +4831,12 @@
         renderTranslationUnits(selectedObjects())
         scheduleSave()
       })
-      control.addEventListener('blur', () => { state.textCheckpoint = false })
+      control.addEventListener('blur', () => {
+        state.textCheckpoint = false
+        if (!knowledgeTextChanged) return
+        knowledgeTextChanged = false
+        refreshKnowledgeBaseAfterSegmentEdit()
+      })
     }
     bindText(elements.sourceText, 'sourceText')
     bindText(elements.translationText, 'translation')
@@ -4582,16 +4962,6 @@
       event.preventDefault()
       queueWheelZoom(event, true)
     }, { passive: false })
-    elements.gridSize.addEventListener('change', () => {
-      const density = elements.gridSize.value
-      if (!GRID_DENSITY_COLUMNS[density] || density === currentGridDensity()) return
-      checkpoint()
-      state.scene.gridDensity = density
-      state.scene.gridSize = Number(currentGridSize().toFixed(4))
-      for (const surface of elements.canvas.querySelectorAll('.studio-page')) applyGridToSurface(surface)
-      scheduleSave()
-      showToast(`Плотность сетки: ${density.toUpperCase()}`)
-    })
     elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
     elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
     elements.reanalyze.addEventListener('click', openReanalyzeConfirmation)
@@ -4969,10 +5339,12 @@
     return true
   }
 
-  async function refreshCurrentKnowledgeBaseMatches() {
+  async function refreshCurrentKnowledgeBaseMatches(expectedEditRevision = null, expectedDocumentId = state.metadata?.id) {
     if (!state.scene || !state.metadata) return 0
-    const response = await api(`/api/studio/documents/${state.metadata.id}/knowledge-matches/refresh`, { method: 'POST' })
+    const response = await api(`/api/studio/documents/${expectedDocumentId}/knowledge-matches/refresh`, { method: 'POST' })
     const data = await response.json()
+    if (state.metadata?.id !== expectedDocumentId) return 0
+    if (expectedEditRevision != null && state.sceneEditRevision !== expectedEditRevision) return 0
     state.metadata = data.metadata
     state.scene = data.scene
     const activeTab = state.tabs.get(state.activeTabKey)
@@ -4980,6 +5352,19 @@
     closeKnowledgeSuggestion()
     renderDocument()
     return Number(data.matchCount) || 0
+  }
+
+  async function refreshKnowledgeBaseAfterSegmentEdit() {
+    if (!state.scene || !state.metadata) return
+    const documentId = state.metadata.id
+    const editRevision = state.sceneEditRevision
+    try {
+      await saveScene(true)
+      if (state.metadata?.id !== documentId || state.sceneEditRevision !== editRevision) return
+      await refreshCurrentKnowledgeBaseMatches(editRevision, documentId)
+    } catch (error) {
+      showToast(`Не удалось обновить совпадения БЗ: ${error.message}`, true)
+    }
   }
 
   async function saveKnowledgeBaseEntry(event) {

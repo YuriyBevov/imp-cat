@@ -48,7 +48,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
     'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
-    'grid-size', 'align-left-button',
+    'align-left-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
     'stretch-work-area-width-button', 'stretch-work-area-height-button', 'fit-min-content-width-button',
     'format-all-segments', 'typography-select-all',
@@ -61,6 +61,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   const studioDocument = new JSDOM(html).window.document
+  assert.equal(studioDocument.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
   assert.equal(studioDocument.querySelector('#view-layout-button'), null)
   assert.equal(studioDocument.querySelector('#view-segments-button'), null)
   const languageCard = studioDocument.querySelector('.language-card')
@@ -187,7 +188,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /function openKnowledgeBase/)
   assert.match(client, /function saveKnowledgeBaseEntry/)
   assert.match(client, /function deleteKnowledgeBaseEntry/)
-  assert.match(client, /function showKnowledgeSuggestion/)
+  assert.match(client, /function displayedKnowledgeMatches/)
+  assert.match(client, /function objectGridCoordinates/)
+  assert.match(client, /function snapObjectToGridCells/)
   assert.match(client, /translate\/apply-memory/)
   assert.match(client, /translate\/revise/)
   assert.match(client, /function reviseTranslations/)
@@ -242,9 +245,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(html, /workbench-toolbar__hint/)
   assert.match(html, /id="source-zoom-fit"[\s\S]*?<svg/)
   assert.match(html, /id="zoom-fit"[^>]*class="icon-button"[\s\S]*?icon-fit-width/)
-  assert.match(html, /id="grid-size"[^>]*data-select-icon="grid"/)
+  assert.doesNotMatch(html, /id="grid-size"/)
   assert.doesNotMatch(html, /id="view-(?:layout|segments)-button"/)
-  assert.match(html, /class="toolbar-group workbench-toolbar__layout-controls"[\s\S]*?id="zoom-out"[\s\S]*?id="zoom-fit"[\s\S]*?id="grid-size"/)
+  assert.match(html, /class="toolbar-group workbench-toolbar__layout-controls"[\s\S]*?id="zoom-out"[\s\S]*?id="zoom-fit"[\s\S]*?id="zoom-100"/)
   assert.match(html, /id="studio-view"[^>]*class="studio is-source-collapsed"/)
   assert.match(html, /id="source-panel-toggle"[^>]*class="icon-button icon-button--compact"[^>]*aria-label="Показать оригинал"[^>]*aria-expanded="false"[\s\S]*?icon-layout/)
   assert.match(html, /id="zoom-output">100%<\/output>/)
@@ -319,9 +322,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /body\.has-document-tabs[^{]*\{[^}]*height:\s*calc\(100vh - 72px\)/)
   assert.match(styles, /\.document-tabs__inner\s*\{[^}]*justify-content:\s*flex-end/)
   assert.match(styles, /\.document-tabs__list\s*\{[^}]*width:\s*max-content[^}]*margin-left:\s*auto/)
-  assert.match(styles, /\.grid-controls\s*\{[^}]*width:\s*72px[^}]*padding-right:\s*6px/)
-  assert.match(styles, /\.grid-controls \.base-select\s*\{[^}]*width:\s*100%/)
-  assert.doesNotMatch(styles, /\.grid-controls \.base-select-root\s*\{[^}]*width:\s*100px/)
+  assert.doesNotMatch(styles, /\.grid-controls/)
   assert.match(uiKit, /\.app-container\s*\{[^}]*padding-inline:\s*var\(--app-gutter, 12px\)/)
   assert.match(html, /class="app-container appbar__inner"/)
   assert.match(html, /class="app-container document-tabs__inner"/)
@@ -716,6 +717,8 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.match(styles, /background-origin:\s*border-box/)
   assert.match(styles, /background-position:\s*left top/)
   assert.match(styles, /--grid-size/)
+  assert.match(styles, /--grid-size-middle/)
+  assert.match(styles, /--grid-size-outer/)
   assert.match(styles, /\.studio\.is-source-collapsed/)
   assert.doesNotMatch(styles, /\.studio-page--segments/)
   assert.match(styles, /\.scene-object__content[^}]*overflow:\s*hidden/)
@@ -724,7 +727,14 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.match(client, /overflowWrap:\s*'normal',\s*wordBreak:\s*'normal',\s*hyphens:\s*'none'/)
   assert.match(client, /function minimumObjectHeight/)
   assert.match(client, /function constrainObjectHeight/)
+  assert.match(client, /function finalizeResizedObjectGeometry[\s\S]*?object\.width = horizontal\.length[\s\S]*?minimumObjectHeight\(object, object\.width\)[\s\S]*?object\.height =/)
   assert.match(client, /function constrainObjectToWorkArea/)
+  assert.match(client, /function fitObjectSizeIntoFreeGridCells/)
+  assert.match(client, /function fitSelectionToContent[\s\S]*fitObjectSizeIntoFreeGridCells/)
+  assert.match(client, /function stretchSelectionToWorkArea[\s\S]*fitObjectSizeIntoFreeGridCells/)
+  assert.match(styles, /\.knowledge-suggestion__pair\s*\{[^}]*font-size:\s*12px/)
+  assert.match(styles, /\.knowledge-suggestion__value\s*\{[^}]*font-weight:\s*500/)
+  assert.doesNotMatch(styles, /\.knowledge-suggestion__score/)
   assert.match(client, /object\.manualWidth === false/)
   assert.match(client, /object\.manualHeight === false/)
   assert.match(client, /object\.manualWidth = true/)
@@ -1304,7 +1314,16 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-accordion #translate-button'))
   assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 1 сегментов')
   assert.equal(dom.window.document.querySelector('#empty-inspector').textContent, 'Выберите сегмент для работы с ним')
-  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '11.15625px')
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '17px')
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size-middle'), '34px')
+  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size-outer'), '68px')
+  const columnLabels = [...dom.window.document.querySelectorAll('.grid-coordinate-label--column')]
+  const rowLabels = [...dom.window.document.querySelectorAll('.grid-coordinate-label--row')]
+  assert.equal(columnLabels.length, 10)
+  assert.equal(rowLabels.length, 15)
+  assert.equal(columnLabels[0].textContent, 'A')
+  assert.equal(columnLabels.at(-1).textContent, 'J')
+  assert.equal(rowLabels[0].textContent, '1')
   const pointer = (type, x, y) => {
     const event = new dom.window.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y })
     Object.defineProperty(event, 'pointerId', { value: 7 })
@@ -1312,13 +1331,19 @@ test('studio restores a saved scene and renders editable page objects', async ()
   }
   const contentBoundary = dom.window.document.querySelector('.content-boundary')
   const contentBoundaryResize = contentBoundary.querySelector('.content-boundary__resize')
+  assert.equal(contentBoundary.style.width, '680px')
+  assert.equal(contentBoundary.style.height, '1020px')
+  assert.ok(columnLabels.every(label => label.style.width === '68px'))
+  assert.ok(rowLabels.every(label => label.style.height === '68px'))
+  assert.equal(Number.parseFloat(columnLabels.at(-1).style.left) + 68, 680)
+  assert.equal(Number.parseFloat(rowLabels.at(-1).style.top) + 68, 1020)
   assert.equal(contentBoundaryResize.getAttribute('aria-label'), 'Изменить высоту рабочей области документа')
   contentBoundaryResize.dispatchEvent(pointer('pointerdown', 0, 900))
   dom.window.dispatchEvent(pointer('pointermove', 0, 650))
   dom.window.dispatchEvent(pointer('pointerup', 0, 650))
-  assert.ok(Number.parseFloat(contentBoundary.style.height) < 1043)
+  assert.ok(Number.parseFloat(contentBoundary.style.height) < 1020)
   dom.window.document.querySelector('#undo-button').click()
-  assert.equal(dom.window.document.querySelector('.content-boundary').style.height, '1043px')
+  assert.equal(dom.window.document.querySelector('.content-boundary').style.height, '1020px')
 
   const sourceScroll = dom.window.document.querySelector('#source-preview-scroll')
   sourceScroll.scrollLeft = 160
@@ -1343,6 +1368,10 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#empty-inspector').hidden, true)
   assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 1 из 1 сегментов')
   assert.equal(dom.window.document.querySelector('#translate-button').textContent, 'Перевести весь документ (1)')
+  assert.match(
+    dom.window.document.querySelector('#segment-grid-coordinates').textContent,
+    /^Координаты: [A-Z]+\d+\.[1-4]\.[1-4]\(левый верхний угол\) - [A-Z]+\d+\.[1-4]\.[1-4]\(правый нижний угол\)$/,
+  )
   assert.ok(dom.window.document.querySelector('#inspector-segment-workspace > .segment-translation-workspace'))
   assert.ok(dom.window.document.querySelector('#inspector-segment-workspace .segment-ai-instruction'))
   const positionAccordion = dom.window.document.querySelector('#inspector-position-accordion')
@@ -1367,11 +1396,11 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dragHandle = leftEdgeObject.querySelector('.scene-object__handle')
   dragHandle.dispatchEvent(pointer('pointerdown', 100, 100))
   dom.window.dispatchEvent(pointer('pointermove', 140, 100))
-  const gridStep = 714 / 64
+  const gridStep = 17
   const dragZoom = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10) / 100
   const unsnappedDragLeft = 40 + 40 / dragZoom
   const liveDragLeft = Number.parseFloat(dom.window.document.querySelector('[data-id="object-1"]').style.left)
-  assert.equal(liveDragLeft, unsnappedDragLeft, 'drag stays free until pointerup')
+  assert.equal(liveDragLeft, 40 + Math.round((unsnappedDragLeft - 40) / gridStep) * gridStep, 'drag snaps while the pointer moves')
   dom.window.dispatchEvent(pointer('pointerup', 140, 100))
   const expectedDragLeft = 40 + Math.round((unsnappedDragLeft - 40) / gridStep) * gridStep
   assert.equal(dom.window.document.querySelector('[data-id="object-1"]').style.left, `${expectedDragLeft}px`)
@@ -1386,8 +1415,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const edgeTop = Number.parseFloat(edgeObject.style.top)
   assert.ok(Math.abs((edgeLeft - 40) / gridStep - Math.round((edgeLeft - 40) / gridStep)) < 0.0001)
   assert.ok(Math.abs((edgeTop - 40) / gridStep - Math.round((edgeTop - 40) / gridStep)) < 0.0001)
-  assert.ok(edgeLeft + Number.parseFloat(edgeObject.style.width) <= 754)
-  assert.ok(edgeTop + Number.parseFloat(edgeObject.style.height) <= 1083)
+  assert.ok(edgeLeft + Number.parseFloat(edgeObject.style.width) <= 720)
+  assert.ok(edgeTop + Number.parseFloat(edgeObject.style.height) <= 1060)
   dom.window.document.querySelector('#undo-button').click()
 
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-source-collapsed'), true)
@@ -1421,23 +1450,32 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const automaticWidth = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
   const automaticHeight = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height)
   assert.ok(automaticWidth < 200)
-  assert.ok(automaticHeight < 32)
+  assert.ok(automaticHeight <= 34)
   const resizeHandle = dom.window.document.querySelector('.scene-object__resize')
   resizeHandle.dispatchEvent(pointer('pointerdown', 0, 0))
   resizeHandle.dispatchEvent(pointer('pointermove', 20, 10))
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-resizing'), true)
+  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width), automaticWidth + 20)
+  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height), automaticHeight + 10)
   resizeHandle.dispatchEvent(pointer('pointerup', 20, 10))
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-resizing'), false)
   assert.equal(resizeHandle.style.width, '')
   const zoom = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10) / 100
-  const firstWidth = automaticWidth + 20 / zoom
-  assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${firstWidth}px`)
+  const firstWidthMinimum = automaticWidth + 20 / zoom
+  const firstWidth = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
+  assert.ok(firstWidth >= firstWidthMinimum)
+  assert.ok(Math.abs(firstWidth / gridStep - Math.round(firstWidth / gridStep)) < 0.0001)
   resizeHandle.dispatchEvent(pointer('pointerdown', 20, 10))
   resizeHandle.dispatchEvent(pointer('pointermove', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointerup', 30, 20))
-  const secondWidth = firstWidth + 10 / zoom
-  assert.equal(dom.window.document.querySelector('.scene-object').style.width, `${secondWidth}px`)
+  const secondWidthMinimum = firstWidth + 10 / zoom
+  const secondWidth = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
+  assert.ok(secondWidth >= secondWidthMinimum)
+  assert.ok(Math.abs(secondWidth / gridStep - Math.round(secondWidth / gridStep)) < 0.0001)
 
   resizeHandle.dispatchEvent(pointer('pointerdown', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointermove', 30, -1000))
+  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height), 0)
   resizeHandle.dispatchEvent(pointer('pointerup', 30, -1000))
   const minimumRenderedHeight = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height)
   assert.ok(minimumRenderedHeight > 12, 'resize handle must preserve the minimum text height')
@@ -1505,7 +1543,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   dom.window.document.querySelector('#stretch-work-area-width-button').click()
   for (const node of dom.window.document.querySelectorAll('.scene-object')) {
     assert.equal(node.style.left, '40px')
-    assert.equal(node.style.width, '714px')
+    assert.equal(node.style.width, '680px')
   }
   const geometryAfterAreaStretch = [...dom.window.document.querySelectorAll('.scene-object')].map(node => ({
     left: node.style.left, top: node.style.top, width: node.style.width, height: node.style.height,
@@ -1523,10 +1561,21 @@ test('studio restores a saved scene and renders editable page objects', async ()
     geometryBeforeAreaStretch
   )
   dom.window.document.querySelector('#stretch-work-area-height-button').click()
-  for (const node of dom.window.document.querySelectorAll('.scene-object')) {
-    assert.equal(node.style.top, '40px')
-    assert.equal(node.style.height, '1043px')
-  }
+  const verticallyStretchedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
+    .map(node => ({
+      id: node.dataset.id,
+      left: Number.parseFloat(node.style.left),
+      right: Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width),
+      top: Number.parseFloat(node.style.top),
+      bottom: Number.parseFloat(node.style.top) + Number.parseFloat(node.style.height),
+    }))
+    .sort((first, second) => first.top - second.top)
+  assert.equal(verticallyStretchedObjects[0].top, 40)
+  assert.ok(
+    verticallyStretchedObjects[0].bottom <= verticallyStretchedObjects[1].top,
+    `stretched segments overlap: ${JSON.stringify(verticallyStretchedObjects)}`,
+  )
+  assert.equal(verticallyStretchedObjects.at(-1).bottom, 1060)
   dom.window.document.querySelector('#undo-button').click()
 
   const minContentInput = dom.window.document.querySelector('#translation-text')
@@ -1660,12 +1709,12 @@ test('studio restores a saved scene and renders editable page objects', async ()
   horizontalBetween.click()
   const widthsAfterAutomaticFit = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.width))
   const fontSizesAfterAutomaticFit = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.fontSize))
-  assert.ok(widthsAfterAutomaticFit.reduce((sum, width) => sum + width, 0) <= 714.001)
+  assert.ok(widthsAfterAutomaticFit.reduce((sum, width) => sum + width, 0) <= 680.001)
   assert.ok(fontSizesAfterAutomaticFit.some((size, index) => size < fontSizesBeforeAutomaticFit[index]))
   const flexObjects = [...dom.window.document.querySelectorAll('.scene-object')]
   const flexLefts = flexObjects.map(node => Number.parseFloat(node.style.left)).sort((left, right) => left - right)
   assert.equal(flexLefts[0], 40)
-  assert.equal(Math.max(...flexObjects.map(node => Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width))), 754)
+  assert.equal(Math.max(...flexObjects.map(node => Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width))), 720)
   assert.deepEqual(flexObjects.map(node => node.style.top), topsBeforeHorizontalLayout)
   const leftsBeforeVerticalLayout = flexObjects.map(node => node.style.left)
   verticalBetween.click()
@@ -1674,26 +1723,23 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const translationInput = dom.window.document.querySelector('#translation-text')
   translationInput.value = '/Подпись/'
   translationInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-  const gridSize = dom.window.document.querySelector('#grid-size')
-  gridSize.value = 'xxl'
-  gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
   dom.window.document.querySelector('#fit-content-both-button').click()
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
   let fittedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
-  const fittedAtXXL = fittedObjects.map(node => ({ width: node.style.width, height: node.style.height }))
-  gridSize.value = 'xs'
-  gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-  dom.window.document.querySelector('#fit-content-both-button').click()
-  fittedObjects = [...dom.window.document.querySelectorAll('.scene-object')]
-  assert.deepEqual(fittedObjects.map(node => ({ width: node.style.width, height: node.style.height })), fittedAtXXL)
+  assert.ok(fittedObjects.every(node => {
+    const width = Number.parseFloat(node.style.width)
+    const height = Number.parseFloat(node.style.height)
+    return Math.abs(width / gridStep - Math.round(width / gridStep)) < 0.0001
+      && Math.abs(height / gridStep - Math.round(height / gridStep)) < 0.0001
+  }))
   assert.equal(new Set(fittedObjects.map(node => node.style.width)).size, 1)
   assert.equal(new Set(fittedObjects.map(node => node.style.height)).size, 1)
   assert.ok(fittedObjects.every((node, index) => Number.parseFloat(node.style.width) < widthsBeforeAutomaticFit[index]))
   for (const node of fittedObjects) {
     assert.ok(Number.parseFloat(node.style.left) >= 40)
     assert.ok(Number.parseFloat(node.style.top) >= 40)
-    assert.ok(Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width) <= 754)
-    assert.ok(Number.parseFloat(node.style.top) + Number.parseFloat(node.style.height) <= 1083)
+    assert.ok(Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width) <= 720)
+    assert.ok(Number.parseFloat(node.style.top) + Number.parseFloat(node.style.height) <= 1060)
   }
 
   const fittedSizes = new Map(fittedObjects.map(node => [node.dataset.id, {
@@ -1730,10 +1776,6 @@ test('studio restores a saved scene and renders editable page objects', async ()
     firstFittedSize,
     'fitting another segment must not change the previously fitted segment'
   )
-
-  gridSize.value = 'lg'
-  gridSize.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
-  assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '29.75px')
 
   const zoomBeforeWheel = Number.parseInt(dom.window.document.querySelector('#zoom-output').value, 10)
   dom.window.document.querySelector('#canvas-scroll').dispatchEvent(new dom.window.WheelEvent('wheel', {
@@ -2055,29 +2097,34 @@ test('AI instruction library lists, searches, creates, edits, and deletes preset
 
 test('layout shows knowledge matches and keeps the AI translation as an alternative', async () => {
   const id = 'f'.repeat(32)
-  const sourceText = 'SÜRELİDİR: Bu vekaletname geçerlidir.'
+  const sourceText = 'SÜRELİDİR\nNoteri Sabahattin'
   const glossary = { id: '00000000-0000-4000-8000-000000000001', name: 'Основной глоссарий', sourceLanguage: 'Turkish', targetLanguage: 'ru' }
   const knowledgeEntry = {
     id: 'entry-1', glossaryId: glossary.id, sourceText: 'SÜRELİDİR', translation: 'Имеет срок',
     sourceLanguage: 'Turkish', targetLanguage: 'ru', updatedAt: '2026-09-13T08:00:00.000Z',
   }
   let knowledgeEntries = [knowledgeEntry]
+  let knowledgeRefreshRequests = 0
   const scene = {
     title: 'Knowledge highlights', sourceLanguage: 'Turkish', targetLanguage: 'ru', knowledgeBaseMode: 'priority', gridSize: 8, snapToGrid: true,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
     objects: [{
       id: 'memory-object', pageIndex: 0, type: 'text', readingOrder: 1, sourceText,
-      translation: 'Имеет срок: доверенность действительна.', confidence: .99,
+      translation: 'СРОК ДЕЙСТВИЯ\nНотариус Сабахаттин', confidence: .99,
       x: 40, y: 80, width: 600, height: 50, rotation: 0, excluded: false,
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
       sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 80, width: 600, height: 50 },
       translationUnits: [{
-        id: 'memory-unit', sourceText, separatorAfter: '', translation: 'Имеет срок: доверенность действительна.',
-        aiTranslation: 'СРОЧНАЯ: доверенность действительна.', activeTranslationSource: 'memory-revised', status: 'memory-applied',
+        id: 'memory-unit', sourceText, separatorAfter: '', translation: 'СРОК ДЕЙСТВИЯ\nНотариус Сабахаттин',
+        aiTranslation: 'СРОЧНАЯ\nНотариус Сабахаттин', activeTranslationSource: 'memory-revised', status: 'memory-applied',
         knowledgeMatches: [{
           id: 'entry-1:0:10:0', entryId: 'entry-1', glossaryId: '00000000-0000-4000-8000-000000000001',
           sourceText: 'SÜRELİDİR', translation: 'Имеет срок', sourceLanguage: 'Turkish', targetLanguage: 'ru',
           start: 0, end: 'SÜRELİDİR'.length, score: 1, matchType: 'exact-fragment', fullSegment: false,
+        }, {
+          id: 'entry-1:11:17:1', entryId: 'entry-1', glossaryId: '00000000-0000-4000-8000-000000000001',
+          sourceText: 'noteri', translation: 'Нотариус', sourceLanguage: 'Turkish', targetLanguage: 'ru',
+          start: 11, end: 17, score: 1, matchType: 'exact-fragment', fullSegment: false,
         }],
       }],
     }],
@@ -2087,6 +2134,10 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   })
   dom.window.fetch = async (url, options = {}) => {
     const value = String(url)
+    if (value.includes('/knowledge-matches/refresh')) {
+      knowledgeRefreshRequests += 1
+      return { ok: true, json: async () => ({ metadata: { id, revision: 2 }, scene, matchCount: 2 }) }
+    }
     if (value.includes('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'postgres-pgvector', connected: true, persistent: true, entries: knowledgeEntries.length }) }
     if (value.includes('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [glossary] }) }
     if (value.includes('/knowledge-base/entries/entry-1') && options.method === 'DELETE') {
@@ -2104,20 +2155,44 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 40))
-  const layoutIndicator = dom.window.document.querySelector('.scene-object__knowledge-match')
+  const knowledgeHighlights = [...dom.window.document.querySelectorAll('.knowledge-highlight')]
+  const knowledgeHighlight = knowledgeHighlights[0]
+  const layoutIndicator = dom.window.document.querySelector('.scene-object__knowledge-icon')
+  assert.ok(knowledgeHighlight)
+  assert.equal(knowledgeHighlight.textContent, 'СРОК ДЕЙСТВИЯ')
+  assert.deepEqual(knowledgeHighlights.map(node => node.textContent), ['СРОК ДЕЙСТВИЯ', 'Нотариус'])
+  assert.doesNotMatch(knowledgeHighlights.map(node => node.textContent).join(' '), /Сабахаттин/)
   assert.ok(layoutIndicator)
-  assert.equal(layoutIndicator.textContent, 'БЗ · 1')
-  layoutIndicator.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
+  assert.match(layoutIndicator.querySelector('use').getAttribute('href'), /icon-alert-circle$/)
+  assert.equal(layoutIndicator.textContent, '')
+  knowledgeHighlight.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, false)
-  assert.match(dom.window.document.querySelector('#knowledge-suggestion-list').textContent, /Имеет срок/)
+  assert.equal(dom.window.document.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
+  const firstSuggestion = dom.window.document.querySelector('.knowledge-suggestion')
+  const suggestionValues = [...firstSuggestion.querySelectorAll('.knowledge-suggestion__value')]
+  assert.deepEqual(suggestionValues.map(node => node.textContent), ['Имеет срок', 'SÜRELİDİR'])
+  assert.deepEqual(suggestionValues.map(node => node.dataset.language), ['Русский', 'Турецкий'])
+  assert.equal(firstSuggestion.querySelector('.knowledge-suggestion__score'), null)
+  const suggestionActions = [...firstSuggestion.querySelectorAll('.knowledge-suggestion__actions .icon-button')]
+  assert.deepEqual(suggestionActions.map(button => button.getAttribute('aria-label')), ['Открыть в БЗ', 'Использовать'])
+  assert.match(suggestionActions[0].querySelector('use').getAttribute('href'), /icon-database$/)
+  assert.match(suggestionActions[1].querySelector('use').getAttribute('href'), /icon-check$/)
   dom.window.document.querySelector('#knowledge-suggestion-close').click()
+  const editedSegment = dom.window.document.querySelector('.scene-object__content')
+  editedSegment.focus()
+  editedSegment.textContent = 'Срок действия изменён'
+  editedSegment.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  editedSegment.dispatchEvent(new dom.window.Event('blur'))
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(knowledgeRefreshRequests, 1)
   dom.window.document.querySelector('.scene-object').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
   const preservedTranslation = scene.objects[0].translationUnits[0].translation
   dom.window.document.querySelector('#knowledge-base-open-button').click()
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
   await new Promise(resolve => setTimeout(resolve, 30))
-  assert.equal(dom.window.document.querySelector('.scene-object__knowledge-match'), null)
+  assert.equal(dom.window.document.querySelector('.scene-object__knowledge-icon'), null)
+  assert.equal(dom.window.document.querySelector('.knowledge-highlight'), null)
   assert.deepEqual(scene.objects[0].translationUnits[0].knowledgeMatches, [])
   assert.equal(scene.objects[0].translationUnits[0].activeTranslationSource, 'manual')
   assert.equal(scene.objects[0].translationUnits[0].translation, preservedTranslation)
@@ -2125,13 +2200,14 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   assert.ok(alternative.parentElement.classList.contains('segment-translation-workspace'))
   assert.match(alternative.textContent, /СРОЧНАЯ/)
   alternative.querySelector('button').click()
-  assert.equal(dom.window.document.querySelector('.scene-object .scene-object__content').textContent, 'СРОЧНАЯ: доверенность действительна.')
+  assert.equal(dom.window.document.querySelector('.scene-object .scene-object__content').textContent, 'СРОЧНАЯ\nНотариус Сабахаттин')
   assert.equal(dom.window.document.querySelector('.ai-translation-alternative'), null)
   dom.window.close()
 })
 
 test('knowledge-base edits refresh matches in the active document', () => {
-  assert.match(client, /documents\/\$\{state\.metadata\.id\}\/knowledge-matches\/refresh/)
-  assert.match(client, /await saveScene\(true\)[\s\S]*await refreshCurrentKnowledgeBaseMatches\(\)/)
-  assert.match(styles, /\.scene-object__knowledge-match\s*\{[^}]*background:\s*#ffe96a/)
+  assert.match(client, /documents\/\$\{expectedDocumentId\}\/knowledge-matches\/refresh/)
+  assert.match(client, /await saveScene\(true\)[\s\S]*await refreshCurrentKnowledgeBaseMatches\(editRevision, documentId\)/)
+  assert.match(styles, /\.knowledge-highlight\s*\{[^}]*background:\s*#ffe96a/)
+  assert.match(styles, /\.scene-object__knowledge-icon\s*\{[^}]*position:\s*absolute/)
 })

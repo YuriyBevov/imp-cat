@@ -107,21 +107,12 @@
             <button id="source-panel-toggle" class="icon-button icon-button--compact" type="button" title="Показать оригинал" aria-label="Показать оригинал" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
           </div>
           <div class="app-container workbench-toolbar__inner">
-            <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб и сетка документа">
+            <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб документа">
               <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
               <output id="zoom-output">100%</output>
               <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
               <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
               <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
-              <div class="grid-controls" aria-label="Настройки сетки">
-                <label class="grid-size-control">
-                  <span class="visually-hidden">Размер сетки</span>
-                  <select id="grid-size" data-select-icon="grid" title="Плотность сетки" aria-label="Плотность сетки">
-                    <option value="xs" selected>XS</option><option value="sm">SM</option><option value="md">MD</option>
-                    <option value="lg">LG</option><option value="xl">XL</option><option value="xxl">XXL</option>
-                  </select>
-                </label>
-              </div>
             </div>
             <div class="toolbar-group inspector-controls" aria-label="Правая панель">
               <button id="inspector-panel-toggle" class="icon-button icon-button--compact is-active" type="button" title="Скрыть инспектор" aria-label="Скрыть инспектор" aria-controls="inspector-panel" aria-expanded="true">
@@ -221,6 +212,7 @@
             </label>
             <div class="confidence-row"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
           </div>
+          <p id="segment-grid-coordinates" class="note note--info note--compact segment-grid-coordinates inspector-scope--segments" hidden>Координаты: —</p>
           <section id="table-cell-fields" class="table-cell-fields inspector-scope--segments" hidden>
             <label>ID таблицы<input id="table-id" type="text" maxlength="120" /></label>
             <label>Строка<input id="table-row" type="number" min="0" max="999" step="1" /></label>
@@ -448,7 +440,7 @@
       </div>
     </div>
     <aside id="knowledge-suggestion-popover" class="knowledge-suggestion-popover" hidden aria-label="Подсказки Базы знаний">
-      <div class="knowledge-suggestion-popover__header"><strong id="knowledge-suggestion-title">Совпадения БЗ</strong><button id="knowledge-suggestion-close" class="icon-button icon-button--small icon-button--ghost icon-button--warning" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
+      <div class="knowledge-suggestion-popover__header"><strong id="knowledge-suggestion-title">Найденные записи в БЗ</strong><button id="knowledge-suggestion-close" class="icon-button icon-button--small icon-button--ghost icon-button--warning" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
       <div id="knowledge-suggestion-list" class="knowledge-suggestion-list"></div>
     </aside>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

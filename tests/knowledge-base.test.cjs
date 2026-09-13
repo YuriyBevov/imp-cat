@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { DEFAULT_GLOSSARY_ID, adaptTranslationCase, createKnowledgeBase } = require('../lib/knowledge-base.cjs')
+const { DEFAULT_GLOSSARY_ID, adaptTranslationCase, createKnowledgeBase, sentenceCaseText } = require('../lib/knowledge-base.cjs')
 
 const embeddingProvider = {
   kind: 'test', model: 'test-embedding', dimensions: 3, available: () => true,
@@ -18,8 +18,8 @@ test('knowledge base returns an exact match before vector alternatives and does 
     sourceText: 'Power of attorney', translation: 'Доверенность', sourceLanguage: 'en', targetLanguage: 'ru', clientRef: 'unit-1',
   }])
   assert.equal(result.created, 1)
-  assert.equal(result.results[0].entry.sourceText, 'power of attorney')
-  assert.equal(result.results[0].entry.translation, 'доверенность')
+  assert.equal(result.results[0].entry.sourceText, 'Power of attorney')
+  assert.equal(result.results[0].entry.translation, 'Доверенность')
   result = await kb.addMany([{
     sourceText: '  Power   of attorney  ', translation: 'Доверенность', sourceLanguage: 'en', targetLanguage: 'ru', clientRef: 'unit-2',
   }])
@@ -62,12 +62,14 @@ test('knowledge base supports paginated CRUD and refreshes an edited source embe
   ])
   const firstPage = await kb.listEntries({ query: 'юридический', limit: 1, offset: 0 })
   assert.equal(firstPage.total, 1)
-  assert.equal(firstPage.entries[0].sourceText, 'legal address')
+  assert.equal(firstPage.entries[0].sourceText, 'Legal address')
+  assert.equal(Object.hasOwn(firstPage.entries[0], 'score'), false)
+  assert.equal(Object.hasOwn(firstPage.entries[0], 'matchType'), false)
 
   const entry = added.results[0].entry
   const callsBeforeTranslationEdit = embeddingCalls
   const translationEdited = await kb.updateEntry(entry.id, { translation: 'Доверенность (обновлено)' })
-  assert.equal(translationEdited.translation, 'доверенность (обновлено)')
+  assert.equal(translationEdited.translation, 'Доверенность (обновлено)')
   assert.equal(embeddingCalls, callsBeforeTranslationEdit)
 
   await kb.updateEntry(entry.id, { sourceText: 'Attorney legal powers' })
@@ -92,7 +94,7 @@ test('knowledge base locates an exact glossary term inside a longer segment', as
   const matches = await kb.findMatchesInText(text, 'ru', { sourceLanguage: 'tr' })
   assert.equal(matches.length, 1)
   assert.equal(text.slice(matches[0].start, matches[0].end), 'SÜRELİDİR')
-  assert.equal(matches[0].sourceText, 'sürelidir')
+  assert.equal(matches[0].sourceText, 'Sürelidir')
   assert.equal(matches[0].translation, 'ИМЕЕТ СРОК')
   assert.equal(matches[0].score, 1)
   assert.equal(matches[0].matchType, 'exact-fragment')
@@ -122,7 +124,7 @@ test('knowledge base proposes text-similar variants when there is no exact phras
   const matches = await kb.findMatchesInText(sourceText, 'ru', { sourceLanguage: 'English' })
   assert.equal(matches.length, 1)
   assert.equal(matches[0].matchType, 'fuzzy')
-  assert.equal(matches[0].sourceText, 'power of attorney dated 25 august 2025')
+  assert.equal(matches[0].sourceText, 'Power of attorney dated 25 august 2025')
   assert.equal(matches[0].start, 0)
   assert.equal(matches[0].end, sourceText.length)
   assert.ok(matches[0].score >= 0.85 && matches[0].score < 1)
@@ -132,4 +134,9 @@ test('knowledge-base translations inherit lowercase, title case, and uppercase f
   assert.equal(adaptTranslationCase('sürelidir', 'имеет срок', 'ru', 'tr'), 'имеет срок')
   assert.equal(adaptTranslationCase('Sürelidir', 'имеет срок', 'ru', 'tr'), 'Имеет срок')
   assert.equal(adaptTranslationCase('SÜRELİDİR', 'имеет срок', 'ru', 'tr'), 'ИМЕЕТ СРОК')
+})
+
+test('knowledge-base records use sentence case independently of entered casing', () => {
+  assert.equal(sentenceCaseText('POWER OF ATTORNEY. LEGAL ADDRESS', 'en'), 'Power of attorney. Legal address')
+  assert.equal(sentenceCaseText('доверенность. юРИДИЧЕСКИЙ АДРЕС', 'ru'), 'Доверенность. Юридический адрес')
 })
