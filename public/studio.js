@@ -24,7 +24,7 @@
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     sourcePanelToggle: $('#source-panel-toggle'),
-    inspectorPanel: $('#inspector-panel'),
+    inspectorPanel: $('#inspector-panel'), inspectorPanelBody: $('#inspector-panel-body'),
     zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'), sourcePreviewOpen: $('#source-preview-open'),
@@ -42,15 +42,11 @@
     instructionPresetSave: $('#instruction-preset-save'), instructionPresetEdit: $('#instruction-preset-edit'), instructionPresetDelete: $('#instruction-preset-delete'),
     instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
     instructionPresetEditSave: $('#instruction-preset-edit-save'),
-    emptyInspector: $('#empty-inspector'), objectInspector: $('#object-inspector'),
+    objectInspector: $('#object-inspector'),
     objectType: $('#object-type'),
     tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), segmentNote: $('#segment-note'),
     segmentGridCoordinates: $('#segment-grid-coordinates'),
-    translationUnitsCard: $('#translation-units-card'), translationUnitsCount: $('#translation-units-count'),
-    translationUnitsList: $('#translation-units-list'), translationUnitsSplitSentences: $('#translation-units-split-sentences'),
-    translationUnitsSplitSelection: $('#translation-units-split-selection'), translationUnitsMerge: $('#translation-units-merge'),
-    translationUnitsApplyExact: $('#translation-units-apply-exact'), translationSelectionPreview: $('#translation-selection-preview'),
     lineHeightDecrease: $('#line-height-decrease'), lineHeight: $('#line-height'), lineHeightIncrease: $('#line-height-increase'),
     toolbarFontSizeDecrease: $('#toolbar-font-size-decrease'), toolbarFontSizeValue: $('#toolbar-font-size-value'), toolbarFontSizeIncrease: $('#toolbar-font-size-increase'),
     toolbarFontFamily: $('#toolbar-font-family'), toolbarTextColor: $('#toolbar-text-color'),
@@ -105,9 +101,9 @@
     qaPanelCloseTimer: null,
     serviceStatus: null,
     lastTextSelection: null,
-    focusedTranslationUnitId: null,
     sourceCollapsed: true,
     activeInspectorPanel: 'global',
+    inspectorPanelOpen: false,
     sourcePanCleanup: null,
     pendingWorkbenchZoom: null,
     pendingSourceZoom: null,
@@ -128,7 +124,7 @@
     sceneEditRevision: 0,
   }
 
-  function createInspectorPanel(id, key, title, nodes) {
+  function createInspectorPanel(id, key, title, nodes, requiresSelection = false) {
     const panel = document.createElement('section')
     panel.id = id
     panel.className = 'inspector-section'
@@ -141,28 +137,55 @@
     const content = document.createElement('div')
     content.className = 'inspector-section__content'
     content.append(...nodes)
-    panel.append(heading, content)
+    if (requiresSelection) {
+      panel.dataset.inspectorRequiresSelection = 'true'
+      const note = document.createElement('aside')
+      note.className = 'note note--info note--compact inspector-selection-note'
+      note.dataset.inspectorSelectionNote = 'true'
+      note.setAttribute('role', 'status')
+      note.textContent = 'Выберите сегмент для работы с ним'
+      panel.append(heading, note, content)
+    } else {
+      panel.append(heading, content)
+    }
     return panel
   }
 
-  function setActiveInspectorPanel(key) {
-    const button = elements.inspectorPanel.querySelector(`[data-inspector-panel="${key}"]`)
-    if (!button || button.disabled) return
-    state.activeInspectorPanel = key
+  function renderInspectorPanelState() {
+    elements.studioView.classList.toggle('is-inspector-panel-open', state.inspectorPanelOpen)
+    elements.inspectorPanelBody.setAttribute('aria-hidden', String(!state.inspectorPanelOpen))
+    elements.inspectorPanelBody.toggleAttribute('inert', !state.inspectorPanelOpen)
     for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-panel-content]')) {
-      panel.hidden = panel.dataset.inspectorPanelContent !== key
+      panel.hidden = panel.dataset.inspectorPanelContent !== state.activeInspectorPanel
     }
-    for (const candidate of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
-      candidate.setAttribute('aria-pressed', String(candidate.dataset.inspectorPanel === key))
+    for (const button of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
+      const active = state.inspectorPanelOpen && button.dataset.inspectorPanel === state.activeInspectorPanel
+      button.setAttribute('aria-pressed', String(active))
+      button.setAttribute('aria-expanded', String(active))
     }
   }
 
-  function refreshInspectorNavigation(hasSelection) {
-    for (const button of elements.inspectorPanel.querySelectorAll('[data-requires-selection]')) {
-      button.disabled = !hasSelection
+  function toggleInspectorPanel(key) {
+    const button = elements.inspectorPanel.querySelector(`[data-inspector-panel="${key}"]`)
+    if (!button || button.disabled) return
+    if (state.inspectorPanelOpen && state.activeInspectorPanel === key) {
+      state.inspectorPanelOpen = false
+      renderInspectorPanelState()
+      return
     }
-    const activeButton = elements.inspectorPanel.querySelector(`[data-inspector-panel="${state.activeInspectorPanel}"]`)
-    if (activeButton?.disabled) setActiveInspectorPanel('global')
+    state.activeInspectorPanel = key
+    state.inspectorPanelOpen = true
+    renderInspectorPanelState()
+  }
+
+  function refreshInspectorNavigation(hasSelection) {
+    for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-requires-selection]')) {
+      const note = panel.querySelector('[data-inspector-selection-note]')
+      const content = panel.querySelector('.inspector-section__content')
+      note.hidden = hasSelection
+      content.hidden = !hasSelection
+    }
+    renderInspectorPanelState()
   }
 
   function setupInspectorPanels() {
@@ -185,7 +208,7 @@
     const globalTranslationPanel = createInspectorPanel(
       'inspector-global-translation-panel',
       'global',
-      'Перевод всего документа',
+      'Документ',
       [globalTranslationTools],
     )
     const finalTestingPanel = createInspectorPanel(
@@ -195,18 +218,17 @@
       [finalTestingTools],
     )
     const objectPanels = [
-      createInspectorPanel('inspector-translation-panel', 'translation', 'Посегментный перевод', correctionNodes),
-      createInspectorPanel('inspector-typography-panel', 'typography', 'Типографика', [typography]),
-      createInspectorPanel('inspector-position-panel', 'position', 'Расположение', [segmentActions, placement]),
+      createInspectorPanel('inspector-translation-panel', 'translation', 'Сегмент', correctionNodes, true),
+      createInspectorPanel('inspector-typography-panel', 'typography', 'Типографика', [typography], true),
+      createInspectorPanel('inspector-position-panel', 'position', 'Расстановка', [segmentActions, placement], true),
     ]
     elements.objectInspector.replaceChildren(...objectPanels)
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
     elements.objectInspector.after(finalTestingPanel)
     elements.inspectorSegmentWorkspace = segmentWorkspace
     for (const button of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
-      button.addEventListener('click', () => setActiveInspectorPanel(button.dataset.inspectorPanel))
+      button.addEventListener('click', () => toggleInspectorPanel(button.dataset.inspectorPanel))
     }
-    setActiveInspectorPanel(state.activeInspectorPanel)
     refreshInspectorNavigation(false)
   }
 
@@ -1443,6 +1465,7 @@
     let offset = 0
     for (const unit of ensureObjectTranslationUnits(object)) {
       for (const match of unit.knowledgeMatches || []) {
+        if (match.matchType !== 'exact' && match.matchType !== 'exact-fragment') continue
         ranges.push({
           ...match,
           unitId: unit.id,
@@ -1453,6 +1476,37 @@
       offset += unit.sourceText.length + String(unit.separatorAfter || '').length
     }
     return ranges.filter(match => match.end > match.start && match.start < object.sourceText.length)
+  }
+
+  function clearKnowledgeBaseStateForEditedObject(object) {
+    for (const unit of ensureObjectTranslationUnits(object)) {
+      unit.knowledgeMatches = []
+      unit.memorySuggestion = null
+      unit.memoryEntryId = null
+      if (unit.activeTranslationSource === 'memory' || unit.activeTranslationSource === 'memory-revised') {
+        unit.activeTranslationSource = 'manual'
+      }
+      if (unit.status === 'memory-applied' || unit.status === 'memory-suggested') unit.status = 'edited'
+    }
+  }
+
+  function clearKnowledgeBasePreviewForFocusedObject(object) {
+    for (const unit of ensureObjectTranslationUnits(object)) {
+      unit.knowledgeMatches = []
+      unit.memorySuggestion = null
+    }
+  }
+
+  function setObjectsKnowledgeEditing(objects, editing) {
+    if (editing) closeKnowledgeSuggestion()
+    for (const object of objects || []) {
+      for (const node of elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)) {
+        node.classList.toggle('is-knowledge-editing', editing)
+        if (!editing && !knowledgeMatchesForObject(object).length) {
+          node.querySelector('.scene-object__knowledge-icon')?.remove()
+        }
+      }
+    }
   }
 
   function closeKnowledgeSuggestion() {
@@ -1655,6 +1709,7 @@
         span.setAttribute('role', 'button')
         span.tabIndex = 0
         const openMatches = event => {
+          if (content.closest('.scene-object')?.classList.contains('is-knowledge-editing')) return
           event.preventDefault()
           event.stopPropagation()
           openKnowledgeSuggestionPopover(event, object.id, activeMatches, field)
@@ -2090,9 +2145,7 @@
     const content = document.createElement('div')
     content.className = 'scene-object__content'
     content.tabIndex = 0
-    const hasMultipleTranslationUnits = editField === 'translation' && isTranslatableType(object.type) && ensureObjectTranslationUnits(object).length > 1
-    content.contentEditable = hasMultipleTranslationUnits ? 'false' : 'true'
-    if (hasMultipleTranslationUnits) content.title = 'Этот сегмент разбит на внутренние единицы. Редактируйте их в правой панели.'
+    content.contentEditable = 'true'
     content.spellcheck = true
     content.dataset.editField = editField
     renderTextContent(content, object, displayField)
@@ -2104,17 +2157,19 @@
         refreshSelection()
       }
       if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
+      state.sceneEditRevision += 1
+      clearKnowledgeBasePreviewForFocusedObject(object)
+      setObjectsKnowledgeEditing([object], true)
     })
     for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
-    let knowledgeTextChanged = false
     content.addEventListener('blur', () => {
       state.textCheckpoint = false
-      if (!knowledgeTextChanged) return scheduleSave()
-      knowledgeTextChanged = false
+      renderTextContent(content, object, displayField)
+      setObjectsKnowledgeEditing([object], false)
       refreshKnowledgeBaseAfterSegmentEdit()
     })
     content.addEventListener('input', () => {
-      knowledgeTextChanged = true
+      setObjectsKnowledgeEditing([object], true)
       state.sceneEditRevision += 1
       object[editField] = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
@@ -2125,15 +2180,20 @@
         object.translationUnits = []
         ensureObjectTranslationUnits(object)
       } else {
-        const units = ensureObjectTranslationUnits(object)
-          if (units.length === 1) {
-            units[0].translation = object.translation
-            units[0].status = 'edited'
-            units[0].activeTranslationSource = 'manual'
-            units[0].memorySuggestion = null
-            units[0].memoryEntryId = null
+        let units = ensureObjectTranslationUnits(object)
+        if (units.length > 1) {
+          object.translationUnits = []
+          units = ensureObjectTranslationUnits(object)
+        }
+        if (units.length === 1) {
+          units[0].translation = object.translation
+          units[0].status = 'edited'
+          units[0].activeTranslationSource = 'manual'
+          units[0].memorySuggestion = null
+          units[0].memoryEntryId = null
         }
       }
+      clearKnowledgeBaseStateForEditedObject(object)
       object.status = 'edited'
       node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
       if (state.selected.size === 1) {
@@ -2271,6 +2331,17 @@
       height: vertical.length,
     })
     return changed
+  }
+
+  function snapDragPositionToGridCells(object, x, y) {
+    const page = state.scene?.pages?.[object?.pageIndex]
+    if (!object || !page || object.excluded) return { x, y }
+    const size = currentGridSize(page)
+    const area = page.contentBounds
+    return {
+      x: area.x + Math.round((x - area.x) / size) * size,
+      y: area.y + Math.round((y - area.y) / size) * size,
+    }
   }
 
   function snapObjectsToGridCells(objects) {
@@ -2794,31 +2865,6 @@
     return translationUnits.ensureTranslationUnits(object)
   }
 
-  function translationUnitStatusLabel(unit) {
-    return ({
-      new: 'Не переведено',
-      'memory-suggested': '100% из БЗ',
-      'memory-applied': 'Применено из БЗ',
-      'machine-translated': 'Переведено ИИ',
-      'ai-revised': 'Исправлено ИИ',
-      edited: 'Изменено',
-      approved: 'В БЗ',
-    })[unit.status] || 'Не переведено'
-  }
-
-  function applyExactSuggestion(object, unit) {
-    const suggestion = unit.memorySuggestion
-    if (!suggestion?.translation || suggestion.matchType !== 'exact') return false
-    unit.translation = suggestion.translation
-    unit.memoryEntryId = suggestion.entryId || null
-    unit.status = 'memory-applied'
-    unit.activeTranslationSource = 'memory'
-    translationUnits.syncObjectTranslation(object)
-    object.translationTextStyles = []
-    object.status = object.translation ? 'memory-applied' : 'partially-translated'
-    return true
-  }
-
   async function saveUnitsToKnowledgeBase(object, units) {
     const eligible = units.filter(unit => unit.sourceText.trim() && unit.translation.trim() && !unit.memoryEntryId)
     if (!eligible.length) return { created: 0, results: [] }
@@ -2854,137 +2900,6 @@
     return result
   }
 
-  function renderTranslationUnits(selection) {
-    const object = selection.length === 1
-      && isTranslatableType(selection[0].type)
-      && selection[0].type !== 'signature'
-      && String(selection[0].sourceText || '').trim()
-      ? selection[0]
-      : null
-    elements.translationUnitsCard.hidden = !object
-    elements.translationUnitsList.replaceChildren()
-    if (!object) {
-      refreshTranslationSelectionPreview()
-      return
-    }
-    const units = ensureObjectTranslationUnits(object)
-    elements.translationUnitsCount.textContent = units.length
-    elements.translationUnitsMerge.disabled = units.length < 2
-    const exactSuggestions = units.filter(unit => unit.memorySuggestion?.matchType === 'exact' && !unit.translation)
-    elements.translationUnitsApplyExact.disabled = exactSuggestions.length === 0
-    elements.translationUnitsApplyExact.textContent = exactSuggestions.length
-      ? `Применить все 100% совпадения (${exactSuggestions.length})`
-      : 'Нет новых 100% совпадений'
-
-    units.forEach((unit, index) => {
-      const row = document.createElement('article')
-      row.className = 'translation-unit'
-      row.dataset.unitId = unit.id
-      row.classList.toggle('is-new-term', state.focusedTranslationUnitId === unit.id)
-      const header = document.createElement('div')
-      header.className = 'translation-unit__header'
-      const number = document.createElement('span')
-      number.className = 'translation-unit__number'
-      number.textContent = units.length === 1 ? 'Весь сегмент' : `Часть ${index + 1}`
-      const status = document.createElement('span')
-      status.className = 'translation-unit__status'
-      status.dataset.status = unit.status
-      status.textContent = translationUnitStatusLabel(unit)
-      header.append(number, status)
-      const source = document.createElement('p')
-      source.className = 'translation-unit__source'
-      source.textContent = unit.sourceText
-      const input = document.createElement('textarea')
-      input.spellcheck = true
-      input.placeholder = unit.sourceText.length <= 80 ? `Перевод: ${unit.sourceText.trim()}` : 'Введите перевод этой части'
-      input.value = unit.translation
-      input.addEventListener('focus', () => {
-        if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
-      })
-      input.addEventListener('input', () => {
-        unit.translation = input.value
-        unit.status = 'edited'
-        unit.activeTranslationSource = 'manual'
-        unit.memoryEntryId = null
-        translationUnits.syncObjectTranslation(object)
-        object.translationTextStyles = []
-        object.status = object.translation ? 'translated-edited' : 'partially-translated'
-        elements.translationText.value = object.translation
-        status.dataset.status = unit.status
-        status.textContent = translationUnitStatusLabel(unit)
-        save.disabled = !unit.translation.trim()
-        save.textContent = 'Сохранить эту пару в БЗ'
-        renderSelectedText('translation')
-        fitObjectsToRenderedContent([object], true)
-        scheduleSave()
-      })
-      input.addEventListener('blur', () => { state.textCheckpoint = false })
-      row.append(header, source)
-      if (unit.memorySuggestion?.matchType === 'exact' && !unit.translation) {
-        const suggestion = document.createElement('div')
-        suggestion.className = 'translation-unit__suggestion'
-        const value = document.createElement('span')
-        value.textContent = unit.memorySuggestion.translation
-        const apply = document.createElement('button')
-        apply.type = 'button'
-        apply.textContent = 'Применить 100% совпадение'
-        apply.addEventListener('click', () => {
-          checkpoint()
-          applyExactSuggestion(object, unit)
-          renderDocumentWithContentFit([object])
-          scheduleSave()
-        })
-        suggestion.append(value, apply)
-        row.append(suggestion)
-      }
-      row.append(input)
-      const actions = document.createElement('div')
-      actions.className = 'translation-unit__actions'
-      const save = document.createElement('button')
-      save.type = 'button'
-      save.disabled = !unit.translation.trim() || Boolean(unit.memoryEntryId)
-      save.textContent = unit.memoryEntryId ? 'Пара сохранена в БЗ' : 'Сохранить эту пару в БЗ'
-      save.addEventListener('click', async () => {
-        try {
-          const result = await saveUnitsToKnowledgeBase(object, [unit])
-          renderTranslationUnits([object])
-          scheduleSave()
-          const conflict = result.results?.some(item => item.status === 'conflict')
-          showToast(conflict
-            ? `В БЗ уже есть другой перевод для «${unit.sourceText.trim()}»`
-            : `Пара «${unit.sourceText.trim()}» → «${unit.translation.trim()}» сохранена в БЗ`, conflict)
-        } catch (error) { showToast(error.message, true) }
-      })
-      actions.append(save)
-      row.append(actions)
-      elements.translationUnitsList.append(row)
-    })
-    refreshTranslationSelectionPreview()
-  }
-
-  function sourceTextSelection(object) {
-    if (!object || document.activeElement !== elements.sourceText) return null
-    const start = elements.sourceText.selectionStart
-    const end = elements.sourceText.selectionEnd
-    if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) return null
-    const text = String(object.sourceText || '')
-    if (start === 0 && end === text.length) return null
-    const value = text.slice(start, end)
-    return value.trim() ? { start, end, value } : null
-  }
-
-  function refreshTranslationSelectionPreview() {
-    if (!elements.translationSelectionPreview) return
-    const object = selectedObjects().length === 1 ? selectedObjects()[0] : null
-    const selection = sourceTextSelection(object)
-    elements.translationUnitsSplitSelection.disabled = !selection
-    elements.translationSelectionPreview.classList.toggle('is-ready', Boolean(selection))
-    const value = elements.translationSelectionPreview.querySelector('strong')
-    value.textContent = selection
-      ? `«${selection.value.trim().slice(0, 120)}${selection.value.trim().length > 120 ? '…' : ''}»`
-      : 'Сначала выделите слово или фразу выше'
-  }
-
   function refreshSelection() {
     const candidateIds = new Set(translationCandidates().map(object => object.id))
     state.translationSelected = new Set([...state.selected].filter(id => candidateIds.has(id)))
@@ -3001,7 +2916,6 @@
     renderInspectorSegmentWorkspace(selection)
     updateQaSegmentCheckAvailability()
     elements.studioView.classList.remove('is-inspector-empty')
-    elements.emptyInspector.hidden = selection.length > 0
     elements.objectInspector.hidden = false
     elements.merge.disabled = selection.length < 2 || new Set(selection.map(item => item.pageIndex)).size !== 1
     const onePage = selection.length > 0 && new Set(selection.map(item => item.pageIndex)).size === 1
@@ -3021,12 +2935,9 @@
       elements.sourceText.value = ''
       elements.translationText.value = ''
       elements.confidence.textContent = '—'
-      elements.translationUnitsCard.hidden = true
-      elements.translationUnitsList.replaceChildren()
       return
     }
     const first = selection[0]
-    const units = selection.length === 1 && isTranslatableType(first.type) ? ensureObjectTranslationUnits(first) : []
     setMixedControl(elements.objectType, selection.map(item => item.type))
     if (!elements.tableCellFields.hidden) {
       setMixedControl(elements.tableId, selection.map(item => item.tableId || ''))
@@ -3037,14 +2948,13 @@
     }
     setMixedControl(elements.sourceText, selection.map(item => item.sourceText))
     setMixedControl(elements.translationText, selection.map(item => item.translation))
-    elements.translationText.disabled = units.length > 1
-    elements.translationText.title = units.length > 1 ? 'Переводите части во внутренних сегментах ниже' : ''
+    elements.translationText.disabled = false
+    elements.translationText.title = ''
     elements.confidence.textContent = selection.length === 1 ? `${Math.round(first.confidence * 100)}%` : 'несколько'
     if (selection.length === 1 && first.agentNotes) {
       elements.segmentNote.textContent = first.agentNotes
       elements.segmentNote.hidden = false
     }
-    renderTranslationUnits(selection)
   }
 
   function setMixedControl(control, values) {
@@ -3493,9 +3403,9 @@
       const deltaY = (current.clientY - start.y + elements.canvasScroll.scrollTop - start.scrollTop) / state.zoom
       for (const object of objects) {
         const origin = origins.get(object.id)
-        object.x = origin.x + deltaX
-        object.y = origin.y + deltaY
-        snapObjectToGridCells(object)
+        const position = snapDragPositionToGridCells(object, origin.x + deltaX, origin.y + deltaY)
+        object.x = position.x
+        object.y = position.y
         const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
         if (node) positionObjectNode(node, object)
       }
@@ -4174,77 +4084,10 @@
         if (object.translationUnits.every(unit => unit.memoryEntryId)) object.status = 'approved'
       }
       scheduleSave()
-      renderTranslationUnits(selectedObjects())
       const created = results.reduce((sum, result) => sum + result.created, 0)
       const conflicts = results.flatMap(result => result.results || []).filter(item => item.status === 'conflict').length
       showToast(`Новых записей в БЗ: ${created}. Уже существовали: ${count - created - conflicts}.${conflicts ? ` Конфликтов: ${conflicts}.` : ''}`, conflicts > 0)
     } catch (error) { showToast(error.message, true) }
-  }
-
-  function splitInternalBySentences() {
-    const object = selectedObjects()[0]
-    if (selectedObjects().length !== 1 || !isTranslatableType(object?.type)) return
-    const current = ensureObjectTranslationUnits(object)
-    if (current.some(unit => unit.translation.trim()) && !window.confirm('При новом разбиении несопоставленные переводы частей будут очищены. Продолжить?')) return
-    checkpoint()
-    const units = translationUnits.splitBySentences(object, state.scene.sourceLanguage)
-    renderDocument()
-    scheduleSave()
-    showToast(units.length > 1 ? `Создано внутренних единиц: ${units.length}` : 'Текст не удалось разделить на отдельные предложения')
-  }
-
-  function splitInternalBySelection() {
-    const object = selectedObjects()[0]
-    if (selectedObjects().length !== 1 || !isTranslatableType(object?.type)) return
-    const start = elements.sourceText.selectionStart
-    const end = elements.sourceText.selectionEnd
-    const hasSelection = Number.isInteger(end) && end > start
-    const validSelection = hasSelection && !(start === 0 && end === object.sourceText.length)
-    const selectedTerm = validSelection ? object.sourceText.slice(start, end).trim() : ''
-    if (!selectedTerm) {
-      return showToast('Выделите слово или фразу в поле «Распознанный исходник»', true)
-    }
-    const current = ensureObjectTranslationUnits(object)
-    if (current.some(unit => unit.translation.trim()) && !window.confirm('При новом разбиении несопоставленные переводы частей будут очищены. Продолжить?')) return
-    checkpoint()
-    const units = translationUnits.splitAtRange(object, start, end)
-    const selectedUnit = units.find(unit => translationUnits.canonicalText(unit.sourceText) === translationUnits.canonicalText(selectedTerm))
-    state.focusedTranslationUnitId = selectedUnit?.id || null
-    renderDocument()
-    scheduleSave()
-    requestAnimationFrame(() => {
-      const row = state.focusedTranslationUnitId
-        ? elements.translationUnitsList.querySelector(`[data-unit-id="${CSS.escape(state.focusedTranslationUnitId)}"]`)
-        : null
-      row?.scrollIntoView({ block: 'nearest' })
-      row?.querySelector('textarea')?.focus()
-    })
-    showToast(`«${selectedTerm}» выделено отдельно. Введите перевод и сохраните эту пару в БЗ.`)
-  }
-
-  function mergeInternalUnits() {
-    const object = selectedObjects()[0]
-    if (selectedObjects().length !== 1 || !isTranslatableType(object?.type)) return
-    const units = ensureObjectTranslationUnits(object)
-    if (units.length < 2) return
-    checkpoint()
-    object.translation = translationUnits.translationFromUnits(units, false)
-    translationUnits.mergeTranslationUnits(object)
-    object.translationTextStyles = []
-    renderDocumentWithContentFit([object])
-    scheduleSave()
-    showToast('Внутренние единицы объединены; геометрия сегмента сохранена')
-  }
-
-  function applyAllExactSuggestions() {
-    const object = selectedObjects()[0]
-    if (selectedObjects().length !== 1 || !object) return
-    const units = ensureObjectTranslationUnits(object)
-    checkpoint()
-    const count = units.filter(unit => applyExactSuggestion(object, unit)).length
-    renderDocumentWithContentFit([object])
-    scheduleSave()
-    if (count) showToast(`Применено 100% совпадений: ${count}`)
   }
 
   function mergeStyledField(objects, field) {
@@ -4808,12 +4651,19 @@
       })
     }
     const bindText = (control, field) => {
-      let knowledgeTextChanged = false
-      control.addEventListener('focus', () => { if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true } })
+      let knowledgeEditingObjects = []
+      control.addEventListener('focus', () => {
+        knowledgeEditingObjects = selectedObjects()
+        if (!state.textCheckpoint) { checkpoint(); state.textCheckpoint = true }
+        state.sceneEditRevision += 1
+        for (const object of knowledgeEditingObjects) clearKnowledgeBasePreviewForFocusedObject(object)
+        setObjectsKnowledgeEditing(knowledgeEditingObjects, true)
+      })
       control.addEventListener('input', () => {
-        knowledgeTextChanged = true
         state.sceneEditRevision += 1
         const objects = selectedObjects()
+        knowledgeEditingObjects = objects
+        setObjectsKnowledgeEditing(objects, true)
         for (const object of objects) {
           object[field] = control.value
           object[field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'] = []
@@ -4823,7 +4673,11 @@
             object.translationUnits = []
             ensureObjectTranslationUnits(object)
           } else {
-            const units = ensureObjectTranslationUnits(object)
+            let units = ensureObjectTranslationUnits(object)
+            if (units.length > 1) {
+              object.translationUnits = []
+              units = ensureObjectTranslationUnits(object)
+            }
             if (units.length === 1) {
               units[0].translation = control.value
               units[0].status = 'edited'
@@ -4832,26 +4686,24 @@
               units[0].memoryEntryId = null
             }
           }
+          clearKnowledgeBaseStateForEditedObject(object)
           object.status = 'edited'
         }
         renderSelectedText(field === 'sourceText' ? 'sourceText' : field)
         if (field === 'sourceText') renderSelectedText('translation')
         fitObjectsToRenderedContent(objects, true)
-        renderTranslationUnits(selectedObjects())
         scheduleSave()
       })
       control.addEventListener('blur', () => {
         state.textCheckpoint = false
-        if (!knowledgeTextChanged) return
-        knowledgeTextChanged = false
+        renderSelectedText(field)
+        setObjectsKnowledgeEditing(knowledgeEditingObjects, false)
+        knowledgeEditingObjects = []
         refreshKnowledgeBaseAfterSegmentEdit()
       })
     }
     bindText(elements.sourceText, 'sourceText')
     bindText(elements.translationText, 'translation')
-    for (const eventName of ['select', 'keyup', 'pointerup', 'focus']) {
-      elements.sourceText.addEventListener(eventName, refreshTranslationSelectionPreview)
-    }
   }
 
   function renderSelectedText(field) {
@@ -4867,6 +4719,11 @@
   }
 
   function bindEvents() {
+    document.addEventListener('pointerdown', event => {
+      const activeEditor = document.activeElement
+      const isSegmentTextEditor = activeEditor?.matches?.('.scene-object__content, #source-text, #translation-text')
+      if (isSegmentTextEditor && !activeEditor.contains(event.target)) activeEditor.blur()
+    }, true)
     elements.fileInput.addEventListener('change', () => upload(elements.fileInput.files))
     for (const eventName of ['dragenter', 'dragover']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.add('is-dragover') })
     for (const eventName of ['dragleave', 'drop']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.remove('is-dragover') })
@@ -5033,10 +4890,6 @@
         : 'БЗ будет показывать подсказки, не изменяя перевод ИИ')
     })
     elements.approve.addEventListener('click', approveTranslation)
-    elements.translationUnitsSplitSentences.addEventListener('click', splitInternalBySentences)
-    elements.translationUnitsSplitSelection.addEventListener('click', splitInternalBySelection)
-    elements.translationUnitsMerge.addEventListener('click', mergeInternalUnits)
-    elements.translationUnitsApplyExact.addEventListener('click', applyAllExactSuggestions)
     elements.merge.addEventListener('click', mergeSelected)
     elements.split.addEventListener('click', splitSelectedText)
     elements.resetPosition.addEventListener('click', resetPosition)

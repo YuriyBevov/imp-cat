@@ -45,7 +45,8 @@
   .component-meta { align-items: flex-start; flex-direction: column; }
 }
 .component-inspector-navigation-demo { width: min(520px, 100%); min-height: 310px; display: grid; grid-template-columns: minmax(0, 1fr) 60px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-.component-inspector-navigation-demo__panel { display: grid; align-content: start; gap: 12px; padding: 18px; }
+.component-inspector-navigation-demo__panel { display: grid; align-content: start; gap: 12px; padding: 18px; opacity: 0; transform: translateX(100%); transition: transform .28s ease, opacity .2s ease; pointer-events: none; }
+.component-inspector-navigation-demo.is-open .component-inspector-navigation-demo__panel { opacity: 1; transform: translateX(0); pointer-events: auto; }
 .component-note-demo { width: min(520px, 100%); display: grid; gap: 8px; }
 .component-scrollbar-demo { width: min(520px, 100%); height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
 .component-scrollbar-demo__content { width: 680px; min-height: 320px; padding: 18px; color: var(--muted); font-size: 12px; line-height: 1.5; }

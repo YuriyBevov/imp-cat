@@ -46,8 +46,6 @@ test('studio exposes the complete source-to-export workflow', () => {
     'instruction-library-text', 'instruction-library-form-cancel',
     'knowledge-suggestion-popover', 'knowledge-suggestion-list', 'knowledge-suggestion-close', 'approve-button', 'merge-button', 'split-button',
     'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
-    'translation-units-card', 'translation-units-list', 'translation-units-split-sentences',
-    'translation-units-split-selection', 'translation-units-merge', 'translation-units-apply-exact', 'translation-selection-preview',
     'align-left-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
     'stretch-work-area-width-button', 'stretch-work-area-height-button', 'fit-min-content-width-button',
@@ -65,6 +63,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.equal(studioDocument.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
   assert.equal(studioDocument.querySelector('#view-layout-button'), null)
   assert.equal(studioDocument.querySelector('#view-segments-button'), null)
+  assert.equal(studioDocument.querySelector('#translation-units-card'), null)
   const languageCard = studioDocument.querySelector('.language-card')
   const reanalyzeButton = studioDocument.querySelector('#reanalyze-button')
   assert.equal(languageCard.tagName, 'DIV')
@@ -314,11 +313,11 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.equal(inspectorNavigationButtons.length, 5)
   assert.ok(inspectorNavigationButtons.every(button => button.classList.contains('icon-button--large') && button.classList.contains('icon-button--ghost')))
   assert.deepEqual(inspectorNavigationButtons.map(button => button.getAttribute('aria-label')), [
-    'Открыть перевод всего документа',
-    'Открыть посегментный перевод',
-    'Открыть настройки типографики',
-    'Открыть настройки расположения',
-    'Открыть инструменты тестирования',
+    'Документ',
+    'Сегмент',
+    'Типографика',
+    'Расстановка',
+    'Тестирование',
   ])
   assert.ok(html.indexOf('id="page-thumbnails"') < html.indexOf('id="source-panel-toggle"'))
   assert.match(styles, /\.workbench-toolbar\s*\{[^}]*grid-area:\s*toolbar/)
@@ -498,7 +497,7 @@ test('user guide documents the complete interface and links from README', () => 
     'Пересегментация макета', 'Перевести выбранные', 'Исправить наложения',
     'Проверить и исправить макет', 'Отменить проверку макета', 'Финальная проверка макета', 'Сохранить инструкцию в список инструкций', 'Редактировать инструкцию',
     'Сохранить изменения', 'Исправить выбранные сегменты с учетом инструкции', 'Исправить весь документ с учетом инструкции',
-    'Разбить по предложениям', 'Вынести выделенное в отдельную часть', 'Применить все 100% совпадения',
+    'Карточка ручного управления частями сегмента временно удалена',
     'Направление, X', 'Направление, Y', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
     'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
   ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
@@ -556,7 +555,7 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.match(uiComponentsHtml, /<code>Note<\/code>/)
   assert.match(uiKit, /\.note--compact\s*\{/)
   assert.match(uiKit, /\.note--roomy\s*\{/)
-  assert.ok(dom.window.document.querySelector('#empty-inspector.note.note--info.note--compact'))
+  assert.equal(dom.window.document.querySelector('#empty-inspector'), null)
   assert.ok(dom.window.document.querySelector('#segment-note.note.note--warning.note--compact'))
   assert.match(html, /<script src="\/tooltip\.js"><\/script>/)
   assert.match(uiComponentsHtml, /<script src="\/tooltip\.js" defer><\/script>/)
@@ -569,10 +568,19 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.match(uiComponentsHtml, /InspectorNavigation/)
   assert.match(uiComponentsHtml, /class="inspector-panel__navigation"/)
   assert.match(client, /function setupInspectorPanels/)
-  assert.match(client, /function setActiveInspectorPanel/)
+  assert.match(client, /function toggleInspectorPanel/)
+  assert.match(client, /function renderInspectorPanelState/)
   assert.match(styles, /\.inspector-panel__body\s*\{[^}]*grid-auto-rows:\s*max-content/)
   assert.match(styles, /\.object-inspector\s*\{[^}]*display:\s*contents/)
   assert.match(styles, /\.inspector-panel\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 60px/)
+  assert.match(styles, /\.inspector-panel__body\s*\{[^}]*grid-column:\s*1;/)
+  assert.match(styles, /\.inspector-panel__navigation\s*\{[^}]*grid-column:\s*2;/)
+  assert.match(styles, /\.inspector-panel\s*\{[^}]*overflow:\s*hidden;/)
+  assert.match(styles, /\.inspector-panel\s*\{[^}]*width:\s*var\(--inspector-open-width\);/)
+  assert.match(styles, /\.studio:not\(\.is-inspector-panel-open\) \.inspector-panel__body\s*\{[^}]*opacity:\s*0;[^}]*transform:\s*translateX\(100%\);[^}]*pointer-events:\s*none;/)
+  assert.doesNotMatch(styles, /\.inspector-panel\s*\{[^}]*border-left:/)
+  assert.match(styles, /\.studio\s*\{[^}]*--inspector-track-width:\s*60px/)
+  assert.match(styles, /\.studio\.is-inspector-panel-open\s*\{[^}]*--inspector-track-width:\s*var\(--inspector-open-width\)/)
   assert.match(styles, /\.inspector-section__content\s*\{[^}]*min-width:\s*0;[^}]*grid-auto-rows:\s*max-content/)
   assert.doesNotMatch(styles, /--minimum-checkbox-column-width/)
   assert.match(styles, /\.segment-translation-workspace\s*\{[^}]*background:\s*#fff/)
@@ -610,9 +618,15 @@ test('UI components catalog exposes an interactive SourcePreviewControls referen
   const inspectorDemoButtons = [...dom.window.document.querySelectorAll('[data-component-inspector-panel]')]
   assert.equal(inspectorDemoButtons.length, 5)
   inspectorDemoButtons[3].click()
-  assert.equal(dom.window.document.querySelector('[data-component-inspector-title]').textContent, 'Расположение')
+  assert.equal(dom.window.document.querySelector('[data-component-inspector-title]').textContent, 'Расстановка')
   assert.equal(inspectorDemoButtons[3].getAttribute('aria-pressed'), 'true')
+  assert.equal(inspectorDemoButtons[3].getAttribute('aria-expanded'), 'true')
   assert.equal(inspectorDemoButtons[0].getAttribute('aria-pressed'), 'false')
+  inspectorDemoButtons[3].click()
+  assert.equal(dom.window.document.querySelector('.component-inspector-navigation-demo').classList.contains('is-open'), false)
+  assert.equal(dom.window.document.querySelector('.component-inspector-navigation-demo__panel').hasAttribute('inert'), true)
+  assert.equal(inspectorDemoButtons[3].getAttribute('aria-pressed'), 'false')
+  assert.equal(inspectorDemoButtons[3].getAttribute('aria-expanded'), 'false')
   const output = dom.window.document.querySelector('#component-source-zoom-output')
   assert.equal(output.value, '70%')
   dom.window.document.querySelector('#component-source-zoom-in').click()
@@ -1309,7 +1323,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelectorAll('.inspector-section').length, 5)
   assert.deepEqual(
     [...dom.window.document.querySelectorAll('.inspector-section__title')].map(node => node.textContent),
-    ['Перевод всего документа', 'Посегментный перевод', 'Типографика', 'Расположение', 'Тестирование'],
+    ['Документ', 'Сегмент', 'Типографика', 'Расстановка', 'Тестирование'],
   )
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel .global-translation-tools'))
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel .agent-card'), null)
@@ -1321,8 +1335,11 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#inspector-testing-panel .final-testing-actions').lastElementChild.id, 'reanalyze-button')
   assert.equal(dom.window.document.querySelector('#object-inspector').hidden, false)
   assert.equal(dom.window.document.querySelector('#object-inspector').hasAttribute('inert'), false)
-  assert.equal(dom.window.document.querySelector('#empty-inspector').hidden, false)
-  assert.equal(dom.window.document.querySelector('.inspector-panel__body').firstElementChild.id, 'empty-inspector')
+  assert.equal(dom.window.document.querySelector('#empty-inspector'), null)
+  assert.equal(dom.window.document.querySelector('.inspector-panel__body').firstElementChild.id, 'inspector-global-translation-panel')
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), true)
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').getAttribute('aria-hidden'), 'true')
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-inspector-panel-open'), false)
   assert.ok(dom.window.document.querySelector('#inspector-typography-panel .typography-card'))
   assert.ok(dom.window.document.querySelector('#inspector-position-panel .segment-actions-card'))
   assert.ok(dom.window.document.querySelector('#inspector-position-panel .flex-layout'))
@@ -1336,12 +1353,15 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel #translation-select-all'))
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel #translation-clear-selection'))
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel #translate-button'))
-  assert.equal(dom.window.document.querySelector('#inspector-global-translation-button').disabled, false)
-  assert.equal(dom.window.document.querySelector('#inspector-testing-button').disabled, false)
-  assert.ok([...dom.window.document.querySelectorAll('[data-requires-selection]')].every(button => button.disabled))
-  assert.equal(dom.window.document.querySelector('#inspector-global-translation-button').getAttribute('aria-pressed'), 'true')
+  assert.ok([...dom.window.document.querySelectorAll('.inspector-panel__navigation button')].every(button => !button.disabled))
+  assert.equal(dom.window.document.querySelectorAll('[data-requires-selection]').length, 0)
+  for (const panel of dom.window.document.querySelectorAll('[data-inspector-requires-selection]')) {
+    assert.equal(panel.querySelector('[data-inspector-selection-note]').hidden, false)
+    assert.equal(panel.querySelector('.inspector-section__content').hidden, true)
+  }
+  assert.equal(dom.window.document.querySelector('#inspector-global-translation-button').getAttribute('aria-pressed'), 'false')
+  assert.equal(dom.window.document.querySelector('#inspector-global-translation-button').getAttribute('aria-expanded'), 'false')
   assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 0 из 1 сегментов')
-  assert.equal(dom.window.document.querySelector('#empty-inspector').textContent, 'Выберите сегмент для работы с ним')
   assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size'), '17px')
   assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size-middle'), '34px')
   assert.equal(dom.window.document.querySelector('.studio-page').style.getPropertyValue('--grid-size-outer'), '68px')
@@ -1392,8 +1412,12 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const initialObject = dom.window.document.querySelector('[data-id="object-1"]')
   initialObject.dispatchEvent(pointer('pointerdown', 100, 100))
   assert.equal(dom.window.document.querySelector('#object-inspector').hidden, false)
-  assert.ok([...dom.window.document.querySelectorAll('[data-requires-selection]')].every(button => !button.disabled))
-  assert.equal(dom.window.document.querySelector('#empty-inspector').hidden, true)
+  assert.ok([...dom.window.document.querySelectorAll('.inspector-panel__navigation button')].every(button => !button.disabled))
+  for (const panel of dom.window.document.querySelectorAll('[data-inspector-requires-selection]')) {
+    assert.equal(panel.querySelector('[data-inspector-selection-note]').hidden, true)
+    assert.equal(panel.querySelector('.inspector-section__content').hidden, false)
+  }
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), true)
   assert.equal(dom.window.document.querySelector('#translation-selection-count').textContent, 'Выбрано: 1 из 1 сегментов')
   assert.equal(dom.window.document.querySelector('#translate-button').textContent, 'Перевести весь документ (1)')
   assert.match(
@@ -1403,9 +1427,14 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(dom.window.document.querySelector('#inspector-segment-workspace > .segment-translation-workspace'))
   assert.ok(dom.window.document.querySelector('#inspector-segment-workspace .segment-ai-instruction'))
   dom.window.document.querySelector('#inspector-position-button').click()
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), false)
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').getAttribute('aria-hidden'), 'false')
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-inspector-panel-open'), true)
   assert.equal(dom.window.document.querySelector('#inspector-position-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-position-button').getAttribute('aria-pressed'), 'true')
+  assert.equal(dom.window.document.querySelector('#inspector-position-button').getAttribute('aria-expanded'), 'true')
+  assert.equal(dom.window.document.querySelector('#inspector-position-button').getAttribute('aria-label'), 'Расстановка')
   dom.window.document.querySelector('#inspector-translation-button').click()
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#inspector-position-panel').hidden, true)
@@ -1472,6 +1501,16 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#inspector-panel-toggle'), null)
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-inspector-collapsed'), false)
   assert.equal(dom.window.document.querySelector('#inspector-panel').getAttribute('aria-hidden'), null)
+  const activeInspectorButton = dom.window.document.querySelector('#inspector-translation-button')
+  activeInspectorButton.click()
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), true)
+  assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-inspector-panel-open'), false)
+  assert.equal(activeInspectorButton.getAttribute('aria-pressed'), 'false')
+  assert.equal(activeInspectorButton.getAttribute('aria-expanded'), 'false')
+  assert.equal(activeInspectorButton.getAttribute('aria-label'), 'Сегмент')
+  activeInspectorButton.click()
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), false)
+  assert.equal(activeInspectorButton.getAttribute('aria-pressed'), 'true')
 
   const automaticWidth = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
   const automaticHeight = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height)
@@ -1786,10 +1825,13 @@ test('studio restores a saved scene and renders editable page objects', async ()
   }
 
   dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-  assert.ok([...dom.window.document.querySelectorAll('[data-requires-selection]')].every(button => button.disabled))
-  assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, false)
-  assert.equal(dom.window.document.querySelector('#inspector-global-translation-button').getAttribute('aria-pressed'), 'true')
-  assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
+  assert.ok([...dom.window.document.querySelectorAll('.inspector-panel__navigation button')].every(button => !button.disabled))
+  assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
+  assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), false)
+  assert.equal(dom.window.document.querySelector('#inspector-global-translation-button').getAttribute('aria-pressed'), 'false')
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, false)
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel [data-inspector-selection-note]').hidden, false)
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .inspector-section__content').hidden, true)
   let independentlyFitted = [...dom.window.document.querySelectorAll('.scene-object')]
   independentlyFitted[0].dispatchEvent(pointer('pointerdown', 240, 240))
   dom.window.document.querySelector('#fit-content-both-button').click()
@@ -1892,6 +1934,11 @@ test('blank pages can be inserted and removed while segments move reliably betwe
   const dragHandle = dom.window.document.querySelector('[data-id="moving-object"] .scene-object__handle')
   dragHandle.dispatchEvent(pointer('pointerdown', 128, 160))
   dom.window.dispatchEvent(pointer('pointermove', 200, 1400))
+  const liveMovingObject = dom.window.document.querySelector('[data-id="moving-object"]')
+  assert.ok(
+    Number.parseFloat(liveMovingObject.style.top) > scene.pages[0].contentBounds.y + scene.pages[0].contentBounds.height,
+    'the captured segment must keep following the pointer beyond the source page instead of sticking to its bottom boundary',
+  )
   assert.equal(surfaces[1].classList.contains('is-drag-target'), true)
   assert.equal(surfaces[0].closest('.studio-page-shell').classList.contains('is-drag-source-shell'), true)
   assert.equal(dom.window.document.querySelector('#document-canvas').classList.contains('is-object-dragging'), true)
@@ -1913,17 +1960,21 @@ test('blank pages can be inserted and removed while segments move reliably betwe
   dom.window.close()
 })
 
-test('internal sentence splitting keeps one positioned layout object', async () => {
+test('legacy internal units stay hidden and collapse into one unit when the full translation is edited', async () => {
   const id = 'c'.repeat(32)
   const scene = {
     title: 'Internal units', sourceLanguage: 'en', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
     objects: [{
       id: 'paragraph', pageIndex: 0, type: 'text', readingOrder: 1,
-      sourceText: 'First sentence. Second sentence!', translation: '', confidence: .99,
+      sourceText: 'First sentence. Second sentence!', translation: 'Первое предложение. Второе предложение!', confidence: .99,
       x: 40, y: 80, width: 500, height: 50, rotation: 0, excluded: false,
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
       sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 80, width: 500, height: 50 },
+      translationUnits: [
+        { id: 'paragraph-unit-1', sourceText: 'First sentence.', separatorAfter: ' ', translation: 'Первое предложение.', status: 'edited', activeTranslationSource: 'manual' },
+        { id: 'paragraph-unit-2', sourceText: 'Second sentence!', separatorAfter: '', translation: 'Второе предложение!', status: 'edited', activeTranslationSource: 'manual' },
+      ],
     }],
   }
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
@@ -1941,72 +1992,16 @@ test('internal sentence splitting keeps one positioned layout object', async () 
   await new Promise(resolve => setTimeout(resolve, 30))
   const object = dom.window.document.querySelector('.scene-object')
   object.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
-  dom.window.document.querySelector('#translation-units-split-sentences').click()
-  assert.equal(scene.objects.length, 1)
-  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
-  assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
-  assert.equal(dom.window.document.querySelector('#translation-text').disabled, true)
-  dom.window.close()
-})
-
-test('a selected term can be translated manually and saved as an exact knowledge-base pair', async () => {
-  const id = 'd'.repeat(32)
-  const sourceText = 'SÜRELİDİR: Bu vekaletname 25/08/2026 tarihine kadar geçerlidir.'
-  const scene = {
-    title: 'Term workflow', sourceLanguage: 'tr', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
-    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
-    objects: [{
-      id: 'paragraph', pageIndex: 0, type: 'text', readingOrder: 1,
-      sourceText, translation: '', confidence: .99,
-      x: 40, y: 80, width: 600, height: 50, rotation: 0, excluded: false,
-      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
-      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 80, width: 600, height: 50 },
-    }],
-  }
-  let knowledgeBaseRequest = null
-  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
-    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
-  })
-  dom.window.fetch = async (url, options = {}) => {
-    if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
-    if (String(url).endsWith('/knowledge-base/entries')) {
-      knowledgeBaseRequest = JSON.parse(options.body)
-      const entry = knowledgeBaseRequest.entries[0]
-      return { ok: true, json: async () => ({ created: 1, results: [{ clientRef: entry.clientRef, status: 'created', entry: { ...entry, id: 'term-entry' } }] }) }
-    }
-    if (options.method === 'PUT') return { ok: true, json: async () => ({ ok: true }) }
-    return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
-  }
-  dom.window.CSS = { escape: value => String(value) }
-  dom.window.HTMLElement.prototype.scrollIntoView = () => {}
-  dom.window.eval(translationUnits)
-  dom.window.eval(client)
-  await new Promise(resolve => setTimeout(resolve, 30))
-  dom.window.document.querySelector('.scene-object').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
-  const sourceInput = dom.window.document.querySelector('#source-text')
-  sourceInput.focus()
-  sourceInput.setSelectionRange(0, 'SÜRELİDİR'.length)
-  sourceInput.dispatchEvent(new dom.window.Event('select', { bubbles: true }))
-  assert.equal(dom.window.document.querySelector('#translation-units-split-selection').disabled, false)
-  assert.match(dom.window.document.querySelector('#translation-selection-preview strong').textContent, /SÜRELİDİR/)
-
-  dom.window.document.querySelector('#translation-units-split-selection').click()
-  await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
-  assert.equal(scene.objects.length, 1)
-  assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
-  assert.equal(dom.window.document.querySelectorAll('.translation-unit').length, 2)
-  const termRow = [...dom.window.document.querySelectorAll('.translation-unit')]
-    .find(row => row.querySelector('.translation-unit__source').textContent === 'SÜRELİDİR')
-  assert.ok(termRow)
-  const translation = termRow.querySelector('textarea')
-  translation.value = 'СРОЧНАЯ'
+  assert.equal(dom.window.document.querySelector('#translation-units-card'), null)
+  assert.equal(dom.window.document.querySelector('#translation-text').disabled, false)
+  assert.equal(object.querySelector('.scene-object__content').contentEditable, 'true')
+  const translation = dom.window.document.querySelector('#translation-text')
+  translation.value = 'Новый полный перевод'
   translation.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-  termRow.querySelector('.translation-unit__actions button').click()
-  await new Promise(resolve => setTimeout(resolve, 10))
-  assert.equal(knowledgeBaseRequest.entries[0].sourceText, 'SÜRELİDİR')
-  assert.equal(knowledgeBaseRequest.entries[0].translation, 'СРОЧНАЯ')
-  assert.equal(knowledgeBaseRequest.entries[0].sourceLanguage, 'tr')
-  assert.equal(knowledgeBaseRequest.entries[0].targetLanguage, 'ru')
+  assert.equal(scene.objects[0].translation, 'Новый полный перевод')
+  assert.equal(scene.objects[0].translationUnits.length, 1)
+  assert.equal(scene.objects[0].translationUnits[0].sourceText, scene.objects[0].sourceText)
+  assert.equal(scene.objects[0].translationUnits[0].translation, 'Новый полный перевод')
   dom.window.close()
 })
 
@@ -2157,6 +2152,20 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
           start: 11, end: 17, score: 1, matchType: 'exact-fragment', fullSegment: false,
         }],
       }],
+    }, {
+      id: 'fuzzy-object', pageIndex: 0, type: 'text', readingOrder: 2, sourceText: 'VEKALETNAMвE',
+      translation: '', confidence: .99,
+      x: 40, y: 160, width: 300, height: 50, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 160, width: 300, height: 50 },
+      translationUnits: [{
+        id: 'fuzzy-unit', sourceText: 'VEKALETNAMвE', separatorAfter: '', translation: '', status: 'new',
+        knowledgeMatches: [{
+          id: 'fuzzy-entry:fuzzy', entryId: 'fuzzy-entry', glossaryId: '00000000-0000-4000-8000-000000000001',
+          sourceText: 'Vekaletname', translation: 'Доверенность', sourceLanguage: 'Turkish', targetLanguage: 'ru',
+          start: 0, end: 'VEKALETNAMвE'.length, score: .94, matchType: 'fuzzy', fullSegment: false,
+        }],
+      }],
     }],
   }
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
@@ -2195,6 +2204,9 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   assert.ok(layoutIndicator)
   assert.match(layoutIndicator.querySelector('use').getAttribute('href'), /icon-alert-circle$/)
   assert.equal(layoutIndicator.textContent, '')
+  const fuzzyObject = dom.window.document.querySelector('[data-id="fuzzy-object"]')
+  assert.equal(fuzzyObject.querySelector('.knowledge-highlight'), null)
+  assert.equal(fuzzyObject.querySelector('.scene-object__knowledge-icon'), null)
   knowledgeHighlight.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-popover').hidden, false)
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
@@ -2210,11 +2222,27 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   dom.window.document.querySelector('#knowledge-suggestion-close').click()
   const editedSegment = dom.window.document.querySelector('.scene-object__content')
   editedSegment.focus()
-  editedSegment.textContent = 'Срок действия изменён'
-  editedSegment.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-  editedSegment.dispatchEvent(new dom.window.Event('blur'))
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-knowledge-editing'), true)
+  assert.equal(scene.objects[0].translationUnits[0].knowledgeMatches.length, 0)
+  const pageSurface = dom.window.document.querySelector('.studio-page')
+  pageSurface.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 700, clientY: 900 }))
+  assert.notEqual(dom.window.document.activeElement, editedSegment)
+  dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', { bubbles: true, button: 0, clientX: 700, clientY: 900 }))
   await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-knowledge-editing'), false)
   assert.equal(knowledgeRefreshRequests, 1)
+  const refreshedSegment = dom.window.document.querySelector('.scene-object__content')
+  refreshedSegment.focus()
+  refreshedSegment.textContent = 'VEKALETNAMвE'
+  refreshedSegment.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-knowledge-editing'), true)
+  assert.equal(scene.objects[0].translationUnits[0].knowledgeMatches.length, 0)
+  refreshedSegment.blur()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(knowledgeRefreshRequests, 2)
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-knowledge-editing'), false)
+  assert.equal(dom.window.document.querySelector('.scene-object__knowledge-icon'), null)
+  assert.equal(dom.window.document.querySelector('.knowledge-highlight'), null)
   dom.window.document.querySelector('.scene-object').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
   const preservedTranslation = scene.objects[0].translationUnits[0].translation
   dom.window.document.querySelector('#knowledge-base-open-button').click()
@@ -2223,7 +2251,7 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.equal(dom.window.document.querySelector('.scene-object__knowledge-icon'), null)
   assert.equal(dom.window.document.querySelector('.knowledge-highlight'), null)
-  assert.deepEqual(scene.objects[0].translationUnits[0].knowledgeMatches, [])
+  assert.equal(scene.objects[0].translationUnits[0].knowledgeMatches.length, 0)
   assert.equal(scene.objects[0].translationUnits[0].activeTranslationSource, 'manual')
   assert.equal(scene.objects[0].translationUnits[0].translation, preservedTranslation)
   const alternative = dom.window.document.querySelector('.ai-translation-alternative')
@@ -2239,5 +2267,7 @@ test('knowledge-base edits refresh matches in the active document', () => {
   assert.match(client, /documents\/\$\{expectedDocumentId\}\/knowledge-matches\/refresh/)
   assert.match(client, /await saveScene\(true\)[\s\S]*await refreshCurrentKnowledgeBaseMatches\(editRevision, documentId\)/)
   assert.match(styles, /\.knowledge-highlight\s*\{[^}]*background:\s*#ffe96a/)
+  assert.match(styles, /\.scene-object\.is-knowledge-editing \.knowledge-highlight\s*\{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/)
+  assert.match(styles, /\.scene-object\.is-knowledge-editing \.scene-object__knowledge-icon\s*\{[^}]*display:\s*none;/)
   assert.match(styles, /\.scene-object__knowledge-icon\s*\{[^}]*position:\s*absolute/)
 })

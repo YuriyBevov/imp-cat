@@ -2,11 +2,19 @@
   for (const demo of document.querySelectorAll('.component-inspector-navigation-demo')) {
     const title = demo.querySelector('[data-component-inspector-title]')
     const description = demo.querySelector('[data-component-inspector-description]:not(button)')
+    const panel = title.closest('.component-inspector-navigation-demo__panel')
     for (const button of demo.querySelectorAll('button[data-component-inspector-panel]')) {
       button.addEventListener('click', () => {
+        const shouldClose = button.getAttribute('aria-pressed') === 'true'
         for (const candidate of demo.querySelectorAll('button[data-component-inspector-panel]')) {
-          candidate.setAttribute('aria-pressed', String(candidate === button))
+          const active = !shouldClose && candidate === button
+          candidate.setAttribute('aria-pressed', String(active))
+          candidate.setAttribute('aria-expanded', String(active))
         }
+        demo.classList.toggle('is-open', !shouldClose)
+        panel.setAttribute('aria-hidden', String(shouldClose))
+        panel.toggleAttribute('inert', shouldClose)
+        if (shouldClose) return
         title.textContent = button.dataset.componentInspectorPanel
         description.textContent = button.dataset.componentInspectorDescription
       })

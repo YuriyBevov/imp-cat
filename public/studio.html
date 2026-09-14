@@ -122,8 +122,7 @@
       </section>
 
       <aside id="inspector-panel" class="inspector-panel" aria-label="Инспектор документа">
-        <div class="inspector-panel__body">
-        <aside id="empty-inspector" class="note note--info note--compact" role="status">Выберите сегмент для работы с ним</aside>
+        <div id="inspector-panel-body" class="inspector-panel__body" aria-hidden="true" inert>
         <div class="global-translation-tools">
           <p id="agent-status" class="visually-hidden" aria-live="polite"></p>
           <div class="language-card">
@@ -224,24 +223,6 @@
             </label>
           </div>
           <p id="segment-note" class="note note--warning note--compact inspector-scope--segments" hidden></p>
-          <section id="translation-units-card" class="translation-units-card inspector-scope--segments" hidden>
-            <div class="translation-units-card__heading">
-              <div><strong>Термины и части сегмента</strong><small>Внешний блок на странице останется единым</small></div>
-              <span id="translation-units-count">0</span>
-            </div>
-            <p class="translation-units-guide">Чтобы исправить отдельное слово: выделите его в поле «Распознанный исходник», вынесите в отдельную часть, введите перевод справа и сохраните пару в БЗ.</p>
-            <div id="translation-selection-preview" class="translation-selection-preview" aria-live="polite">
-              <span>Выделенный термин</span>
-              <strong>Сначала выделите слово или фразу выше</strong>
-            </div>
-            <div class="translation-units-actions">
-              <button id="translation-units-split-sentences" type="button">Разбить по предложениям</button>
-              <button id="translation-units-split-selection" type="button" disabled>Вынести выделенное в отдельную часть</button>
-              <button id="translation-units-merge" type="button">Объединить внутри</button>
-            </div>
-            <div id="translation-units-list" class="translation-units-list"></div>
-            <button id="translation-units-apply-exact" class="button" type="button">Применить все 100% совпадения</button>
-          </section>
           <div class="layout-card typography-card inspector-scope--layout">
             <div class="layout-card__heading">
               <strong>Типографика</strong>
@@ -402,19 +383,19 @@
 
         </div>
         <nav class="inspector-panel__navigation" aria-label="Разделы инспектора">
-          <button id="inspector-global-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть перевод всего документа" aria-controls="inspector-global-translation-panel" aria-pressed="true" data-inspector-panel="global">
+          <button id="inspector-global-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Документ" aria-controls="inspector-global-translation-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="global">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg>
           </button>
-          <button id="inspector-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть посегментный перевод" aria-controls="inspector-translation-panel" aria-pressed="false" data-inspector-panel="translation" data-requires-selection disabled>
+          <button id="inspector-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Сегмент" aria-controls="inspector-translation-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="translation">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg>
           </button>
-          <button id="inspector-typography-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть настройки типографики" aria-controls="inspector-typography-panel" aria-pressed="false" data-inspector-panel="typography" data-requires-selection disabled>
+          <button id="inspector-typography-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Типографика" aria-controls="inspector-typography-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="typography">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg>
           </button>
-          <button id="inspector-position-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть настройки расположения" aria-controls="inspector-position-panel" aria-pressed="false" data-inspector-panel="position" data-requires-selection disabled>
+          <button id="inspector-position-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Расстановка" aria-controls="inspector-position-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="position">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg>
           </button>
-          <button id="inspector-testing-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Открыть инструменты тестирования" aria-controls="inspector-testing-panel" aria-pressed="false" data-inspector-panel="testing">
+          <button id="inspector-testing-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Тестирование" aria-controls="inspector-testing-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="testing">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg>
           </button>
         </nav>
