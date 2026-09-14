@@ -1,24 +1,23 @@
 (() => {
-  for (const demo of document.querySelectorAll('.component-inspector-navigation-demo')) {
-    const title = demo.querySelector('[data-component-inspector-title]')
-    const description = demo.querySelector('[data-component-inspector-description]:not(button)')
-    const panel = title.closest('.component-inspector-navigation-demo__panel')
-    for (const button of demo.querySelectorAll('button[data-component-inspector-panel]')) {
-      button.addEventListener('click', () => {
-        const shouldClose = button.getAttribute('aria-pressed') === 'true'
-        for (const candidate of demo.querySelectorAll('button[data-component-inspector-panel]')) {
-          const active = !shouldClose && candidate === button
-          candidate.setAttribute('aria-pressed', String(active))
-          candidate.setAttribute('aria-expanded', String(active))
-        }
-        demo.classList.toggle('is-open', !shouldClose)
-        panel.setAttribute('aria-hidden', String(shouldClose))
-        panel.toggleAttribute('inert', shouldClose)
-        if (shouldClose) return
-        title.textContent = button.dataset.componentInspectorPanel
-        description.textContent = button.dataset.componentInspectorDescription
-      })
+  for (const demo of document.querySelectorAll('.component-workflow-demo')) {
+    const previous = demo.querySelector('[data-component-workflow-previous]')
+    const approve = demo.querySelector('[data-component-workflow-approve]')
+    const render = nextStage => {
+      const stage = Math.max(1, Math.min(5, nextStage))
+      demo.dataset.componentWorkflowStage = String(stage)
+      for (const step of demo.querySelectorAll('[data-component-workflow-step]')) {
+        const number = Number(step.dataset.componentWorkflowStep)
+        step.classList.toggle('is-current', number === stage)
+        step.classList.toggle('is-complete', number < stage)
+        if (number === stage) step.setAttribute('aria-current', 'step')
+        else step.removeAttribute('aria-current')
+      }
+      previous.disabled = stage === 1
+      approve.disabled = stage === 5
+      approve.textContent = stage === 5 ? 'Финальный этап' : 'Утвердить'
     }
+    previous.addEventListener('click', () => render(Number(demo.dataset.componentWorkflowStage) - 1))
+    approve.addEventListener('click', () => render(Number(demo.dataset.componentWorkflowStage) + 1))
   }
 
   const viewport = document.querySelector('.source-preview-demo__viewport')

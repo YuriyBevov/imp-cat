@@ -24,8 +24,9 @@
     exportDocx: $('#export-docx-button'), exportPdf: $('#export-pdf-button'), undo: $('#undo-button'), redo: $('#redo-button'),
     thumbnails: $('#page-thumbnails'), canvasScroll: $('#canvas-scroll'), canvas: $('#document-canvas'),
     sourcePanelToggle: $('#source-panel-toggle'),
+    workflowStagebar: $('#workflow-stagebar'), workflowPrevious: $('#workflow-previous'), workflowApprove: $('#workflow-approve'),
     inspectorPanel: $('#inspector-panel'), inspectorPanelBody: $('#inspector-panel-body'),
-    zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
+    zoomControls: $('.workbench-toolbar__layout-controls'), zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'), sourcePreviewOpen: $('#source-preview-open'),
     sourceLightbox: $('#source-preview-lightbox'), sourceLightboxTitle: $('#source-preview-lightbox-title'), sourceLightboxClose: $('#source-preview-lightbox-close'),
@@ -36,8 +37,7 @@
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewStatus: $('#layout-review-status'),
-    translationSelectAll: $('#translation-select-all'), translationClearSelection: $('#translation-clear-selection'), translationSelectionCount: $('#translation-selection-count'),
-    globalTranslationInstruction: $('#translation-global-instruction'), reviseSelected: $('#revise-selected-button'), reviseDocument: $('#revise-document-button'),
+    globalTranslationInstruction: $('#translation-global-instruction'),
     instructionPresetSelect: $('#instruction-preset-select'), instructionPresetApply: $('#instruction-preset-apply'),
     instructionPresetSave: $('#instruction-preset-save'), instructionPresetEdit: $('#instruction-preset-edit'), instructionPresetDelete: $('#instruction-preset-delete'),
     instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
@@ -89,6 +89,7 @@
     sourceZoom: .5,
     sourceLightboxZoom: 1,
     sourceRenderedPage: null,
+    workflowStage: 1,
     selected: new Set(),
     translationSelected: new Set(),
     activePage: 0,
@@ -152,33 +153,14 @@
   }
 
   function renderInspectorPanelState() {
-    elements.studioView.classList.toggle('is-inspector-panel-open', state.inspectorPanelOpen)
-    elements.inspectorPanelBody.setAttribute('aria-hidden', String(!state.inspectorPanelOpen))
-    elements.inspectorPanelBody.toggleAttribute('inert', !state.inspectorPanelOpen)
+    elements.inspectorPanelBody.setAttribute('aria-hidden', 'false')
+    elements.inspectorPanelBody.removeAttribute('inert')
     for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-panel-content]')) {
       panel.hidden = panel.dataset.inspectorPanelContent !== state.activeInspectorPanel
     }
-    for (const button of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
-      const active = state.inspectorPanelOpen && button.dataset.inspectorPanel === state.activeInspectorPanel
-      button.setAttribute('aria-pressed', String(active))
-      button.setAttribute('aria-expanded', String(active))
-    }
   }
 
-  function toggleInspectorPanel(key) {
-    const button = elements.inspectorPanel.querySelector(`[data-inspector-panel="${key}"]`)
-    if (!button || button.disabled) return
-    if (state.inspectorPanelOpen && state.activeInspectorPanel === key) {
-      state.inspectorPanelOpen = false
-      renderInspectorPanelState()
-      return
-    }
-    state.activeInspectorPanel = key
-    state.inspectorPanelOpen = true
-    renderInspectorPanelState()
-  }
-
-  function refreshInspectorNavigation(hasSelection) {
+  function refreshInspectorSelectionState(hasSelection) {
     for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-requires-selection]')) {
       const note = panel.querySelector('[data-inspector-selection-note]')
       const content = panel.querySelector('.inspector-section__content')
@@ -188,10 +170,81 @@
     renderInspectorPanelState()
   }
 
+  function workflowUsesSegments(stage = state.workflowStage) {
+    return stage <= 3
+  }
+
+  function workflowPanels(stage = state.workflowStage) {
+    if (stage === 1) return []
+    if (stage === 2) return ['global']
+    if (stage === 3) return ['translation']
+    if (stage === 4) return ['layout']
+    return ['testing']
+  }
+
+  function renderWorkflowStageState() {
+    const stage = Math.max(1, Math.min(5, Number(state.workflowStage) || 1))
+    const segmentsView = workflowUsesSegments(stage)
+    elements.studioView.dataset.workflowStage = String(stage)
+    elements.studioView.classList.toggle('is-segments-mode', segmentsView)
+    elements.canvas.classList.toggle('is-segments-view', segmentsView)
+    for (const step of elements.workflowStagebar.querySelectorAll('[data-workflow-step]')) {
+      const number = Number(step.dataset.workflowStep)
+      step.classList.toggle('is-current', number === stage)
+      step.classList.toggle('is-complete', number < stage)
+      if (number === stage) step.setAttribute('aria-current', 'step')
+      else step.removeAttribute('aria-current')
+    }
+    elements.workflowPrevious.disabled = stage === 1
+    elements.workflowApprove.disabled = stage === 5
+    elements.workflowApprove.textContent = stage === 5 ? 'Финальный этап' : 'Утвердить'
+    const allowedPanels = new Set(workflowPanels(stage))
+    if (!allowedPanels.has(state.activeInspectorPanel)) state.activeInspectorPanel = [...allowedPanels][0] || ''
+    elements.inspectorPanel.hidden = stage === 1
+    elements.sourcePanelToggle.hidden = stage === 1
+    elements.zoomControls.hidden = stage === 1
+    if (stage === 1) elements.studioView.classList.add('is-source-collapsed')
+    elements.exportDocx.disabled = stage !== 5
+    elements.exportPdf.disabled = stage !== 5
+    renderInspectorPanelState()
+  }
+
+  function setWorkflowStage(nextStage, options = {}) {
+    if (!state.scene) return
+    const stage = Math.max(1, Math.min(5, Math.trunc(Number(nextStage) || 1)))
+    const changed = stage !== state.workflowStage
+    state.workflowStage = stage
+    state.scene.workflowStage = stage
+    renderWorkflowStageState()
+    if (options.render !== false) {
+      if (changed && stage === 4) renderDocumentWithContentFit(state.scene.objects)
+      else renderDocument()
+    }
+    if (changed && options.save !== false) scheduleSave()
+  }
+
+  function approveWorkflowStage() {
+    if (state.workflowStage >= 5) return
+    setWorkflowStage(state.workflowStage + 1)
+    showToast(`Этап ${state.workflowStage - 1} утвержден`)
+  }
+
+  function returnToPreviousWorkflowStage() {
+    if (state.workflowStage <= 1) return
+    setWorkflowStage(state.workflowStage - 1)
+  }
+
   function setupInspectorPanels() {
     const inspectorBody = elements.objectInspector.parentElement
     const globalTranslationTools = inspectorBody.querySelector('.global-translation-tools')
     const finalTestingTools = inspectorBody.querySelector('#final-testing-tools')
+    const exportActions = document.createElement('div')
+    exportActions.className = 'final-export-actions'
+    exportActions.setAttribute('aria-label', 'Выгрузка готового документа')
+    elements.exportDocx.removeAttribute('role')
+    elements.exportPdf.removeAttribute('role')
+    exportActions.append(elements.exportDocx, elements.exportPdf)
+    finalTestingTools.append(exportActions)
     const currentNodes = [...elements.objectInspector.children]
     const typography = elements.objectInspector.querySelector('.typography-card')
     const segmentActions = elements.objectInspector.querySelector('.segment-actions-card')
@@ -208,7 +261,7 @@
     const globalTranslationPanel = createInspectorPanel(
       'inspector-global-translation-panel',
       'global',
-      'Документ',
+      'Перевод',
       [globalTranslationTools],
     )
     const finalTestingPanel = createInspectorPanel(
@@ -219,17 +272,13 @@
     )
     const objectPanels = [
       createInspectorPanel('inspector-translation-panel', 'translation', 'Сегмент', correctionNodes, true),
-      createInspectorPanel('inspector-typography-panel', 'typography', 'Типографика', [typography], true),
-      createInspectorPanel('inspector-position-panel', 'position', 'Расстановка', [segmentActions, placement], true),
+      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typography, segmentActions, placement], true),
     ]
     elements.objectInspector.replaceChildren(...objectPanels)
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
     elements.objectInspector.after(finalTestingPanel)
     elements.inspectorSegmentWorkspace = segmentWorkspace
-    for (const button of elements.inspectorPanel.querySelectorAll('[data-inspector-panel]')) {
-      button.addEventListener('click', () => toggleInspectorPanel(button.dataset.inspectorPanel))
-    }
-    refreshInspectorNavigation(false)
+    refreshInspectorSelectionState(false)
   }
 
   function showToast(message, isError = false) {
@@ -887,6 +936,8 @@
     state.sceneEditRevision = 0
     state.activePage = 0
     state.zoom = 1
+    state.workflowStage = Math.max(1, Math.min(5, Math.trunc(Number(state.scene.workflowStage) || 1)))
+    state.scene.workflowStage = state.workflowStage
     state.sourceRenderedPage = null
     if (activeTab) {
       activeTab.documentId = documentData.metadata.id
@@ -914,12 +965,11 @@
       : `${recognitionSummary} API перевода пока не настроен: доступны ручной перевод и локальная БЗ.`
     renderLayoutReviewStatus()
     elements.newDocument.hidden = false
-    elements.exportDocx.disabled = false
-    elements.exportPdf.disabled = false
     setView('studio')
+    renderWorkflowStageState()
     renderDocument()
     requestAnimationFrame(() => {
-      if (fitObjectsToRenderedContent(state.scene.objects, true)) {
+      if (!workflowUsesSegments() && fitObjectsToRenderedContent(state.scene.objects, true)) {
         rebuildClientTables()
         scheduleSave()
       }
@@ -985,67 +1035,463 @@
 
   function renderDocument() {
     closeKnowledgeSuggestion()
-    const gridBoundsChanged = normalizeSceneGridBounds()
-    const gridGeometryChanged = snapObjectsToGridCells(state.scene.objects)
+    const segmentsView = workflowUsesSegments()
+    const gridBoundsChanged = segmentsView ? false : normalizeSceneGridBounds()
+    const gridGeometryChanged = segmentsView ? false : snapObjectsToGridCells(state.scene.objects)
     rebuildClientTables()
     renderThumbnails()
+    renderWorkflowStageState()
     elements.canvas.replaceChildren()
-    for (const page of state.scene.pages) {
+    const renderedPages = state.workflowStage === 1
+      ? [...state.scene.pages].sort((left, right) => Number(left.index) - Number(right.index))
+      : state.scene.pages
+    const documentReviewIndexes = new Map()
+    if (state.workflowStage === 1) {
+      let documentReviewIndex = 0
+      for (const page of renderedPages) {
+        const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
+        for (const object of documentSourceOrder(pageObjects)) {
+          documentReviewIndexes.set(object.id, documentReviewIndex)
+          documentReviewIndex += 1
+        }
+      }
+    }
+    for (const page of renderedPages) {
       const shell = document.createElement('div')
       shell.className = 'studio-page-shell'
       shell.dataset.pageIndex = page.index
       const surface = document.createElement('section')
       surface.className = 'studio-page'
+      if (segmentsView) surface.classList.add('studio-page--segments')
       surface.dataset.pageIndex = page.index
       surface.style.width = `${page.widthPx}px`
-      surface.style.height = `${page.heightPx}px`
-      applyGridToSurface(surface)
-      surface.addEventListener('pointerdown', beginMarquee)
-
-      const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
-      const boundary = document.createElement('div')
-      boundary.className = 'content-boundary'
-      Object.assign(boundary.style, {
-        left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
-        width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
-      })
-      const boundaryResize = document.createElement('button')
-      boundaryResize.className = 'content-boundary__resize'
-      boundaryResize.type = 'button'
-      boundaryResize.title = 'Изменить высоту рабочей области документа'
-      boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
-      boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
-      boundary.append(createGridCoordinateLabels(page), boundaryResize)
-      surface.append(boundary)
-
-      for (const table of state.scene.tables || []) {
-        if (table.pageIndex !== page.index) continue
-        const tableBoundary = document.createElement('div')
-        tableBoundary.className = 'table-structure-boundary'
-        tableBoundary.title = `Структурная таблица: ${table.rowCount} × ${table.columnCount}`
-        Object.assign(tableBoundary.style, {
-          left: `${table.x}px`, top: `${table.y}px`, width: `${table.width}px`, height: `${table.height}px`,
-        })
-        const label = document.createElement('span')
-        label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
-        tableBoundary.append(label)
-        surface.append(tableBoundary)
+      surface.style.height = segmentsView ? 'auto' : `${page.heightPx}px`
+      if (!segmentsView) {
+        applyGridToSurface(surface)
+        surface.addEventListener('pointerdown', beginMarquee)
       }
 
-      for (const object of pageObjects) surface.append(createObjectElement(object))
-      const number = document.createElement('span')
-      number.className = 'page-number'
-      number.textContent = `${page.index + 1} / ${state.scene.pages.length}`
-      surface.append(number)
+      const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
+      if (segmentsView) {
+        const heading = document.createElement('div')
+        heading.className = 'segments-page-heading'
+        const title = document.createElement('span')
+        title.textContent = `Страница ${page.index + 1}`
+        const count = document.createElement('small')
+        count.textContent = `${pageObjects.length} сегм.`
+        heading.append(title, count)
+        const columnHeadings = state.workflowStage === 3 ? document.createElement('div') : null
+        if (columnHeadings) {
+          columnHeadings.className = 'segments-column-headings'
+          const selectPage = document.createElement('button')
+          selectPage.className = 'compact-button segments-select-all'
+          selectPage.type = 'button'
+          selectPage.textContent = 'Все'
+          selectPage.dataset.pageIndex = String(page.index)
+          selectPage.addEventListener('pointerdown', event => event.stopPropagation())
+          selectPage.addEventListener('click', event => {
+            event.stopPropagation()
+            togglePageSegmentSelection(page.index)
+          })
+          const sourceHeading = document.createElement('span')
+          sourceHeading.textContent = 'Распознанный исходник'
+          const translationHeading = document.createElement('span')
+          translationHeading.textContent = 'Перевод'
+          columnHeadings.append(selectPage, sourceHeading, translationHeading)
+        }
+        const list = document.createElement('div')
+        list.className = 'segments-list'
+        const orderedObjects = state.workflowStage === 1 ? documentSourceOrder(pageObjects) : visualReadingOrder(pageObjects)
+        for (const [reviewIndex, object] of orderedObjects.entries()) {
+          const row = document.createElement('article')
+          row.className = 'segment-translation-row'
+          row.dataset.objectId = object.id
+          if (state.workflowStage === 1) {
+            decorateDocumentReviewSegment(row, object, documentReviewIndexes.get(object.id) ?? reviewIndex)
+          }
+          row.append(createSegmentRowMeta(object))
+          if (state.workflowStage === 3) {
+            const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
+            if (selectable) {
+              const selector = document.createElement('label')
+              selector.className = 'segment-translation-selector'
+              const checkbox = document.createElement('input')
+              checkbox.type = 'checkbox'
+              checkbox.className = 'segment-translation-selector__input'
+              checkbox.dataset.translationSelect = object.id
+              checkbox.checked = state.translationSelected.has(object.id)
+              checkbox.setAttribute('aria-label', `Выбрать сегмент ${object.readingOrder || object.id} для перевода`)
+              selector.addEventListener('pointerdown', event => event.stopPropagation())
+              checkbox.addEventListener('change', () => changeTranslationSegmentSelection(object.id, checkbox, selector))
+              const label = document.createElement('span')
+              label.className = 'segment-translation-selector__label'
+              label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
+              label.setAttribute('aria-hidden', 'true')
+              selector.append(checkbox, label)
+              row.append(selector)
+            } else {
+              const placeholder = document.createElement('span')
+              placeholder.className = 'segment-translation-selector is-disabled'
+              placeholder.title = 'Этот тип объекта не переводится автоматически'
+              row.append(placeholder)
+            }
+            row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
+            row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
+            row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
+            const workspace = createSegmentWorkspace(object)
+            if (workspace) row.append(workspace)
+          } else row.append(createObjectElement(object, 'sourceText'))
+          list.append(row)
+        }
+        if (state.workflowStage === 1) {
+          const reviewLayout = document.createElement('div')
+          reviewLayout.className = 'document-review-layout'
+          const segments = document.createElement('div')
+          segments.className = 'document-review-segments'
+          segments.append(heading, list)
+          reviewLayout.append(createDocumentReviewPreview(page, orderedObjects, documentReviewIndexes), segments)
+          surface.append(reviewLayout)
+        } else {
+          surface.append(heading)
+          if (columnHeadings) surface.append(columnHeadings)
+          surface.append(list)
+        }
+      } else {
+        const boundary = document.createElement('div')
+        boundary.className = 'content-boundary'
+        Object.assign(boundary.style, {
+          left: `${page.contentBounds.x}px`, top: `${page.contentBounds.y}px`,
+          width: `${page.contentBounds.width}px`, height: `${page.contentBounds.height}px`,
+        })
+        const boundaryResize = document.createElement('button')
+        boundaryResize.className = 'content-boundary__resize'
+        boundaryResize.type = 'button'
+        boundaryResize.title = 'Изменить высоту рабочей области документа'
+        boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
+        if (state.workflowStage === 4) {
+          boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
+          boundary.append(createGridCoordinateLabels(page), boundaryResize)
+        } else boundary.append(createGridCoordinateLabels(page))
+        surface.append(boundary)
+
+        for (const table of state.scene.tables || []) {
+          if (table.pageIndex !== page.index) continue
+          const tableBoundary = document.createElement('div')
+          tableBoundary.className = 'table-structure-boundary'
+          tableBoundary.title = `Структурная таблица: ${table.rowCount} × ${table.columnCount}`
+          Object.assign(tableBoundary.style, {
+            left: `${table.x}px`, top: `${table.y}px`, width: `${table.width}px`, height: `${table.height}px`,
+          })
+          const label = document.createElement('span')
+          label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
+          tableBoundary.append(label)
+          surface.append(tableBoundary)
+        }
+
+        for (const object of pageObjects) surface.append(createObjectElement(object))
+        const number = document.createElement('span')
+        number.className = 'page-number'
+        number.textContent = `${page.index + 1} / ${state.scene.pages.length}`
+        surface.append(number)
+      }
       shell.append(surface)
-      elements.canvas.append(shell, createPageActions(page))
+      elements.canvas.append(shell)
+      if (state.workflowStage === 4) elements.canvas.append(createPageActions(page))
     }
+    if (segmentsView) refreshSegmentsViewHeights()
     applyZoom()
     renderSourcePreview()
     refreshSelection()
     refreshTranslationSelectionControls()
-    requestAnimationFrame(expandClippedObjects)
+    if (!segmentsView) requestAnimationFrame(expandClippedObjects)
     if (gridBoundsChanged || gridGeometryChanged) scheduleSave()
+  }
+
+  function visualReadingOrder(objects) {
+    const rows = []
+    const sorted = [...objects].sort((left, right) => left.y - right.y || left.x - right.x)
+    for (const object of sorted) {
+      const tolerance = Math.max(4, Math.min(24, (Number(object.style?.fontSizePx) || 14) * .65))
+      const row = rows[rows.length - 1]
+      if (!row || Math.abs(object.y - row.anchorY) > Math.max(tolerance, row.tolerance)) {
+        rows.push({ anchorY: object.y, tolerance, objects: [object] })
+        continue
+      }
+      row.objects.push(object)
+      row.anchorY = row.objects.reduce((sum, item) => sum + item.y, 0) / row.objects.length
+      row.tolerance = Math.max(row.tolerance, tolerance)
+    }
+    return rows.flatMap(row => row.objects.sort((left, right) => left.x - right.x || left.y - right.y))
+  }
+
+  function documentSourceOrder(objects) {
+    return [...objects].sort((left, right) => {
+      const leftOrder = Number.isFinite(Number(left.readingOrder)) && Number(left.readingOrder) > 0
+        ? Number(left.readingOrder) : Number.POSITIVE_INFINITY
+      const rightOrder = Number.isFinite(Number(right.readingOrder)) && Number(right.readingOrder) > 0
+        ? Number(right.readingOrder) : Number.POSITIVE_INFINITY
+      return leftOrder - rightOrder || left.y - right.y || left.x - right.x || String(left.id).localeCompare(String(right.id))
+    })
+  }
+
+  function documentReviewColor(index) {
+    const hue = Math.round((index * 137.508 + 218) % 360)
+    return `hsl(${hue} 68% 42%)`
+  }
+
+  function setDocumentReviewHighlight(objectId, active) {
+    for (const node of elements.canvas.querySelectorAll(`[data-review-object-id="${CSS.escape(objectId)}"]`)) {
+      node.classList.toggle('is-review-highlighted', active)
+    }
+  }
+
+  function bindDocumentReviewPair(node, objectId) {
+    node.addEventListener('pointerenter', () => setDocumentReviewHighlight(objectId, true))
+    node.addEventListener('pointerleave', () => setDocumentReviewHighlight(objectId, false))
+  }
+
+  function decorateDocumentReviewSegment(row, object, index) {
+    const number = index + 1
+    row.classList.add('document-review-segment')
+    row.dataset.reviewObjectId = object.id
+    row.style.setProperty('--segment-review-color', documentReviewColor(index))
+    const marker = document.createElement('span')
+    marker.className = 'document-review-segment__number'
+    marker.textContent = String(number)
+    marker.setAttribute('aria-label', `Сегмент ${number}`)
+    row.append(marker)
+    bindDocumentReviewPair(row, object.id)
+  }
+
+  function applyDocumentReviewZoom(preview, page, nextZoom, options = {}) {
+    const viewport = preview.querySelector('.document-review-preview__viewport')
+    const pageNode = preview.querySelector('.document-review-preview__page')
+    if (!viewport || !pageNode) return
+    const previousZoom = Number(preview.dataset.reviewZoom) || 1
+    const next = Math.min(3, Math.max(.15, Number(nextZoom) || 1))
+    const anchor = options.anchorEvent
+      ? captureZoomAnchor(viewport, pageNode, options.anchorEvent, previousZoom)
+      : null
+    preview.dataset.reviewZoom = String(next)
+    preview.dataset.reviewZoomMode = options.mode || 'manual'
+    pageNode.style.width = `${page.widthPx * next}px`
+    const output = preview.querySelector('.document-review-controls output')
+    if (output) output.value = `${Math.round(next * 100)}%`
+    restoreZoomAnchor(viewport, anchor, next)
+  }
+
+  function fitDocumentReviewPreview(preview, page) {
+    const viewport = preview.querySelector('.document-review-preview__viewport')
+    if (!viewport?.clientWidth || !viewport.clientHeight) return
+    const horizontal = (viewport.clientWidth - 2) / page.widthPx
+    const vertical = (viewport.clientHeight - 2) / page.heightPx
+    applyDocumentReviewZoom(preview, page, Math.min(horizontal, vertical), { mode: 'fit' })
+  }
+
+  function fitVisibleDocumentReviewPreviews() {
+    if (state.workflowStage !== 1 || !state.scene) return
+    for (const preview of elements.canvas.querySelectorAll('.document-review-preview[data-page-index]')) {
+      if (preview.dataset.reviewZoomMode !== 'fit') continue
+      const pageIndex = Number(preview.dataset.pageIndex)
+      const page = state.scene.pages.find(item => item.index === pageIndex)
+      if (page) fitDocumentReviewPreview(preview, page)
+    }
+  }
+
+  function createDocumentReviewControls(preview, page) {
+    const controls = document.createElement('div')
+    controls.className = 'source-preview-controls document-review-controls'
+    controls.setAttribute('aria-label', `Масштаб оригинала страницы ${page.index + 1}`)
+    const zoomButton = (icon, label, handler) => {
+      const button = document.createElement('button')
+      button.className = 'icon-button icon-button--compact'
+      button.type = 'button'
+      button.title = label
+      button.setAttribute('aria-label', label)
+      button.innerHTML = iconMarkup(icon)
+      button.addEventListener('click', handler)
+      return button
+    }
+    const zoomOut = zoomButton('minus', 'Уменьшить оригинал', () => {
+      applyDocumentReviewZoom(preview, page, (Number(preview.dataset.reviewZoom) || 1) - .1)
+    })
+    const output = document.createElement('output')
+    output.value = '100%'
+    output.setAttribute('aria-live', 'polite')
+    const zoomIn = zoomButton('plus', 'Увеличить оригинал', () => {
+      applyDocumentReviewZoom(preview, page, (Number(preview.dataset.reviewZoom) || 1) + .1)
+    })
+    const actual = document.createElement('button')
+    actual.className = 'compact-button source-preview-controls__actual'
+    actual.type = 'button'
+    actual.title = 'Масштаб оригинала 100%'
+    actual.textContent = '100%'
+    actual.addEventListener('click', () => applyDocumentReviewZoom(preview, page, 1))
+    const fit = zoomButton('maximize', 'Вписать оригинал', () => fitDocumentReviewPreview(preview, page))
+    controls.append(zoomOut, output, zoomIn, actual, fit)
+    return controls
+  }
+
+  function bindDocumentReviewPan(viewport) {
+    let drag = null
+    const finish = event => {
+      if (!drag || (event?.pointerId != null && event.pointerId !== drag.pointerId)) return
+      if (drag.pointerId != null && viewport.hasPointerCapture?.(drag.pointerId)) {
+        viewport.releasePointerCapture(drag.pointerId)
+      }
+      drag = null
+      viewport.classList.remove('is-panning')
+    }
+    viewport.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.target.closest('button, a, input, select, textarea, [contenteditable="true"]')) return
+      drag = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        scrollLeft: viewport.scrollLeft,
+        scrollTop: viewport.scrollTop,
+      }
+      viewport.setPointerCapture?.(event.pointerId)
+      viewport.classList.add('is-panning')
+      event.preventDefault()
+    })
+    viewport.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.pointerId) return
+      viewport.scrollLeft = drag.scrollLeft + drag.x - event.clientX
+      viewport.scrollTop = drag.scrollTop + drag.y - event.clientY
+      event.preventDefault()
+    })
+    viewport.addEventListener('pointerup', finish)
+    viewport.addEventListener('pointercancel', finish)
+    viewport.addEventListener('lostpointercapture', finish)
+  }
+
+  function createDocumentReviewPreview(page, objects, reviewIndexes = new Map()) {
+    const preview = document.createElement('aside')
+    preview.className = 'document-review-preview'
+    preview.dataset.pageIndex = String(page.index)
+    preview.setAttribute('aria-label', `Оригинал страницы ${page.index + 1} с пинами сегментов`)
+    const canvas = document.createElement('div')
+    canvas.className = 'document-review-preview__canvas'
+    const viewport = document.createElement('div')
+    viewport.className = 'document-review-preview__viewport'
+    const pageNode = document.createElement('div')
+    pageNode.className = 'document-review-preview__page'
+    pageNode.style.aspectRatio = `${page.widthPx} / ${page.heightPx}`
+    pageNode.style.setProperty('--review-page-ratio', String(page.widthPx / page.heightPx))
+    let magnifier = null
+    let magnifierScene = null
+    if (page.imageUrl) {
+      const image = document.createElement('img')
+      image.src = page.imageUrl
+      image.alt = `Оригинал страницы ${page.index + 1}`
+      image.draggable = false
+      const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+      Object.assign(image.style, {
+        left: `${sourceFrame.x / page.widthPx * 100}%`,
+        top: `${sourceFrame.y / page.heightPx * 100}%`,
+        width: `${sourceFrame.width / page.widthPx * 100}%`,
+        height: `${sourceFrame.height / page.heightPx * 100}%`,
+      })
+      pageNode.append(image)
+      magnifier = document.createElement('div')
+      magnifier.className = 'document-review-magnifier'
+      magnifier.setAttribute('aria-hidden', 'true')
+      magnifierScene = document.createElement('div')
+      magnifierScene.className = 'document-review-magnifier__scene'
+      const magnifierImage = image.cloneNode()
+      magnifierImage.alt = ''
+      magnifierImage.setAttribute('aria-hidden', 'true')
+      magnifierScene.append(magnifierImage)
+      magnifier.append(magnifierScene)
+    } else {
+      const empty = document.createElement('span')
+      empty.className = 'document-review-preview__empty'
+      empty.textContent = 'Для этой страницы нет изображения оригинала'
+      pageNode.append(empty)
+    }
+    for (const [pageIndex, object] of objects.entries()) {
+      const index = reviewIndexes.get(object.id) ?? pageIndex
+      const pin = document.createElement('button')
+      pin.className = 'document-review-pin'
+      pin.type = 'button'
+      pin.dataset.reviewObjectId = object.id
+      pin.style.setProperty('--segment-review-color', documentReviewColor(index))
+      const sourceRegions = Array.isArray(object.sourceRegions) ? object.sourceRegions.filter(region => (
+        Number.isFinite(Number(region?.x)) && Number.isFinite(Number(region?.y))
+        && Number.isFinite(Number(region?.width)) && Number.isFinite(Number(region?.height))
+        && Number(region.width) > 0 && Number(region.height) > 0
+      )) : []
+      let anchorX
+      let anchorY
+      if (sourceRegions.length) {
+        const left = Math.min(...sourceRegions.map(region => Number(region.x)))
+        const top = Math.min(...sourceRegions.map(region => Number(region.y)))
+        const right = Math.max(...sourceRegions.map(region => Number(region.x) + Number(region.width)))
+        const bottom = Math.max(...sourceRegions.map(region => Number(region.y) + Number(region.height)))
+        const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
+        anchorX = Number(sourceFrame.x) + ((left + right) / 2) * Number(sourceFrame.width)
+        anchorY = Number(sourceFrame.y) + ((top + bottom) / 2) * Number(sourceFrame.height)
+      } else {
+        const bounds = object.originalBounds || object
+        anchorX = Number(bounds.x) + Number(bounds.width) / 2
+        anchorY = Number(bounds.y) + Number(bounds.height) / 2
+      }
+      Object.assign(pin.style, {
+        left: `${Math.max(0, Math.min(page.widthPx, anchorX)) / page.widthPx * 100}%`,
+        top: `${Math.max(0, Math.min(page.heightPx, anchorY)) / page.heightPx * 100}%`,
+      })
+      pin.innerHTML = `${iconMarkup('map-pin')}<span>${index + 1}</span>`
+      pin.title = `Сегмент ${index + 1}`
+      pin.setAttribute('aria-label', `Перейти к сегменту ${index + 1}`)
+      bindDocumentReviewPair(pin, object.id)
+      pin.addEventListener('click', () => {
+        const row = elements.canvas.querySelector(`.document-review-segment[data-object-id="${CSS.escape(object.id)}"]`)
+        row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        row?.querySelector('.scene-object__content')?.focus({ preventScroll: true })
+      })
+      pageNode.append(pin)
+    }
+    viewport.addEventListener('wheel', event => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      event.preventDefault()
+      const factor = Math.exp(-normalizedWheelDelta(event) * .0015)
+      applyDocumentReviewZoom(
+        preview,
+        page,
+        (Number(preview.dataset.reviewZoom) || 1) * factor,
+        { anchorEvent: event },
+      )
+    }, { passive: false })
+    bindDocumentReviewPan(viewport)
+    viewport.append(pageNode)
+    canvas.append(viewport, createDocumentReviewControls(preview, page))
+    preview.append(canvas)
+    if (magnifier && magnifierScene) {
+      const magnification = 2.5
+      const updateMagnifier = event => {
+        const pageRect = pageNode.getBoundingClientRect()
+        if (!pageRect.width || !pageRect.height) return
+        const xRatio = Math.max(0, Math.min(1, (event.clientX - pageRect.left) / pageRect.width))
+        const yRatio = Math.max(0, Math.min(1, (event.clientY - pageRect.top) / pageRect.height))
+        const sceneWidth = pageRect.width * magnification
+        const sceneHeight = pageRect.height * magnification
+        magnifierScene.style.width = `${sceneWidth}px`
+        magnifierScene.style.height = `${sceneHeight}px`
+        magnifierScene.style.transform = `translate(${magnifier.clientWidth / 2 - xRatio * sceneWidth}px, ${magnifier.clientHeight / 2 - yRatio * sceneHeight}px)`
+        magnifier.classList.add('is-visible')
+        magnifier.setAttribute('aria-hidden', 'false')
+      }
+      pageNode.addEventListener('pointerenter', updateMagnifier)
+      pageNode.addEventListener('pointermove', updateMagnifier)
+      pageNode.addEventListener('pointerleave', () => {
+        magnifier.classList.remove('is-visible')
+        magnifier.setAttribute('aria-hidden', 'true')
+      })
+      preview.append(magnifier)
+    }
+    requestAnimationFrame(() => fitDocumentReviewPreview(preview, page))
+    return preview
   }
 
   function gridColumnLabel(index) {
@@ -1390,40 +1836,75 @@
     const validIds = new Set(candidates.map(object => object.id))
     state.translationSelected = new Set([...state.translationSelected].filter(id => validIds.has(id)))
     rememberTranslationSelection()
-    const selectedCount = state.translationSelected.size
     const total = candidates.length
-    elements.translationSelectAll.disabled = total === 0
-    elements.translationSelectAll.checked = total > 0 && selectedCount === total
-    elements.translationSelectAll.indeterminate = false
-    elements.translationClearSelection.disabled = selectedCount === 0
-    elements.translationSelectionCount.textContent = `Выбрано: ${selectedCount} из ${total} сегментов`
-    elements.translate.disabled = selectedCount === 0
-    const hasGlobalInstruction = Boolean(elements.globalTranslationInstruction.value.trim())
-    const hasSelectedInstruction = candidates.some(object => (
-      state.translationSelected.has(object.id) && String(object.translationInstruction || '').trim()
-    ))
-    elements.reviseSelected.disabled = selectedCount === 0 || (!hasGlobalInstruction && !hasSelectedInstruction)
-    elements.reviseDocument.disabled = total === 0 || !hasGlobalInstruction
-    elements.translate.textContent = selectedCount === total && total > 0
-      ? `Перевести весь документ (${total})`
-      : `Перевести выбранные (${selectedCount})`
+    elements.translate.disabled = total === 0
+    elements.translate.textContent = 'Перевести документ'
+    for (const checkbox of elements.canvas.querySelectorAll('[data-translation-select]')) {
+      checkbox.checked = state.translationSelected.has(checkbox.dataset.translationSelect)
+      const row = checkbox.closest('.segment-translation-row')
+      const selector = checkbox.closest('.segment-translation-selector')
+      row?.classList.toggle('is-translation-selected', checkbox.checked)
+      const label = selector?.querySelector('.segment-translation-selector__label')
+      if (label) label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
+    }
+    for (const button of elements.canvas.querySelectorAll('.segments-select-all')) {
+      const pageIndex = Number(button.dataset.pageIndex)
+      const pageCandidates = candidates.filter(object => object.pageIndex === pageIndex)
+      const allSelected = pageCandidates.length > 0 && pageCandidates.every(object => state.translationSelected.has(object.id))
+      const label = `${allSelected ? 'Снять выбор со всех' : 'Выбрать все'} сегментов страницы ${pageIndex + 1}`
+      button.classList.toggle('is-active', allSelected)
+      button.setAttribute('aria-pressed', String(allSelected))
+      button.setAttribute('aria-label', label)
+      button.title = label
+    }
   }
 
-  function selectAllTranslationObjects(selected) {
-    const candidateIds = translationCandidates().map(object => object.id)
-    const previousPrimaryId = primarySelectedObject()?.id
-    state.translationSelected = selected ? new Set(candidateIds) : new Set()
-    if (selected) {
-      for (const id of candidateIds) state.selected.add(id)
-      if (previousPrimaryId && state.selected.has(previousPrimaryId)) {
-        state.selected.delete(previousPrimaryId)
-        state.selected.add(previousPrimaryId)
-      }
-    } else {
-      for (const id of candidateIds) state.selected.delete(id)
+  function changeTranslationSegmentSelection(objectId, checkbox, selector) {
+    const wasPrimary = primarySelectedObject()?.id === objectId
+    if (!checkbox.checked && wasPrimary) {
+      state.translationSelected.delete(objectId)
+      state.selected.delete(objectId)
+      if (state.lastTextSelection?.objectId === objectId) state.lastTextSelection = null
+      refreshTranslationSelectionControls()
+      refreshSelection()
+      return
     }
+    state.translationSelected.add(objectId)
+    checkbox.checked = true
+    focusTranslationSegment(objectId, selector)
+    refreshTranslationSelectionControls()
+  }
+
+  function togglePageSegmentSelection(pageIndex) {
+    const objects = visualReadingOrder(state.scene?.objects.filter(object => object.pageIndex === pageIndex && !object.excluded) || [])
+    const candidates = objects.filter(object => isTranslatableType(object.type) && hasTranslationSource(object))
+    const allSelected = candidates.length > 0 && candidates.every(object => state.translationSelected.has(object.id))
+    for (const object of objects) {
+      if (allSelected) state.selected.delete(object.id)
+      else state.selected.add(object.id)
+    }
+    for (const object of candidates) {
+      if (allSelected) state.translationSelected.delete(object.id)
+      else state.translationSelected.add(object.id)
+    }
+    state.activePage = pageIndex
+    state.lastTextSelection = null
     refreshSelection()
     refreshTranslationSelectionControls()
+  }
+
+  function focusTranslationSegment(objectId, selector) {
+    const object = state.scene?.objects.find(item => item.id === objectId)
+    if (!object) return
+    state.activePage = object.pageIndex
+    state.selected.delete(objectId)
+    state.selected.add(objectId)
+    refreshSelection()
+    if (state.workflowStage === 3) {
+      selector.closest('.segment-translation-row')
+        ?.querySelector('.scene-object--source .scene-object__content')
+        ?.focus({ preventScroll: true })
+    }
   }
 
   function servicePlaceholder(type, sourceText = '') {
@@ -1663,12 +2144,12 @@
     }).filter(Boolean)
   }
 
-  function renderTextContent(content, object, requestedField = null) {
+  function renderTextContent(content, object, requestedField = null, showKnowledge = true) {
     const field = requestedField || objectOutputField(object)
     const text = requestedField ? String(object[field] || '') : objectOutput(object)
     content.dataset.outputField = field
     const ranges = styleRanges(object, field).filter(range => range.end > range.start && range.start < text.length)
-    const knowledgeMatches = displayedKnowledgeMatches(object, field, text)
+    const knowledgeMatches = showKnowledge ? displayedKnowledgeMatches(object, field, text) : []
     if (!ranges.length && !knowledgeMatches.length) {
       content.textContent = text
       return
@@ -2050,6 +2531,79 @@
     return control
   }
 
+  function createSegmentRowMeta(object) {
+    const meta = document.createElement('div')
+    meta.className = 'segment-translation-row__meta'
+    const agentNotes = visibleAgentNote(object.agentNotes)
+    const notes = agentNotes ? document.createElement('div') : null
+    if (agentNotes) {
+      notes.className = 'note note--warning note--compact segment-row-note'
+      const warning = document.createElement('span')
+      warning.className = 'segment-row-note__icon'
+      warning.innerHTML = iconMarkup('alert-circle')
+      warning.title = 'Требуется внимание'
+      const notesText = document.createElement('span')
+      notesText.textContent = agentNotes
+      notes.append(warning, notesText)
+    }
+    if (state.workflowStage <= 2) {
+      if (notes) meta.append(notes)
+      else meta.hidden = true
+      return meta
+    }
+    const confidence = document.createElement('div')
+    confidence.className = 'segment-row-confidence'
+    const confidenceLabel = document.createElement('span')
+    confidenceLabel.textContent = 'Уверенность распознавания'
+    const confidenceValue = document.createElement('strong')
+    confidenceValue.textContent = `${Math.round(object.confidence * 100)}%`
+    confidence.append(confidenceLabel, confidenceValue)
+    const type = document.createElement('label')
+    type.className = 'segment-row-type'
+    type.addEventListener('pointerdown', event => event.stopPropagation())
+    const typeLabelText = document.createElement('span')
+    typeLabelText.textContent = 'Тип содержимого'
+    const select = document.createElement('select')
+    select.setAttribute('aria-label', `Тип содержимого сегмента ${object.readingOrder || object.id}`)
+    for (const sourceOption of elements.objectType.options) select.append(sourceOption.cloneNode(true))
+    select.value = object.type
+    select.disabled = state.workflowStage !== 3
+    select.addEventListener('change', () => applySelectionChange(
+      selectedObject => setObjectType(selectedObject, select.value), true, false, [object],
+    ))
+    type.append(typeLabelText, select)
+    const controls = document.createElement('div')
+    controls.className = 'segment-translation-row__meta-controls'
+    controls.append(confidence, type)
+    if (notes) meta.append(notes, controls)
+    else {
+      meta.classList.add('has-no-note')
+      meta.append(controls)
+    }
+    return meta
+  }
+
+  function visibleAgentNote(value) {
+    return String(value || '')
+      .split(/\r?\n/)
+      .filter(line => !/^\s*Автокоррекция макета\s*:/iu.test(line))
+      .join('\n')
+      .trim()
+  }
+
+  function appendRecognitionBadges(content, object) {
+    const badges = document.createElement('div')
+    badges.className = 'segment-content-badges'
+    const type = document.createElement('span')
+    type.className = 'segment-content-badge segment-content-badge--type'
+    type.textContent = typeLabel(object.type)
+    const confidence = document.createElement('span')
+    confidence.className = 'segment-content-badge segment-content-badge--confidence'
+    confidence.textContent = `Уверенность ${Math.round(object.confidence * 100)}%`
+    badges.append(type, confidence)
+    content.prepend(badges)
+  }
+
   function createAiTranslationAlternativeControl(object) {
     const aiAlternative = aiAlternativeForObject(object)
     if (!aiAlternative || aiAlternative === object.translation) return null
@@ -2100,6 +2654,7 @@
     const editField = requestedField || 'translation'
     const node = document.createElement('article')
     node.className = 'scene-object'
+    node.classList.toggle('is-geometry-locked', state.workflowStage !== 4)
     if (requestedField) node.classList.add(`scene-object--${requestedField === 'sourceText' ? 'source' : 'translation'}`)
     if (editField === 'translation' && !object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
     if (object.confidence < .76) node.classList.add('is-low-confidence')
@@ -2116,12 +2671,12 @@
     node.style.textAlign = object.style.textAlign
     node.style.color = object.style.color
     node.style.zIndex = object.readingOrder
-    node.addEventListener('pointerdown', event => selectFromPointer(event, object.id))
+    if (state.workflowStage !== 2) node.addEventListener('pointerdown', event => selectFromPointer(event, object.id))
 
     const badge = document.createElement('span')
     badge.className = 'scene-object__badge'
     badge.textContent = typeLabel(object.type)
-    const knowledgeMatches = knowledgeMatchesForObject(object)
+    const knowledgeMatches = state.workflowStage <= 2 ? [] : knowledgeMatchesForObject(object)
     const knowledgeIndicator = knowledgeMatches.length ? document.createElement('button') : null
     if (knowledgeIndicator) {
       knowledgeIndicator.className = 'icon-button icon-button--tiny icon-button--danger icon-button--shadow scene-object__knowledge-icon'
@@ -2141,15 +2696,18 @@
     handle.type = 'button'
     handle.innerHTML = iconMarkup('grip-vertical')
     handle.title = 'Переместить'
-    handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
+    if (state.workflowStage === 4) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
-    content.tabIndex = 0
-    content.contentEditable = 'true'
+    const canEditText = state.workflowStage === 1 || state.workflowStage === 3
+    content.tabIndex = canEditText ? 0 : -1
+    content.contentEditable = String(canEditText)
+    content.classList.toggle('is-readonly', !canEditText)
     content.spellcheck = true
     content.dataset.editField = editField
-    renderTextContent(content, object, displayField)
-    content.addEventListener('focus', () => {
+    renderTextContent(content, object, displayField, state.workflowStage > 2)
+    if (state.workflowStage <= 2 && requestedField === 'sourceText') appendRecognitionBadges(content, object)
+    if (canEditText) content.addEventListener('focus', () => {
       if (!state.selected.has(object.id)) selectOnly(object.id)
       else if (primarySelectedObject()?.id !== object.id) {
         state.selected.delete(object.id)
@@ -2161,14 +2719,14 @@
       clearKnowledgeBasePreviewForFocusedObject(object)
       setObjectsKnowledgeEditing([object], true)
     })
-    for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
-    content.addEventListener('blur', () => {
+    if (canEditText) for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
+    if (canEditText) content.addEventListener('blur', () => {
       state.textCheckpoint = false
       renderTextContent(content, object, displayField)
       setObjectsKnowledgeEditing([object], false)
       refreshKnowledgeBaseAfterSegmentEdit()
     })
-    content.addEventListener('input', () => {
+    if (canEditText) content.addEventListener('input', () => {
       setObjectsKnowledgeEditing([object], true)
       state.sceneEditRevision += 1
       object[editField] = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
@@ -2202,12 +2760,13 @@
       }
       scheduleSave()
       requestAnimationFrame(() => {
-        fitObjectsToRenderedContent([object], true)
+        if (workflowUsesSegments()) refreshSegmentsViewHeights()
+        else fitObjectsToRenderedContent([object], true)
       })
     })
     const resize = document.createElement('span')
     resize.className = 'scene-object__resize'
-    resize.addEventListener('pointerdown', event => beginResize(event, object.id))
+    if (state.workflowStage === 4) resize.addEventListener('pointerdown', event => beginResize(event, object.id))
     node.append(badge, handle, content)
     if (knowledgeIndicator) node.append(knowledgeIndicator)
     node.append(resize)
@@ -2662,6 +3221,7 @@
 
   function renderDocumentWithContentFit(objects, options = {}) {
     renderDocument()
+    if (workflowUsesSegments()) return
     if (fitObjectsToRenderedContent(objects, false, options)) renderDocument()
   }
 
@@ -2759,12 +3319,36 @@
   function applyZoom() {
     for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
       const page = state.scene.pages[Number(shell.dataset.pageIndex)]
-      shell.style.width = `${page.widthPx * state.zoom}px`
       const surface = shell.querySelector('.studio-page')
-      shell.style.height = `${page.heightPx * state.zoom}px`
-      surface.style.transform = `scale(${state.zoom})`
+      const naturalHeight = workflowUsesSegments()
+        ? Number(shell.dataset.naturalHeight || surface.scrollHeight || 120)
+        : page.heightPx
+      if (state.workflowStage === 1) {
+        shell.style.width = '100%'
+        shell.style.height = `${naturalHeight}px`
+        surface.style.setProperty('--review-marker-scale', '1')
+        surface.style.transform = ''
+      } else {
+        shell.style.width = `${page.widthPx * state.zoom}px`
+        shell.style.height = `${naturalHeight * state.zoom}px`
+        surface.style.setProperty('--review-marker-scale', String(1 / Math.max(.01, state.zoom)))
+        surface.style.transform = `scale(${state.zoom})`
+      }
     }
-    elements.zoomOutput.value = `${Math.round(state.zoom * 100)}%`
+    elements.zoomOutput.value = state.workflowStage === 1 ? '100%' : `${Math.round(state.zoom * 100)}%`
+  }
+
+  function refreshSegmentsViewHeights() {
+    if (!workflowUsesSegments()) return
+    for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
+      const surface = shell.querySelector('.studio-page--segments')
+      if (!surface) continue
+      surface.style.height = 'auto'
+      const naturalHeight = Math.max(120, surface.scrollHeight || 120)
+      surface.style.height = `${naturalHeight}px`
+      shell.dataset.naturalHeight = String(naturalHeight)
+      shell.style.height = `${naturalHeight * state.zoom}px`
+    }
   }
 
   function toggleSourcePanel() {
@@ -2910,8 +3494,13 @@
       node.classList.toggle('is-selected', state.selected.has(node.dataset.id))
       node.classList.toggle('is-primary-selected', node.dataset.id === primaryId)
     }
+    for (const row of elements.canvas.querySelectorAll('.segment-translation-row')) {
+      const objectId = row.dataset.objectId
+      row.classList.toggle('is-translation-selected', state.translationSelected.has(objectId))
+      row.classList.toggle('is-primary-selected', objectId === primaryId)
+    }
     const selection = selectedObjects()
-    refreshInspectorNavigation(selection.length > 0)
+    refreshInspectorSelectionState(selection.length > 0)
     refreshSegmentGridCoordinates(selection)
     renderInspectorSegmentWorkspace(selection)
     updateQaSegmentCheckAvailability()
@@ -2951,8 +3540,9 @@
     elements.translationText.disabled = false
     elements.translationText.title = ''
     elements.confidence.textContent = selection.length === 1 ? `${Math.round(first.confidence * 100)}%` : 'несколько'
-    if (selection.length === 1 && first.agentNotes) {
-      elements.segmentNote.textContent = first.agentNotes
+    const agentNote = selection.length === 1 ? visibleAgentNote(first.agentNotes) : ''
+    if (agentNote) {
+      elements.segmentNote.textContent = agentNote
       elements.segmentNote.hidden = false
     }
   }
@@ -3644,6 +4234,8 @@
   function restoreHistorySnapshot(snapshot) {
     const normalized = typeof snapshot === 'string' ? { scene: snapshot } : snapshot
     state.scene = JSON.parse(normalized.scene)
+    state.workflowStage = Math.max(1, Math.min(5, Math.trunc(Number(state.scene.workflowStage) || 1)))
+    state.scene.workflowStage = state.workflowStage
     const objectIds = new Set(state.scene.objects.map(object => object.id))
     const selectedIds = Array.isArray(normalized.selectedIds) ? normalized.selectedIds : [...state.selected]
     const translationSelectedIds = Array.isArray(normalized.translationSelectedIds)
@@ -3774,11 +4366,11 @@
     }
   }
 
-  async function translateSelection() {
+  async function translateDocument() {
     if (!state.scene) return
     refreshTranslationSelectionControls()
-    const objectIds = [...state.translationSelected]
-    if (!objectIds.length) return showToast('Отметьте сегменты для перевода', true)
+    const objectIds = translationCandidates().map(object => object.id)
+    if (!objectIds.length) return showToast('В документе нет сегментов для перевода', true)
     elements.translate.disabled = true
     elements.translate.textContent = `Переводим ${objectIds.length}…`
     elements.agentStatus.textContent = `Ищем совпадения в БЗ и переводим сегменты: ${objectIds.length}…`
@@ -3825,8 +4417,6 @@
       trigger.setAttribute('aria-label', 'Исправляем…')
       trigger.setAttribute('aria-busy', 'true')
     }
-    elements.reviseSelected.disabled = true
-    elements.reviseDocument.disabled = true
     elements.agentStatus.textContent = scope === 'document'
       ? 'ИИ исправляет перевод всего документа по комментариям…'
       : `ИИ исправляет выбранные сегменты: ${objectIds.length}…`
@@ -4691,7 +5281,8 @@
         }
         renderSelectedText(field === 'sourceText' ? 'sourceText' : field)
         if (field === 'sourceText') renderSelectedText('translation')
-        fitObjectsToRenderedContent(objects, true)
+        if (workflowUsesSegments()) refreshSegmentsViewHeights()
+        else fitObjectsToRenderedContent(objects, true)
         scheduleSave()
       })
       control.addEventListener('blur', () => {
@@ -4782,8 +5373,11 @@
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
     elements.zoomActual.addEventListener('click', () => setZoom(1))
+    elements.workflowPrevious.addEventListener('click', returnToPreviousWorkflowStage)
+    elements.workflowApprove.addEventListener('click', approveWorkflowStage)
     elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
     elements.canvasScroll.addEventListener('wheel', event => {
+      if (state.workflowStage === 1) return
       if (!(event.ctrlKey || event.metaKey)) return
       event.preventDefault()
       queueWheelZoom(event)
@@ -4800,6 +5394,7 @@
         renderSourcePreview()
       }
     }, { passive: true })
+    window.addEventListener('resize', fitVisibleDocumentReviewPreviews)
     elements.sourceZoomOut.addEventListener('click', () => setSourceZoom(state.sourceZoom - .1))
     elements.sourceZoomIn.addEventListener('click', () => setSourceZoom(state.sourceZoom + .1))
     elements.sourceZoomActual.addEventListener('click', () => setSourceZoom(1))
@@ -4840,9 +5435,7 @@
       checkpoint()
       runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…', 'Расположение сегментов обновлено')
     })
-    elements.translationSelectAll.addEventListener('change', () => selectAllTranslationObjects(elements.translationSelectAll.checked))
-    elements.translationClearSelection.addEventListener('click', () => selectAllTranslationObjects(false))
-    elements.translate.addEventListener('click', translateSelection)
+    elements.translate.addEventListener('click', translateDocument)
     elements.globalTranslationInstruction.addEventListener('input', () => {
       refreshGlobalInstructionControls()
       if (!state.scene) return
@@ -4867,8 +5460,6 @@
     elements.instructionPresetDelete.addEventListener('click', deleteSelectedInstructionPreset)
     elements.instructionPresetEditCancel.addEventListener('click', closeInstructionPresetEditor)
     elements.instructionPresetEditSave.addEventListener('click', updateSelectedInstructionPreset)
-    elements.reviseSelected.addEventListener('click', () => reviseTranslations([...state.translationSelected], 'selection', elements.reviseSelected))
-    elements.reviseDocument.addEventListener('click', () => reviseTranslations([], 'document', elements.reviseDocument))
     elements.layoutReview.addEventListener('click', handleLayoutReviewAction)
     elements.qa.addEventListener('click', runQa)
     elements.qaRecheckSelection.addEventListener('click', recheckQaSelection)

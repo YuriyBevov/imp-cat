@@ -107,6 +107,19 @@
             <button id="source-panel-toggle" class="icon-button icon-button--compact" type="button" title="Показать оригинал" aria-label="Показать оригинал" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
           </div>
           <div class="app-container workbench-toolbar__inner">
+            <nav id="workflow-stagebar" class="workflow-stagebar" aria-label="Этапы работы с документом">
+              <ol class="workflow-stagebar__steps">
+                <li class="workflow-stagebar__step" data-workflow-step="1"><span>1</span><strong>Документ</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="2"><span>2</span><strong>Перевод</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="3"><span>3</span><strong>Сегменты</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="4"><span>4</span><strong>Макет</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="5"><span>5</span><strong>Проверка</strong></li>
+              </ol>
+              <div class="workflow-stagebar__actions">
+                <button id="workflow-previous" class="compact-button" type="button" disabled>Назад</button>
+                <button id="workflow-approve" class="button button--primary" type="button">Утвердить</button>
+              </div>
+            </nav>
             <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб документа">
               <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
               <output id="zoom-output">100%</output>
@@ -121,8 +134,8 @@
         </div>
       </section>
 
-      <aside id="inspector-panel" class="inspector-panel" aria-label="Инспектор документа">
-        <div id="inspector-panel-body" class="inspector-panel__body" aria-hidden="true" inert>
+      <aside id="inspector-panel" class="inspector-panel" aria-label="Инструменты текущего этапа">
+        <div id="inspector-panel-body" class="inspector-panel__body" aria-hidden="false">
         <div class="global-translation-tools">
           <p id="agent-status" class="visually-hidden" aria-live="polite"></p>
           <div class="language-card">
@@ -134,21 +147,24 @@
               <select id="target-language"><option value="ru">Русский</option><option value="en">Английский</option><option value="tr">Турецкий</option><option value="de">Немецкий</option></select>
             </label>
           </div>
+          <div class="agent-knowledge-mode">
+            <label class="memory-card__mode">Использование БЗ
+              <select id="knowledge-base-mode">
+                <option value="suggestions">Только подсказки</option>
+                <option value="priority">БЗ имеет приоритет</option>
+              </select>
+            </label>
+            <small class="note note--muted note--compact memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
+          </div>
           <div class="translation-instruction-card">
             <label for="translation-global-instruction">Инструкция для AI</label>
-            <div class="translation-instruction-card__primary-row">
-              <textarea id="translation-global-instruction" rows="3" maxlength="10000" placeholder="Например: переводи все имена в документе; все печати не включай в сборку"></textarea>
-              <div class="translation-instruction-card__actions">
-                <button id="instruction-preset-save" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Сохранить инструкцию в список инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-save"></use></svg></button>
-                <button id="revise-document-button" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Исправить весь документ с учетом инструкции" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg></button>
-                <button id="revise-selected-button" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Исправить выбранные сегменты с учетом инструкции" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
-              </div>
-            </div>
+            <textarea id="translation-global-instruction" rows="3" maxlength="10000" placeholder="Например: переводи все имена в документе; все печати не включай в сборку"></textarea>
             <div class="instruction-preset-picker">
               <select id="instruction-preset-select" aria-label="Сохраненные инструкции">
                 <option value="">Сохраненные инструкции…</option>
               </select>
               <button id="instruction-preset-apply" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Использовать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              <button id="instruction-preset-save" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Сохранить инструкцию в список инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-save"></use></svg></button>
               <button id="instruction-preset-edit" class="icon-button icon-button--compact icon-button--ghost" type="button" aria-label="Редактировать инструкцию" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-edit"></use></svg></button>
               <button id="instruction-preset-delete" class="icon-button icon-button--compact icon-button--ghost icon-button--danger" type="button" aria-label="Удалить инструкцию из списка инструкций" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-trash"></use></svg></button>
             </div>
@@ -161,28 +177,8 @@
               </div>
             </div>
           </div>
-          <div class="agent-knowledge-mode">
-            <label class="memory-card__mode">Использование БЗ
-              <select id="knowledge-base-mode">
-                <option value="suggestions">Только подсказки</option>
-                <option value="priority">БЗ имеет приоритет</option>
-              </select>
-            </label>
-            <small class="note note--muted note--compact memory-card__mode-note">Приоритетный режим сохраняет вариант ИИ и может выполнить дополнительную AI-корректировку для терминов внутри абзаца.</small>
-          </div>
-          <div class="translation-batch-controls">
-            <small id="translation-selection-count">Выбрано: 0 из 0 сегментов</small>
-            <div class="translation-batch-controls__actions">
-              <label class="base-checkbox base-checkbox--inverse">
-                <input id="translation-select-all" class="base-checkbox__input" type="checkbox" />
-                <span class="base-checkbox__control" aria-hidden="true"></span>
-                <span class="base-checkbox__label">Выбрать все</span>
-              </label>
-              <button id="translation-clear-selection" class="compact-button" type="button" disabled>Снять выбор</button>
-            </div>
-          </div>
           <div class="global-translation-actions">
-            <button id="translate-button" class="button button--primary" type="button" disabled>Перевести выбранные</button>
+            <button id="translate-button" class="button button--primary" type="button" disabled>Перевести документ</button>
           </div>
         </div>
 
@@ -382,23 +378,6 @@
         </section>
 
         </div>
-        <nav class="inspector-panel__navigation" aria-label="Разделы инспектора">
-          <button id="inspector-global-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Документ" aria-controls="inspector-global-translation-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="global">
-            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg>
-          </button>
-          <button id="inspector-translation-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Сегмент" aria-controls="inspector-translation-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="translation">
-            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg>
-          </button>
-          <button id="inspector-typography-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Типографика" aria-controls="inspector-typography-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="typography">
-            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg>
-          </button>
-          <button id="inspector-position-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Расстановка" aria-controls="inspector-position-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="position">
-            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg>
-          </button>
-          <button id="inspector-testing-button" class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Тестирование" aria-controls="inspector-testing-panel" aria-expanded="false" aria-pressed="false" data-inspector-panel="testing">
-            <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg>
-          </button>
-        </nav>
       </aside>
 
       <section id="qa-panel" class="qa-panel" role="complementary" aria-labelledby="qa-title" aria-hidden="true" hidden>

@@ -36,6 +36,7 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.gridSize, 8)
   assert.equal(scene.gridDensity, 'xs')
   assert.equal(scene.snapToGrid, true)
+  assert.equal(scene.workflowStage, 1)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
   assert.equal(scene.pages[0].heightPx, 1123)
@@ -162,6 +163,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   input.objects[0].width = 5_000
   input.objects[0].height = 5_000
   input.snapToGrid = false
+  input.workflowStage = 99
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
   assert.equal(normalized.objects[0].style.color, '#000000')
@@ -176,6 +178,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.objects[0].width, normalized.pages[0].contentBounds.width)
   assert.equal(normalized.objects[0].height, normalized.pages[0].contentBounds.height)
   assert.equal(normalized.snapToGrid, true)
+  assert.equal(normalized.workflowStage, 5)
 })
 
 test('normalizeScene preserves legacy dimensions that differ from original bounds', () => {

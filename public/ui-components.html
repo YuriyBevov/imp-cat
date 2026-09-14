@@ -102,6 +102,34 @@
           </div>
         </details>
 
+        <details class="component-section" open>
+          <summary class="component-section__summary">
+            <span>Этапы работы</span>
+            <code>WorkflowStagebar</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Последовательная навигация по пяти этапам документа. Следующий этап открывается только кнопкой «Утвердить», а «Назад» возвращает предыдущий интерфейс без потери данных.</p>
+            </div>
+            <div class="component-workflow-demo" data-component-workflow-stage="1">
+              <nav class="workflow-stagebar" aria-label="Демонстрация этапов работы">
+                <ol class="workflow-stagebar__steps">
+                  <li class="workflow-stagebar__step is-current" data-component-workflow-step="1" aria-current="step"><span>1</span><strong>Документ</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="2"><span>2</span><strong>Перевод</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="3"><span>3</span><strong>Сегменты</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="4"><span>4</span><strong>Макет</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="5"><span>5</span><strong>Проверка</strong></li>
+                </ol>
+                <div class="workflow-stagebar__actions">
+                  <button class="compact-button" type="button" data-component-workflow-previous disabled>Назад</button>
+                  <button class="button button--primary" type="button" data-component-workflow-approve>Утвердить</button>
+                </div>
+              </nav>
+            </div>
+          </div>
+        </details>
+
         <details class="component-section">
           <summary class="component-section__summary">
             <span>Скроллбар</span>
@@ -124,27 +152,24 @@
 
         <details class="component-section">
           <summary class="component-section__summary">
-            <span>Навигация инспектора</span>
-            <code>InspectorNavigation</code>
+            <span>Инструменты этапа</span>
+            <code>StageTools</code>
           </summary>
           <div class="component-section__body">
             <div class="component-meta">
               <span class="component-status">Согласовано</span>
-              <p>Постоянная вертикальная рейка из пяти иконных кнопок. Панель сохраняет ширину и плавно выезжает без перестроения содержимого; повторное нажатие активной кнопки скрывает её. Все разделы доступны всегда, а зависящие от выбора показывают информационную заметку вместо инструментов, пока сегмент не выбран.</p>
+              <p>Постоянная правая панель без отдельной рейки переключателей. Она всегда показывает инструменты текущего этапа; на этапе макета типографика и расстановка объединены в один раздел.</p>
             </div>
-            <div class="component-inspector-navigation-demo">
-              <section class="component-inspector-navigation-demo__panel" aria-hidden="true" inert>
-                <h2 class="inspector-section__title" data-component-inspector-title>Документ</h2>
-                <p class="note note--muted" data-component-inspector-description>Языки, инструкции и массовый перевод.</p>
+            <aside class="component-stage-tools-demo" aria-label="Инструменты этапа">
+              <section class="component-stage-tools-demo__body">
+                <h2 class="inspector-section__title">Типографика и расстановка</h2>
+                <div class="component-stage-tools-demo__cards">
+                  <div class="note note--muted note--compact">Типографика сегмента</div>
+                  <div class="note note--muted note--compact">Размеры и положение</div>
+                  <div class="note note--muted note--compact">Выравнивание и распределение</div>
+                </div>
               </section>
-              <nav class="inspector-panel__navigation" aria-label="Демонстрация разделов инспектора">
-                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Документ" aria-expanded="false" aria-pressed="false" data-component-inspector-panel="Документ" data-component-inspector-description="Языки, инструкции и массовый перевод."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-document-wand"></use></svg></button>
-                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Сегмент" aria-expanded="false" aria-pressed="false" data-component-inspector-panel="Сегмент" data-component-inspector-description="Инструменты перевода выбранного сегмента."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
-                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Типографика" aria-expanded="false" aria-pressed="false" data-component-inspector-panel="Типографика" data-component-inspector-description="Шрифт, начертание, цвет и выравнивание текста."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-bold"></use></svg></button>
-                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Расстановка" aria-expanded="false" aria-pressed="false" data-component-inspector-panel="Расстановка" data-component-inspector-description="Размеры, выравнивание и расстановка сегментов."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
-                <button class="icon-button icon-button--large icon-button--ghost" type="button" aria-label="Тестирование" aria-expanded="false" aria-pressed="false" data-component-inspector-panel="Тестирование" data-component-inspector-description="Проверка, исправление и пересегментация макета."><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-check"></use></svg></button>
-              </nav>
-            </div>
+            </aside>
           </div>
         </details>
 
@@ -261,6 +286,7 @@
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Минимальная ширина по содержимому"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-min-width"></use></svg></button><code>fit-min-width</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Сетка"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grid"></use></svg></button><code>grid</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Макет"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button><code>layout</code></div>
+              <div class="icon-sample"><button class="icon-button" type="button" aria-label="Пин сегмента"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-map-pin"></use></svg></button><code>map-pin</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Правая панель"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-sidebar-right"></use></svg></button><code>sidebar-right</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Сегменты"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-list-rows"></use></svg></button><code>list-rows</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button><code>close</code></div>
