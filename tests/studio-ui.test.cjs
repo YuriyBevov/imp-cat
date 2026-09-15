@@ -30,9 +30,11 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-preview-lightbox-previous', 'source-preview-lightbox-next', 'source-preview-lightbox-zoom-out', 'source-preview-lightbox-zoom-in',
     'source-preview-lightbox-zoom-output', 'source-preview-lightbox-zoom-100', 'source-preview-lightbox-fit',
     'appbar-menu', 'appbar-menu-button', 'appbar-actions-menu',
-    'source-text', 'translation-text', 'object-type', 'segment-note', 'reanalyze-button', 'translate-button',
+    'source-text', 'translation-text', 'object-type', 'segment-note', 'reanalyze-button', 'translate-button', 'loading-hint',
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
     'confirmation-modal', 'confirmation-title', 'confirmation-description', 'confirmation-close', 'confirmation-cancel', 'confirmation-submit',
+    'translation-approval-modal', 'translation-approval-title', 'translation-approval-content',
+    'translation-approval-close', 'translation-approval-cancel', 'translation-approval-submit',
     'translation-global-instruction',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
@@ -302,8 +304,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.workbench-toolbar__inner\s*\{[^}]*grid-column:\s*2[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto[^}]*padding:\s*5px var\(--app-gutter, 12px\)/)
   assert.deepEqual(
     [...studioDocument.querySelectorAll('[data-workflow-step]')].map(step => step.textContent.replace(/\s+/g, '').trim()),
-    ['1Документ', '2Перевод', '3Сегменты', '4Макет', '5Проверка'],
+    ['1Документ', '2Сегменты', '3Макет', '4Проверка'],
   )
+  assert.match(styles, /\.workflow-stagebar__steps\s*\{[^}]*grid-template-columns:\s*repeat\(4,/)
   assert.match(styles, /\.workbench-toolbar__layout-controls\s*\{[^}]*grid-column:\s*2[^}]*justify-self:\s*end/)
   assert.equal(studioDocument.querySelector('.inspector-controls'), null)
   assert.doesNotMatch(styles, /\.workbench-toolbar__inner > \.toolbar-group:first-child\s*\{/)
@@ -474,7 +477,7 @@ test('user guide documents the complete interface and links from README', () => 
   assert.match(readme, /\[USER_GUIDE\.md\]\(USER_GUIDE\.md\)/)
   for (const label of [
     'Документация', 'Руководство', 'Компоненты', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
-    'Выбрать документы', 'Отменить обработку', 'Повторить обработку',
+    'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Готовим документ к работе', 'Переводим документ',
     'Пересегментация макета', 'Перевести документ', 'Исправить наложения',
     'Проверить и исправить макет', 'Отменить проверку макета', 'Финальная проверка макета', 'Сохранить инструкцию в список инструкций', 'Редактировать инструкцию',
     'Сохранить изменения',
@@ -534,6 +537,7 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
     assert.match(uiComponentsHtml, new RegExp(`class="note note--${variant}`))
   }
   assert.match(uiComponentsHtml, /<code>Note<\/code>/)
+  assert.match(uiComponentsHtml, /<code>TranslationApprovalDialog<\/code>/)
   assert.match(uiKit, /\.note--compact\s*\{/)
   assert.match(uiKit, /\.note--roomy\s*\{/)
   assert.equal(dom.window.document.querySelector('#empty-inspector'), null)
@@ -1263,9 +1267,14 @@ test('approval advances through isolated document stages and switches the worksp
     runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
   })
   let translationRequest = null
+  let translationShouldFail = false
+  let delayTranslation = false
+  let releaseTranslation = null
   dom.window.fetch = async (url, options = {}) => {
     if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
     if (String(url).endsWith('/translate') && options.method === 'POST') {
+      if (translationShouldFail) return { ok: false, status: 503, json: async () => ({ error: 'Перевод временно недоступен' }) }
+      if (delayTranslation) await new Promise(resolve => { releaseTranslation = resolve })
       translationRequest = JSON.parse(options.body)
       return { ok: true, json: async () => ({ scene, translated: [], suggested: [], pending: [], message: 'Документ переведён' }) }
     }
@@ -1367,6 +1376,8 @@ test('approval advances through isolated document stages and switches the worksp
   assert.match(styles, /\.studio\[data-workflow-stage="1"\]\s*\{[^}]*--inspector-width:\s*0px/)
   assert.match(styles, /\.studio\[data-workflow-stage="1"\] \.document-canvas\s*\{[^}]*padding:\s*0[^}]*border:\s*0[^}]*outline:\s*0[^}]*box-shadow:\s*none/)
   assert.match(styles, /\.studio\[data-workflow-stage="1"\] \.studio-page--segments\s*\{[^}]*padding:\s*var\(--app-gutter, 12px\)[^}]*border:\s*0[^}]*outline:\s*0[^}]*box-shadow:\s*none/)
+  assert.match(styles, /\.studio-page--segments\s*\{[^}]*position:\s*relative[^}]*overflow:\s*visible/)
+  assert.match(client, /Math\.max\(120, surface\.scrollHeight \|\| 0, surface\.offsetHeight \|\| 0\)/)
   assert.match(styles, /\.document-review-pin\s*\{[^}]*width:\s*18px[^}]*height:\s*23px/)
   assert.match(styles, /\.document-review-pin\.is-review-highlighted[^}]*--review-marker-scale:\s*1\.35/)
   assert.match(styles, /\.document-review-pin::before\s*\{[^}]*border:\s*1px solid var\(--segment-review-color\)/)
@@ -1430,29 +1441,63 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelector('[data-object-id="workflow-object"] .scene-object__content').contentEditable, 'true')
 
   approve.click()
-  assert.equal(studio.dataset.workflowStage, '2')
-  assert.equal(studio.classList.contains('is-segments-mode'), true)
-  assert.equal(dom.window.document.querySelector('.scene-object--translation'), null)
-  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'false')
-  assert.equal(dom.window.document.querySelector('#source-panel-toggle').hidden, false)
-  assert.equal(dom.window.document.querySelector('.workbench-toolbar__layout-controls').hidden, false)
-  assert.equal(dom.window.document.querySelector('#inspector-panel').hidden, false)
-  assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, false)
-  assert.equal(dom.window.document.querySelector('#translate-button').textContent, 'Перевести документ')
-  assert.equal(dom.window.document.querySelector('#translate-button').disabled, false)
-  dom.window.document.querySelector('#translate-button').click()
+  assert.equal(studio.dataset.workflowStage, '1')
+  assert.equal(dom.window.document.querySelector('#translation-approval-modal').hidden, false)
+  assert.equal(dom.window.document.querySelector('#translation-approval-title').textContent, 'Отправить документ на перевод?')
+  assert.ok(dom.window.document.querySelector('#translation-approval-content > .global-translation-tools'))
+  assert.equal(dom.window.document.querySelector('#translation-approval-content .inspector-section__title'), null)
+  assert.ok(dom.window.document.querySelector('#translation-approval-content #source-language'))
+  assert.ok(dom.window.document.querySelector('#translation-approval-content #target-language'))
+  assert.ok(dom.window.document.querySelector('#translation-approval-content #knowledge-base-mode'))
+  assert.ok(dom.window.document.querySelector('#translation-approval-content #translation-global-instruction'))
+  assert.ok(dom.window.document.querySelector('#translation-approval-content #instruction-preset-select'))
+  assert.match(styles, /\.translation-approval-dialog \.global-translation-actions\s*\{[^}]*display:\s*none/)
+  dom.window.document.querySelector('#translation-approval-cancel').click()
+  assert.equal(dom.window.document.querySelector('#translation-approval-modal').hidden, true)
+  assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel .global-translation-tools'))
+
+  translationShouldFail = true
+  approve.click()
+  dom.window.document.querySelector('#translation-approval-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(studio.dataset.workflowStage, '1')
+  assert.equal(dom.window.document.querySelector('#translation-approval-modal').hidden, true)
+  assert.equal(dom.window.document.querySelector('#loading-view').hidden, true)
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
+  assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
+  assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel .global-translation-tools'))
+  assert.equal(dom.window.document.querySelector('#translation-approval-submit').disabled, false)
+
+  translationShouldFail = false
+  delayTranslation = true
+  approve.click()
+  dom.window.document.querySelector('#translation-approval-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(studio.dataset.workflowStage, '1')
+  assert.equal(dom.window.document.querySelector('#translation-approval-modal').hidden, true)
+  assert.equal(dom.window.document.querySelector('#loading-view').hidden, false)
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, true)
+  assert.equal(dom.window.document.querySelector('#loading-title').textContent, 'Переводим документ')
+  assert.equal(dom.window.document.querySelector('#loading-progress-label').textContent, 'Выполняется')
+  assert.equal(dom.window.document.querySelector('#loading-progress-details').textContent, 'Сегментов: 2')
+  assert.equal(dom.window.document.querySelector('#loading-hint').textContent, 'Перевод большого документа может занять несколько минут.')
+  assert.equal(dom.window.document.querySelector('#loading-view').classList.contains('is-indeterminate'), true)
+  assert.match(styles, /\.loading-view\.is-indeterminate \.job-progress span\s*\{[^}]*animation:\s*loading-progress-indeterminate/)
+  assert.equal(typeof releaseTranslation, 'function')
+  releaseTranslation()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.deepEqual(translationRequest.objectIds, ['workflow-object', 'workflow-object-2'])
 
-  approve.click()
-  assert.equal(studio.dataset.workflowStage, '3')
+  assert.equal(studio.dataset.workflowStage, '2')
+  assert.equal(dom.window.document.querySelector('#loading-view').hidden, true)
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
   assert.equal(studio.classList.contains('is-segments-mode'), true)
   assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').contentEditable, 'true')
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, false)
 
   approve.click()
-  assert.equal(studio.dataset.workflowStage, '4')
+  assert.equal(studio.dataset.workflowStage, '3')
   assert.equal(studio.classList.contains('is-segments-mode'), false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-geometry-locked'), false)
@@ -1460,7 +1505,7 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel .inspector-section__title').textContent, 'Типографика и расстановка')
 
   approve.click()
-  assert.equal(studio.dataset.workflowStage, '5')
+  assert.equal(studio.dataset.workflowStage, '4')
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-geometry-locked'), true)
   assert.equal(dom.window.document.querySelector('#inspector-testing-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, false)
@@ -1469,8 +1514,12 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(approve.textContent, 'Финальный этап')
 
   dom.window.document.querySelector('#workflow-previous').click()
-  assert.equal(studio.dataset.workflowStage, '4')
+  assert.equal(studio.dataset.workflowStage, '3')
   assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, true)
+  dom.window.document.querySelector('#workflow-previous').click()
+  assert.equal(studio.dataset.workflowStage, '2')
+  dom.window.document.querySelector('#workflow-previous').click()
+  assert.equal(studio.dataset.workflowStage, '1')
   dom.window.close()
 })
 
@@ -1789,7 +1838,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width), widthBeforeFontStyle)
 
   dom.window.document.querySelector('#workflow-previous').click()
-  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '3')
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '2')
   const styledContent = dom.window.document.querySelector('.scene-object--translation .scene-object__content')
   const styledText = styledContent.querySelector('span').firstChild
   const splitRange = dom.window.document.createRange()
@@ -1800,7 +1849,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   styledContent.dispatchEvent(pointer('pointerup', 0, 0))
   dom.window.document.querySelector('#split-button').click()
   dom.window.document.querySelector('#workflow-approve').click()
-  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '4')
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '3')
   assert.equal(dom.window.document.querySelectorAll('.scene-object').length, 2)
 
   const previouslyFocusedObject = dom.window.document.querySelector('.scene-object.is-selected')
@@ -2451,7 +2500,7 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   assert.match(suggestionActions[1].querySelector('use').getAttribute('href'), /icon-check$/)
   dom.window.document.querySelector('#knowledge-suggestion-close').click()
   dom.window.document.querySelector('#workflow-previous').click()
-  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '3')
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '2')
   const editedSegment = dom.window.document.querySelector('.scene-object--translation .scene-object__content')
   editedSegment.focus()
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-knowledge-editing'), true)

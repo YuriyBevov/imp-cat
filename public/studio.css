@@ -122,12 +122,17 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .loading-view small { color: #98a2b3; }
 .job-progress { width: min(420px, calc(100vw - 48px)); height: 8px; margin: 14px 0 7px; overflow: hidden; border-radius: 999px; background: #dfe5ef; }
 .job-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--blue), #6f8eff); transition: width .35s ease; }
+.loading-view.is-indeterminate .job-progress span { animation: loading-progress-indeterminate 1.4s ease-in-out infinite; }
 .job-progress__label { margin-bottom: 9px; color: var(--blue); font-size: 12px; }
 .job-progress__details { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
 .loading-job-actions { display: flex; gap: 8px; margin: 4px 0 14px; }
 .loading-retry { margin: 4px 0 14px; }
 .loading-job-actions .loading-retry { margin: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes loading-progress-indeterminate {
+  from { transform: translateX(-140%); }
+  to { transform: translateX(400%); }
+}
 
 .studio {
   --source-open-width: min(21vw, 330px);
@@ -200,8 +205,8 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .workbench-toolbar button,
 .workbench-toolbar .base-select { height: 28px; min-height: 28px; box-sizing: border-box; }
 .workbench-toolbar .icon-button { width: 28px; min-width: 28px; }
-.workflow-stagebar { min-width: 560px; display: flex; align-items: center; gap: 12px; }
-.workflow-stagebar__steps { min-width: 0; display: grid; grid-template-columns: repeat(5, minmax(88px, 1fr)); flex: 1; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.workflow-stagebar { min-width: 500px; display: flex; align-items: center; gap: 12px; }
+.workflow-stagebar__steps { min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(88px, 1fr)); flex: 1; gap: 5px; margin: 0; padding: 0; list-style: none; }
 .workflow-stagebar__step { min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid #d9e0ea; border-radius: 8px; background: #f8fafc; color: #667085; font-size: 10px; }
 .workflow-stagebar__step > span { width: 18px; height: 18px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #e9edf3; font-size: 10px; font-weight: 800; }
 .workflow-stagebar__step strong { min-width: 0; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -300,7 +305,7 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .page-number { position: absolute; right: 9px; bottom: 7px; color: #98a2b3; font: 700 10px/1 Inter, sans-serif; pointer-events: none; }
 
 .document-canvas.is-segments-view { width: max-content; min-width: 100%; }
-.studio-page--segments { min-height: 120px; padding: var(--app-gutter, 12px); overflow: hidden; background: #fff; background-image: none; }
+.studio-page--segments { position: relative; inset: auto; min-height: 120px; padding: var(--app-gutter, 12px); overflow: visible; background: #fff; background-image: none; }
 .studio-page--segments .segments-page-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid #d9e0ea; color: var(--ink); font: 750 12px/1.2 Inter, sans-serif; }
 .studio-page--segments .segments-page-heading small { color: var(--muted); font-size: 10px; font-weight: 650; }
 .studio-page--segments .segments-column-headings,
@@ -350,10 +355,6 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .studio[data-workflow-stage="1"] .segment-translation-row > .scene-object { grid-column: 1; }
 .studio[data-workflow-stage="1"] .studio-page--segments .scene-object__content { position: relative; padding: 10px; font-family: Arial, sans-serif !important; font-size: 16px !important; font-weight: 400 !important; font-style: normal !important; }
 .studio[data-workflow-stage="1"] .studio-page--segments .scene-object__content [data-text-style] { font-family: Arial, sans-serif !important; font-size: 16px !important; font-weight: 400 !important; font-style: normal !important; }
-.studio[data-workflow-stage="2"] .segment-translation-row { grid-template-columns: minmax(0, 1fr); padding: 8px; }
-.studio[data-workflow-stage="2"] .segment-translation-row__meta { grid-column: 1; display: block; }
-.studio[data-workflow-stage="2"] .segment-row-note { width: 100%; min-height: 38px; }
-.studio[data-workflow-stage="2"] .segment-translation-row > .scene-object { grid-column: 1; }
 .document-review-layout { width: 100%; max-width: 100%; min-width: 0; display: flex; align-items: flex-start; gap: var(--app-gutter, 12px); }
 .document-review-segments { width: min(35%, 540px); min-width: 0; flex: 0 0 min(35%, 540px); }
 .document-review-preview { position: sticky; top: 12px; z-index: 5; align-self: start; width: 0; min-width: 0; max-width: 100%; height: calc(100vh - 130px); display: grid; grid-template-rows: minmax(0, 1fr); overflow: hidden; contain: inline-size paint; padding: var(--app-gutter, 12px); border: 1px solid #cbd5e1; border-radius: 10px; background: #eef2f6; box-shadow: 0 8px 20px rgba(16,24,40,.1); }
@@ -640,6 +641,10 @@ body.has-document-tabs .document-review-preview { height: calc(100vh - 140px); }
 .confirmation-dialog { width: min(540px, 100%); }
 .confirmation-dialog__message { white-space: pre-wrap; }
 .confirmation-modal { z-index: 5100; }
+.translation-approval-dialog { width: min(640px, 100%); max-height: calc(100vh - 40px); grid-template-rows: auto minmax(0, 1fr) auto; }
+.translation-approval-dialog__content { min-width: 0; overflow: auto; }
+.translation-approval-dialog .global-translation-actions { display: none; }
+.translation-approval-dialog .language-card { margin-top: 0; }
 .document-library-dialog { width: min(760px, 100%); max-height: min(760px, calc(100vh - 40px)); display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 14px; padding: var(--app-gutter, 12px); border: 1px solid #d0d5dd; border-radius: 16px; background: #fff; box-shadow: 0 24px 80px rgba(16,24,40,.28); }
 .document-library-dialog h2 { margin: 4px 0 0; font-size: 20px; }
 .document-library-list { min-height: 120px; display: grid; align-content: start; gap: 8px; overflow: auto; }

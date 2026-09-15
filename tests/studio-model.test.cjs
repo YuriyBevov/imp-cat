@@ -36,6 +36,7 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.gridSize, 8)
   assert.equal(scene.gridDensity, 'xs')
   assert.equal(scene.snapToGrid, true)
+  assert.equal(scene.workflowVersion, 2)
   assert.equal(scene.workflowStage, 1)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
@@ -178,7 +179,19 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.objects[0].width, normalized.pages[0].contentBounds.width)
   assert.equal(normalized.objects[0].height, normalized.pages[0].contentBounds.height)
   assert.equal(normalized.snapToGrid, true)
-  assert.equal(normalized.workflowStage, 5)
+  assert.equal(normalized.workflowVersion, 2)
+  assert.equal(normalized.workflowStage, 4)
+})
+
+test('normalizeScene migrates the removed translation stage without shifting current scenes', () => {
+  const legacy = buildScene(analysisFixture(), { documentId: '7'.repeat(32) })
+  delete legacy.workflowVersion
+  legacy.workflowStage = 3
+  assert.equal(normalizeScene(legacy, '7'.repeat(32), 'Legacy').workflowStage, 2)
+
+  const current = buildScene(analysisFixture(), { documentId: '8'.repeat(32) })
+  current.workflowStage = 3
+  assert.equal(normalizeScene(current, '8'.repeat(32), 'Current').workflowStage, 3)
 })
 
 test('normalizeScene preserves legacy dimensions that differ from original bounds', () => {

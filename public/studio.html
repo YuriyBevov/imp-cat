@@ -66,7 +66,7 @@
 
     <main id="loading-view" class="loading-view" hidden>
       <div class="loader"></div>
-      <h1 id="loading-title">Готовим документ к переводу</h1>
+      <h1 id="loading-title">Готовим документ к работе</h1>
       <p id="loading-message">Рендерим страницы и выполняем полный анализ документа агентом…</p>
       <div class="job-progress" aria-label="Прогресс обработки"><span id="loading-progress"></span></div>
       <strong id="loading-progress-label" class="job-progress__label">0%</strong>
@@ -75,7 +75,7 @@
         <button id="cancel-job-button" class="button" type="button" hidden>Отменить обработку</button>
         <button id="retry-job-button" class="button button--primary loading-retry" type="button" hidden>Повторить обработку</button>
       </div>
-      <small>Сложный многостраничный скан может обрабатываться несколько минут.</small>
+      <small id="loading-hint">Сложный многостраничный скан может обрабатываться несколько минут.</small>
     </main>
 
     <main id="studio-view" class="studio is-source-collapsed" hidden>
@@ -110,10 +110,9 @@
             <nav id="workflow-stagebar" class="workflow-stagebar" aria-label="Этапы работы с документом">
               <ol class="workflow-stagebar__steps">
                 <li class="workflow-stagebar__step" data-workflow-step="1"><span>1</span><strong>Документ</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="2"><span>2</span><strong>Перевод</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="3"><span>3</span><strong>Сегменты</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="4"><span>4</span><strong>Макет</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="5"><span>5</span><strong>Проверка</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="2"><span>2</span><strong>Сегменты</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="3"><span>3</span><strong>Макет</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="4"><span>4</span><strong>Проверка</strong></li>
               </ol>
               <div class="workflow-stagebar__actions">
                 <button id="workflow-previous" class="compact-button" type="button" disabled>Назад</button>
@@ -430,6 +429,19 @@
         <div class="settings-dialog__actions">
           <button id="reanalyze-confirm-cancel" class="button" type="button">Отмена</button>
           <button id="reanalyze-confirm-submit" class="button button--danger button--danger-filled" type="button">Пересегментировать макет</button>
+        </div>
+      </section>
+    </div>
+    <div id="translation-approval-modal" class="modal-backdrop translation-approval-modal" hidden>
+      <section class="settings-dialog translation-approval-dialog" role="dialog" aria-modal="true" aria-labelledby="translation-approval-title">
+        <div class="settings-dialog__header">
+          <h2 id="translation-approval-title">Отправить документ на перевод?</h2>
+          <button id="translation-approval-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+        </div>
+        <div id="translation-approval-content" class="translation-approval-dialog__content"></div>
+        <div class="settings-dialog__actions">
+          <button id="translation-approval-cancel" class="button" type="button">Отмена</button>
+          <button id="translation-approval-submit" class="button button--primary" type="button">Отправить на перевод</button>
         </div>
       </section>
     </div>

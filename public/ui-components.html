@@ -51,6 +51,45 @@
 
         <details class="component-section" open>
           <summary class="component-section__summary">
+            <span>Отправка документа на перевод</span>
+            <code>TranslationApprovalDialog</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Модальный переход с проверки распознавания к общему переводу. Использует живые поля общей панели; после отправки показывается экран выполнения, а успех сразу открывает этап работы с переведёнными сегментами.</p>
+            </div>
+            <section class="settings-dialog translation-approval-dialog component-confirmation-demo" aria-label="Пример отправки документа на перевод">
+              <div class="settings-dialog__header">
+                <h2>Отправить документ на перевод?</h2>
+                <button class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+              </div>
+              <div class="translation-approval-dialog__content">
+                <div class="global-translation-tools">
+                  <div class="language-card">
+                    <label>Язык исходника<select><option>Определить автоматически</option></select></label>
+                    <span>→</span>
+                    <label>Язык перевода<select><option>Русский</option></select></label>
+                  </div>
+                  <div class="agent-knowledge-mode">
+                    <label class="memory-card__mode">Использование БЗ<select><option>Только подсказки</option></select></label>
+                  </div>
+                  <div class="translation-instruction-card">
+                    <label>Инструкция для AI</label>
+                    <textarea rows="3" placeholder="Укажите правила перевода"></textarea>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-dialog__actions">
+                <button class="button" type="button">Отмена</button>
+                <button class="button button--primary" type="button">Отправить на перевод</button>
+              </div>
+            </section>
+          </div>
+        </details>
+
+        <details class="component-section" open>
+          <summary class="component-section__summary">
             <span>Подтверждение действия</span>
             <code>ConfirmationDialog</code>
           </summary>
@@ -152,16 +191,15 @@
           <div class="component-section__body">
             <div class="component-meta">
               <span class="component-status">Согласовано</span>
-              <p>Последовательная навигация по пяти этапам документа. Следующий этап открывается только кнопкой «Утвердить», а «Назад» возвращает предыдущий интерфейс без потери данных.</p>
+              <p>Навигация по четырём рабочим этапам документа. Перевод выполняется между первым и вторым этапами на отдельном экране состояния и не является самостоятельным этапом.</p>
             </div>
             <div class="component-workflow-demo" data-component-workflow-stage="1">
               <nav class="workflow-stagebar" aria-label="Демонстрация этапов работы">
                 <ol class="workflow-stagebar__steps">
                   <li class="workflow-stagebar__step is-current" data-component-workflow-step="1" aria-current="step"><span>1</span><strong>Документ</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="2"><span>2</span><strong>Перевод</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="3"><span>3</span><strong>Сегменты</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="4"><span>4</span><strong>Макет</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="5"><span>5</span><strong>Проверка</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="2"><span>2</span><strong>Сегменты</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="3"><span>3</span><strong>Макет</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="4"><span>4</span><strong>Проверка</strong></li>
                 </ol>
                 <div class="workflow-stagebar__actions">
                   <button class="compact-button" type="button" data-component-workflow-previous disabled>Назад</button>

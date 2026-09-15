@@ -15,7 +15,7 @@
   const languageLabel = value => LANGUAGE_LABELS[String(value || 'auto').trim().toLocaleLowerCase()] || String(value || 'Авто')
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
-    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
+    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), loadingHint: $('#loading-hint'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
     documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'),
     documentLibraryButton: $('#document-library-button'), documentLibraryModal: $('#document-library-modal'),
     documentLibraryClose: $('#document-library-close'), documentLibraryList: $('#document-library-list'),
@@ -79,6 +79,9 @@
     confirmationModal: $('#confirmation-modal'), confirmationEyebrow: $('#confirmation-eyebrow'), confirmationTitle: $('#confirmation-title'),
     confirmationDescription: $('#confirmation-description'), confirmationClose: $('#confirmation-close'),
     confirmationCancel: $('#confirmation-cancel'), confirmationSubmit: $('#confirmation-submit'),
+    translationApprovalModal: $('#translation-approval-modal'), translationApprovalContent: $('#translation-approval-content'),
+    translationApprovalClose: $('#translation-approval-close'), translationApprovalCancel: $('#translation-approval-cancel'),
+    translationApprovalSubmit: $('#translation-approval-submit'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
     aitunnelApiKey: $('#aitunnel-api-key'), aitunnelPersistKey: $('#aitunnel-persist-key'), aitunnelModelNote: $('#aitunnel-model-note'), aiProviderStatus: $('#ai-provider-status'),
@@ -175,19 +178,28 @@
   }
 
   function workflowUsesSegments(stage = state.workflowStage) {
-    return stage <= 3
+    return stage <= 2
   }
 
   function workflowPanels(stage = state.workflowStage) {
     if (stage === 1) return []
-    if (stage === 2) return ['global']
-    if (stage === 3) return ['translation']
-    if (stage === 4) return ['layout']
+    if (stage === 2) return ['translation']
+    if (stage === 3) return ['layout']
     return ['testing']
   }
 
+  function normalizeWorkflowStage(scene) {
+    const storedStage = Math.max(1, Math.min(5, Math.trunc(Number(scene?.workflowStage) || 1)))
+    const stage = Number(scene?.workflowVersion) >= 2
+      ? Math.max(1, Math.min(4, storedStage))
+      : ({ 1: 1, 2: 1, 3: 2, 4: 3, 5: 4 }[storedStage] || 1)
+    scene.workflowVersion = 2
+    scene.workflowStage = stage
+    return stage
+  }
+
   function renderWorkflowStageState() {
-    const stage = Math.max(1, Math.min(5, Number(state.workflowStage) || 1))
+    const stage = Math.max(1, Math.min(4, Number(state.workflowStage) || 1))
     const segmentsView = workflowUsesSegments(stage)
     elements.studioView.dataset.workflowStage = String(stage)
     elements.studioView.classList.toggle('is-segments-mode', segmentsView)
@@ -200,35 +212,84 @@
       else step.removeAttribute('aria-current')
     }
     elements.workflowPrevious.disabled = stage === 1
-    elements.workflowApprove.disabled = stage === 5
-    elements.workflowApprove.textContent = stage === 5 ? 'Финальный этап' : 'Утвердить'
+    elements.workflowApprove.disabled = stage === 4
+    elements.workflowApprove.textContent = stage === 4 ? 'Финальный этап' : 'Утвердить'
     const allowedPanels = new Set(workflowPanels(stage))
     if (!allowedPanels.has(state.activeInspectorPanel)) state.activeInspectorPanel = [...allowedPanels][0] || ''
     elements.inspectorPanel.hidden = stage === 1
     elements.sourcePanelToggle.hidden = stage === 1
     elements.zoomControls.hidden = stage === 1
     if (stage === 1) elements.studioView.classList.add('is-source-collapsed')
-    elements.exportDocx.disabled = stage !== 5
-    elements.exportPdf.disabled = stage !== 5
+    elements.exportDocx.disabled = stage !== 4
+    elements.exportPdf.disabled = stage !== 4
     renderInspectorPanelState()
   }
 
   function setWorkflowStage(nextStage, options = {}) {
     if (!state.scene) return
-    const stage = Math.max(1, Math.min(5, Math.trunc(Number(nextStage) || 1)))
+    const stage = Math.max(1, Math.min(4, Math.trunc(Number(nextStage) || 1)))
     const changed = stage !== state.workflowStage
     state.workflowStage = stage
+    state.scene.workflowVersion = 2
     state.scene.workflowStage = stage
     renderWorkflowStageState()
     if (options.render !== false) {
-      if (changed && stage === 4) renderDocumentWithContentFit(state.scene.objects)
+      if (changed && stage === 3) renderDocumentWithContentFit(state.scene.objects)
       else renderDocument()
     }
     if (changed && options.save !== false) scheduleSave()
   }
 
+  function restoreGlobalTranslationTools() {
+    if (elements.globalTranslationTools && elements.globalTranslationToolsHome) {
+      elements.globalTranslationToolsHome.append(elements.globalTranslationTools)
+    }
+  }
+
+  function openTranslationApprovalModal() {
+    if (!state.scene || state.workflowStage !== 1) return
+    elements.translationApprovalContent.append(elements.globalTranslationTools)
+    elements.translationApprovalModal.hidden = false
+    requestAnimationFrame(() => elements.sourceLanguage.focus())
+  }
+
+  function closeTranslationApprovalModal(restoreFocus = true) {
+    if (elements.translationApprovalModal.dataset.busy === 'true') return
+    elements.translationApprovalModal.hidden = true
+    restoreGlobalTranslationTools()
+    if (restoreFocus) elements.workflowApprove.focus()
+  }
+
+  async function submitTranslationApproval() {
+    if (!state.scene || state.workflowStage !== 1 || elements.translationApprovalModal.dataset.busy === 'true') return
+    const objectCount = translationCandidates().length
+    if (!objectCount) {
+      showToast('В документе нет сегментов для перевода', true)
+      return
+    }
+    elements.translationApprovalModal.dataset.busy = 'true'
+    elements.translationApprovalSubmit.disabled = true
+    elements.translationApprovalCancel.disabled = true
+    elements.translationApprovalClose.disabled = true
+    elements.translationApprovalSubmit.textContent = 'Отправляем…'
+    elements.translationApprovalModal.dataset.busy = 'false'
+    closeTranslationApprovalModal(false)
+    showTranslationLoading(objectCount)
+    try {
+      const translated = await translateDocument({ deferRender: true })
+      setWorkflowStage(translated ? 2 : 1)
+      setView('studio')
+    } finally {
+      elements.translationApprovalSubmit.disabled = false
+      elements.translationApprovalCancel.disabled = false
+      elements.translationApprovalClose.disabled = false
+      elements.translationApprovalSubmit.textContent = 'Отправить на перевод'
+    }
+  }
+
   function approveWorkflowStage() {
-    if (state.workflowStage >= 5) return
+    if (state.workflowStage >= 4) return
+    if (state.workflowStage === 1) return openTranslationApprovalModal()
     setWorkflowStage(state.workflowStage + 1)
     showToast(`Этап ${state.workflowStage - 1} утвержден`)
   }
@@ -282,6 +343,8 @@
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
     elements.objectInspector.after(finalTestingPanel)
     elements.inspectorSegmentWorkspace = segmentWorkspace
+    elements.globalTranslationTools = globalTranslationTools
+    elements.globalTranslationToolsHome = globalTranslationPanel.querySelector('.inspector-section__content')
     refreshInspectorSelectionState(false)
   }
 
@@ -582,8 +645,9 @@
     const failed = tab?.status === 'failed'
     const cancelled = tab?.status === 'cancelled'
     const pending = tab?.status === 'queued' || tab?.status === 'running'
+    elements.loadingView.classList.remove('is-indeterminate')
     elements.loadingView.classList.toggle('is-failed', failed || cancelled)
-    elements.loadingTitle.textContent = failed ? 'Обработка остановлена' : cancelled ? 'Обработка отменена' : 'Готовим документ к переводу'
+    elements.loadingTitle.textContent = failed ? 'Обработка остановлена' : cancelled ? 'Обработка отменена' : 'Готовим документ к работе'
     elements.loadingMessage.textContent = tab?.error || tab?.message || `Анализируем «${tab?.title || 'документ'}»…`
     elements.loadingProgress.style.width = `${progress}%`
     elements.loadingProgressLabel.textContent = failed ? 'Ошибка' : cancelled ? 'Отменено' : `${progress}%`
@@ -596,10 +660,26 @@
     if (Number.isFinite(Number(details.objectCount))) detailParts.push(`Сегментов: ${Number(details.objectCount)}`)
     elements.loadingProgressDetails.textContent = detailParts.join(' · ')
     elements.loadingProgressDetails.hidden = !detailParts.length
+    elements.loadingHint.textContent = 'Сложный многостраничный скан может обрабатываться несколько минут.'
     elements.retryJob.hidden = !((failed || cancelled) && tab?.jobId)
     elements.retryJob.disabled = false
     elements.cancelJob.hidden = !(pending && tab?.jobId)
     elements.cancelJob.disabled = false
+  }
+
+  function showTranslationLoading(objectCount) {
+    elements.loadingView.classList.remove('is-failed')
+    elements.loadingView.classList.add('is-indeterminate')
+    elements.loadingTitle.textContent = 'Переводим документ'
+    elements.loadingMessage.textContent = 'Проверяем Базу знаний и переводим активные сегменты…'
+    elements.loadingProgress.style.width = '35%'
+    elements.loadingProgressLabel.textContent = 'Выполняется'
+    elements.loadingProgressDetails.textContent = `Сегментов: ${objectCount}`
+    elements.loadingProgressDetails.hidden = false
+    elements.loadingHint.textContent = 'Перевод большого документа может занять несколько минут.'
+    elements.retryJob.hidden = true
+    elements.cancelJob.hidden = true
+    setView('loading')
   }
 
   function rememberCurrentDocument() {
@@ -978,8 +1058,7 @@
     state.sceneEditRevision = 0
     state.activePage = 0
     state.zoom = 1
-    state.workflowStage = Math.max(1, Math.min(5, Math.trunc(Number(state.scene.workflowStage) || 1)))
-    state.scene.workflowStage = state.workflowStage
+    state.workflowStage = normalizeWorkflowStage(state.scene)
     state.sourceRenderedPage = null
     if (activeTab) {
       activeTab.documentId = documentData.metadata.id
@@ -1127,7 +1206,7 @@
           ? `${pageObjects.length - excludedCount} активн. · ${excludedCount} исключ.`
           : `${pageObjects.length} сегм.`
         heading.append(title, count)
-        const columnHeadings = state.workflowStage === 3 ? document.createElement('div') : null
+        const columnHeadings = state.workflowStage === 2 ? document.createElement('div') : null
         if (columnHeadings) {
           columnHeadings.className = 'segments-column-headings'
           const selectPage = document.createElement('button')
@@ -1158,7 +1237,7 @@
             decorateDocumentReviewSegment(row, object, documentReviewIndex)
           }
           row.append(createSegmentRowMeta(object))
-          if (state.workflowStage === 3) {
+          if (state.workflowStage === 2) {
             const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
             if (selectable) {
               const selector = document.createElement('label')
@@ -1220,7 +1299,7 @@
         boundaryResize.type = 'button'
         boundaryResize.title = 'Изменить высоту рабочей области документа'
         boundaryResize.setAttribute('aria-label', 'Изменить высоту рабочей области документа')
-        if (state.workflowStage === 4) {
+        if (state.workflowStage === 3) {
           boundaryResize.addEventListener('pointerdown', event => beginContentBoundaryResize(event, page.index))
           boundary.append(createGridCoordinateLabels(page), boundaryResize)
         } else boundary.append(createGridCoordinateLabels(page))
@@ -1248,7 +1327,7 @@
       }
       shell.append(surface)
       elements.canvas.append(shell)
-      if (state.workflowStage === 4) elements.canvas.append(createPageActions(page))
+      if (state.workflowStage === 3) elements.canvas.append(createPageActions(page))
     }
     if (segmentsView) refreshSegmentsViewHeights()
     applyZoom()
@@ -2012,7 +2091,7 @@
     state.selected.delete(objectId)
     state.selected.add(objectId)
     refreshSelection()
-    if (state.workflowStage === 3) {
+    if (state.workflowStage === 2) {
       selector.closest('.segment-translation-row')
         ?.querySelector('.scene-object--source .scene-object__content')
         ?.focus({ preventScroll: true })
@@ -2677,7 +2756,7 @@
       notesText.textContent = agentNotes
       notes.append(warning, notesText)
     }
-    if (state.workflowStage <= 2) {
+    if (state.workflowStage === 1) {
       if (notes) meta.append(notes)
       else meta.hidden = true
       return meta
@@ -2698,7 +2777,7 @@
     select.setAttribute('aria-label', `Тип содержимого сегмента ${object.readingOrder || object.id}`)
     for (const sourceOption of elements.objectType.options) select.append(sourceOption.cloneNode(true))
     select.value = object.type
-    select.disabled = state.workflowStage !== 3
+    select.disabled = state.workflowStage !== 2
     select.addEventListener('change', () => applySelectionChange(
       selectedObject => setObjectType(selectedObject, select.value), true, false, [object],
     ))
@@ -2801,7 +2880,7 @@
     const node = document.createElement('article')
     node.className = 'scene-object'
     node.classList.toggle('is-excluded', object.excluded)
-    node.classList.toggle('is-geometry-locked', state.workflowStage !== 4)
+    node.classList.toggle('is-geometry-locked', state.workflowStage !== 3)
     if (requestedField) node.classList.add(`scene-object--${requestedField === 'sourceText' ? 'source' : 'translation'}`)
     if (editField === 'translation' && !object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
     if (object.confidence < .76) node.classList.add('is-low-confidence')
@@ -2818,12 +2897,12 @@
     node.style.textAlign = object.style.textAlign
     node.style.color = object.style.color
     node.style.zIndex = object.readingOrder
-    if (state.workflowStage !== 2 && !object.excluded) node.addEventListener('pointerdown', event => selectFromPointer(event, object.id))
+    if (!object.excluded) node.addEventListener('pointerdown', event => selectFromPointer(event, object.id))
 
     const badge = document.createElement('span')
     badge.className = 'scene-object__badge'
     badge.textContent = typeLabel(object.type)
-    const knowledgeMatches = state.workflowStage <= 2 ? [] : knowledgeMatchesForObject(object)
+    const knowledgeMatches = state.workflowStage === 1 ? [] : knowledgeMatchesForObject(object)
     const knowledgeIndicator = knowledgeMatches.length ? document.createElement('button') : null
     if (knowledgeIndicator) {
       knowledgeIndicator.className = 'icon-button icon-button--tiny icon-button--danger icon-button--shadow scene-object__knowledge-icon'
@@ -2843,17 +2922,17 @@
     handle.type = 'button'
     handle.innerHTML = iconMarkup('grip-vertical')
     handle.title = 'Переместить'
-    if (state.workflowStage === 4) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
+    if (state.workflowStage === 3) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
-    const canEditText = (state.workflowStage === 1 || state.workflowStage === 3) && !object.excluded
+    const canEditText = (state.workflowStage === 1 || state.workflowStage === 2) && !object.excluded
     content.tabIndex = canEditText ? 0 : -1
     content.contentEditable = String(canEditText)
     content.classList.toggle('is-readonly', !canEditText)
     content.spellcheck = true
     content.dataset.editField = editField
-    renderTextContent(content, object, displayField, state.workflowStage > 2)
-    if (state.workflowStage <= 2 && requestedField === 'sourceText') {
+    renderTextContent(content, object, displayField, state.workflowStage > 1)
+    if (state.workflowStage === 1 && requestedField === 'sourceText') {
       appendRecognitionBadges(content, object, options.documentReviewIndex)
     }
     if (canEditText) content.addEventListener('focus', () => {
@@ -2872,7 +2951,7 @@
     if (canEditText) content.addEventListener('blur', () => {
       state.textCheckpoint = false
       renderTextContent(content, object, displayField)
-      if (state.workflowStage <= 2 && requestedField === 'sourceText') {
+      if (state.workflowStage === 1 && requestedField === 'sourceText') {
         appendRecognitionBadges(content, object, options.documentReviewIndex)
       }
       setObjectsKnowledgeEditing([object], false)
@@ -2918,7 +2997,7 @@
     })
     const resize = document.createElement('span')
     resize.className = 'scene-object__resize'
-    if (state.workflowStage === 4) resize.addEventListener('pointerdown', event => beginResize(event, object.id))
+    if (state.workflowStage === 3) resize.addEventListener('pointerdown', event => beginResize(event, object.id))
     node.append(badge, handle, content)
     if (knowledgeIndicator) node.append(knowledgeIndicator)
     node.append(resize)
@@ -3496,7 +3575,8 @@
       const surface = shell.querySelector('.studio-page--segments')
       if (!surface) continue
       surface.style.height = 'auto'
-      const naturalHeight = Math.max(120, surface.scrollHeight || 120)
+      shell.style.height = 'auto'
+      const naturalHeight = Math.max(120, surface.scrollHeight || 0, surface.offsetHeight || 0)
       surface.style.height = `${naturalHeight}px`
       shell.dataset.naturalHeight = String(naturalHeight)
       shell.style.height = `${naturalHeight * state.zoom}px`
@@ -4386,8 +4466,7 @@
   function restoreHistorySnapshot(snapshot) {
     const normalized = typeof snapshot === 'string' ? { scene: snapshot } : snapshot
     state.scene = JSON.parse(normalized.scene)
-    state.workflowStage = Math.max(1, Math.min(5, Math.trunc(Number(state.scene.workflowStage) || 1)))
-    state.scene.workflowStage = state.workflowStage
+    state.workflowStage = normalizeWorkflowStage(state.scene)
     const objectIds = new Set(state.scene.objects.map(object => object.id))
     const selectedIds = Array.isArray(normalized.selectedIds) ? normalized.selectedIds : [...state.selected]
     const translationSelectedIds = Array.isArray(normalized.translationSelectedIds)
@@ -4518,11 +4597,14 @@
     }
   }
 
-  async function translateDocument() {
-    if (!state.scene) return
+  async function translateDocument(options = {}) {
+    if (!state.scene) return false
     refreshTranslationSelectionControls()
     const objectIds = translationCandidates().map(object => object.id)
-    if (!objectIds.length) return showToast('В документе нет сегментов для перевода', true)
+    if (!objectIds.length) {
+      showToast('В документе нет сегментов для перевода', true)
+      return false
+    }
     elements.translate.disabled = true
     elements.translate.textContent = `Переводим ${objectIds.length}…`
     elements.agentStatus.textContent = `Ищем совпадения в БЗ и переводим сегменты: ${objectIds.length}…`
@@ -4536,13 +4618,15 @@
       checkpoint()
       state.scene = data.scene
       const translatedObjects = state.scene.objects.filter(object => objectIds.includes(object.id))
-      renderDocumentWithContentFit(translatedObjects)
+      if (!options.deferRender) renderDocumentWithContentFit(translatedObjects)
       scheduleSave()
       elements.agentStatus.textContent = data.message
       showToast(data.message, data.pending.length > 0 && !data.translated.length && !data.suggested?.length)
+      return true
     } catch (error) {
       elements.agentStatus.textContent = 'Перевод не выполнен.'
       showToast(error.message, true)
+      return false
     } finally {
       refreshTranslationSelectionControls()
     }
@@ -5527,6 +5611,12 @@
     elements.zoomActual.addEventListener('click', () => setZoom(1))
     elements.workflowPrevious.addEventListener('click', returnToPreviousWorkflowStage)
     elements.workflowApprove.addEventListener('click', approveWorkflowStage)
+    elements.translationApprovalClose.addEventListener('click', () => closeTranslationApprovalModal())
+    elements.translationApprovalCancel.addEventListener('click', () => closeTranslationApprovalModal())
+    elements.translationApprovalSubmit.addEventListener('click', submitTranslationApproval)
+    elements.translationApprovalModal.addEventListener('pointerdown', event => {
+      if (event.target === elements.translationApprovalModal) closeTranslationApprovalModal()
+    })
     elements.sourcePanelToggle.addEventListener('click', toggleSourcePanel)
     elements.canvasScroll.addEventListener('wheel', event => {
       if (state.workflowStage === 1) return
@@ -5717,6 +5807,10 @@
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        if (!elements.translationApprovalModal.hidden) {
+          closeTranslationApprovalModal()
+          return
+        }
         if (!elements.confirmationModal.hidden) {
           closeConfirmationModal(false)
           return
