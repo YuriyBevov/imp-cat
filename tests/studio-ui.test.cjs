@@ -32,6 +32,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'appbar-menu', 'appbar-menu-button', 'appbar-actions-menu',
     'source-text', 'translation-text', 'object-type', 'segment-note', 'reanalyze-button', 'translate-button',
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
+    'confirmation-modal', 'confirmation-title', 'confirmation-description', 'confirmation-close', 'confirmation-cancel', 'confirmation-submit',
     'translation-global-instruction',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
@@ -199,6 +200,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /agent\/reanalyze/)
   assert.match(client, /function openReanalyzeConfirmation/)
   assert.doesNotMatch(client, /window\.confirm\('Повторный анализ/)
+  assert.doesNotMatch(client, /(?:window\.)?confirm\s*\(/)
   assert.match(client, /\/api\/studio\/jobs/)
   assert.match(client, /agent\/layout-review/)
   assert.match(client, /loadPendingJobs/)
@@ -270,7 +272,8 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.source-preview-controls\s*\{[^}]*position:\s*absolute[^}]*right:\s*12px[^}]*bottom:\s*12px/)
   assert.match(styles, /--source-open-width:\s*min\(21vw, 330px\)/)
   assert.match(styles, /\.source-preview-lightbox\s*\{[^}]*position:\s*fixed[^}]*inset:\s*0[^}]*z-index:\s*6000/)
-  assert.match(styles, /\.workbench-toolbar__source-toggle\s*\{[^}]*position:\s*absolute[^}]*width:\s*60px/)
+  assert.match(styles, /\.workbench-toolbar\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*60px minmax\(0, 1fr\)/)
+  assert.match(styles, /\.workbench-toolbar__source-toggle\s*\{[^}]*grid-column:\s*1[^}]*width:\s*60px/)
   assert.match(styles, /grid-template-columns:\s*60px/)
   assert.match(styles, /grid-template-areas:\s*"toolbar toolbar toolbar toolbar" "pages source canvas inspector"/)
   assert.match(styles, /\.studio\s*\{[^}]*transition:\s*grid-template-columns \.28s ease/)
@@ -296,7 +299,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.workbench-toolbar\s*\{[^}]*grid-area:\s*toolbar/)
   assert.match(styles, /\.workbench-toolbar button,[\s\S]*?\.workbench-toolbar \.base-select\s*\{[^}]*height:\s*28px[^}]*min-height:\s*28px/)
   assert.match(styles, /\.workbench-toolbar \.icon-button\s*\{[^}]*width:\s*28px[^}]*min-width:\s*28px/)
-  assert.match(styles, /\.workbench-toolbar__inner\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/)
+  assert.match(styles, /\.workbench-toolbar__inner\s*\{[^}]*grid-column:\s*2[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto[^}]*padding:\s*5px var\(--app-gutter, 12px\)/)
   assert.deepEqual(
     [...studioDocument.querySelectorAll('[data-workflow-step]')].map(step => step.textContent.replace(/\s+/g, '').trim()),
     ['1Документ', '2Перевод', '3Сегменты', '4Макет', '5Проверка'],
@@ -310,6 +313,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.document-tabs__inner\s*\{[^}]*justify-content:\s*flex-end/)
   assert.match(styles, /\.document-tabs__list\s*\{[^}]*width:\s*max-content[^}]*margin-left:\s*auto/)
   assert.doesNotMatch(styles, /\.grid-controls/)
+  assert.match(uiKit, /:root\s*\{[^}]*--app-gutter:\s*12px/)
   assert.match(uiKit, /\.app-container\s*\{[^}]*padding-inline:\s*var\(--app-gutter, 12px\)/)
   assert.match(html, /class="app-container appbar__inner"/)
   assert.match(html, /class="app-container document-tabs__inner"/)
@@ -1239,7 +1243,7 @@ test('approval advances through isolated document stages and switches the worksp
   const id = '7'.repeat(32)
   const scene = {
     title: 'Workflow', sourceLanguage: 'en', targetLanguage: 'ru', workflowStage: 1,
-    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1000 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
     objects: [{
       id: 'workflow-object', pageIndex: 0, type: 'text', readingOrder: 2,
       sourceText: 'Source', translation: 'Перевод', confidence: .96,
@@ -1287,6 +1291,20 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelector('.segment-content-badge--type').textContent, 'Текст')
   const reviewedWorkflowRow = dom.window.document.querySelector('[data-object-id="workflow-object"]')
   assert.equal(reviewedWorkflowRow.querySelector('.segment-content-badge--confidence').textContent, 'Уверенность 96%')
+  assert.equal(reviewedWorkflowRow.querySelector('.segment-content-badges').contentEditable, 'false')
+  assert.equal(reviewedWorkflowRow.querySelector('.segment-content-badge--type').tagName, 'SPAN')
+  assert.equal(reviewedWorkflowRow.querySelector('.segment-content-badge--confidence').tagName, 'SPAN')
+  const reviewedContent = reviewedWorkflowRow.querySelector('.scene-object__content')
+  for (const child of [...reviewedContent.childNodes]) {
+    if (child !== reviewedContent.querySelector('.segment-content-badges')) child.remove()
+  }
+  reviewedContent.append(dom.window.document.createTextNode('Исправленный исходник'))
+  reviewedContent.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+  reviewedContent.dispatchEvent(new dom.window.FocusEvent('blur'))
+  const reviewedContentClone = reviewedContent.cloneNode(true)
+  reviewedContentClone.querySelector('.segment-content-badges').remove()
+  assert.equal(reviewedContentClone.textContent, 'Исправленный исходник')
+  assert.equal(reviewedContent.querySelector('.segment-content-badges').contentEditable, 'false')
   assert.equal(reviewedWorkflowRow.querySelector('.segment-row-note').textContent.trim(), 'Проверьте имя по оригиналу.')
   assert.doesNotMatch(reviewedWorkflowRow.querySelector('.segment-row-note').textContent, /Автокоррекция макета/)
   assert.equal(dom.window.document.querySelector('[data-object-id="workflow-object-2"] .segment-translation-row__meta').hidden, true)
@@ -1298,6 +1316,8 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelectorAll('.document-review-controls .icon-button').length, 3)
   assert.equal(dom.window.document.querySelector('.document-review-controls output').value, '100%')
   const documentReviewPage = dom.window.document.querySelector('.document-review-preview__page')
+  assert.equal(documentReviewPage.style.aspectRatio, '794 / 1000')
+  assert.equal(documentReviewPage.querySelector('img').style.height, '100%')
   dom.window.document.querySelector('.document-review-controls [aria-label="Увеличить оригинал"]').click()
   assert.ok(Math.abs(Number.parseFloat(documentReviewPage.style.width) - 873.4) < .001)
   assert.equal(dom.window.document.querySelector('.document-review-segments').style.transform, '')
@@ -1330,33 +1350,84 @@ test('approval advances through isolated document stages and switches the worksp
   assert.ok(Math.abs(Number.parseFloat(sourceRegionPin.style.left) - 30) < .001)
   assert.ok(Math.abs(Number.parseFloat(sourceRegionPin.style.top) - 25) < .001)
   assert.equal(sourceRegionPin.querySelector('span').textContent, '2')
-  assert.equal(dom.window.document.querySelector('.document-review-segment__number').textContent, '1')
+  const firstReviewNumber = dom.window.document.querySelector('.document-review-segment__number')
+  assert.equal(firstReviewNumber.textContent, '1')
+  assert.equal(firstReviewNumber.parentElement.className, 'segment-content-badges__status')
+  assert.equal(firstReviewNumber.previousElementSibling.classList.contains('segment-content-badge--confidence'), true)
+  const firstReviewSegment = dom.window.document.querySelector('.document-review-segment')
+  const firstReviewPin = dom.window.document.querySelector('.document-review-pin')
+  firstReviewSegment.dispatchEvent(new dom.window.MouseEvent('pointerenter'))
+  assert.equal(firstReviewPin.classList.contains('is-review-highlighted'), true)
+  firstReviewSegment.dispatchEvent(new dom.window.MouseEvent('pointerleave'))
+  assert.equal(firstReviewPin.classList.contains('is-review-highlighted'), false)
   assert.equal(dom.window.document.querySelector('#source-panel-toggle').hidden, true)
   assert.equal(dom.window.document.querySelector('.workbench-toolbar__layout-controls').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-document-review-panel'), null)
   assert.match(styles, /\.studio\[data-workflow-stage="1"\]\s*\{[^}]*--inspector-width:\s*0px/)
-  assert.match(styles, /\.studio\[data-workflow-stage="1"\] \.document-canvas\s*\{[^}]*padding:\s*0/)
+  assert.match(styles, /\.studio\[data-workflow-stage="1"\] \.document-canvas\s*\{[^}]*padding:\s*0[^}]*border:\s*0[^}]*outline:\s*0[^}]*box-shadow:\s*none/)
+  assert.match(styles, /\.studio\[data-workflow-stage="1"\] \.studio-page--segments\s*\{[^}]*padding:\s*var\(--app-gutter, 12px\)[^}]*border:\s*0[^}]*outline:\s*0[^}]*box-shadow:\s*none/)
   assert.match(styles, /\.document-review-pin\s*\{[^}]*width:\s*18px[^}]*height:\s*23px/)
+  assert.match(styles, /\.document-review-pin\.is-review-highlighted[^}]*--review-marker-scale:\s*1\.35/)
+  assert.match(styles, /\.document-review-pin::before\s*\{[^}]*border:\s*1px solid var\(--segment-review-color\)/)
+  assert.match(styles, /\.document-review-pin\.is-review-highlighted::before[^}]*opacity:\s*1/)
   assert.match(styles, /\.document-review-segments\s*\{[^}]*width:\s*min\(35%, 540px\)/)
   assert.match(styles, /\.document-review-segments\s*\{[^}]*flex:\s*0 0 min\(35%, 540px\)/)
-  assert.match(styles, /\.document-review-layout\s*\{[^}]*max-width:\s*100%/)
+  assert.match(styles, /\.document-review-layout\s*\{[^}]*max-width:\s*100%[^}]*gap:\s*var\(--app-gutter, 12px\)/)
   assert.doesNotMatch(styles, /\.document-review-layout\s*\{[^}]*overflow:\s*(?:hidden|auto|scroll)/)
   assert.match(styles, /\.document-review-preview\s*\{[^}]*height:\s*calc\(100vh - 130px\)/)
   assert.match(styles, /\.document-review-preview\s*\{[^}]*width:\s*0[^}]*overflow:\s*hidden[^}]*contain:\s*inline-size paint/)
   assert.match(styles, /\.document-review-preview\s*\{[^}]*flex:\s*1 1 0/)
-  assert.match(styles, /body\.has-document-tabs \.document-review-preview\s*\{[^}]*height:\s*calc\(100vh - 158px\)/)
-  assert.match(styles, /\.document-review-preview:has\(\.document-review-magnifier\)\s*\{[^}]*180px/)
-  assert.match(styles, /\.document-review-preview__canvas\s*\{[^}]*max-width:\s*100%[^}]*min-height:\s*0[^}]*overflow:\s*hidden/)
-  assert.match(styles, /\.document-review-preview__viewport\s*\{[^}]*overflow:\s*auto/)
+  assert.match(styles, /body\.has-document-tabs \.document-review-preview\s*\{[^}]*height:\s*calc\(100vh - 140px\)/)
+  assert.match(styles, /\.document-review-preview:has\(\.document-review-magnifier\)\s*\{[^}]*grid-template-rows:\s*minmax\(152px, 1fr\) minmax\(0, 240px\)/)
+  assert.match(styles, /\.document-review-preview__canvas\s*\{[^}]*max-width:\s*100%[^}]*min-height:\s*0[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto[^}]*overflow:\s*hidden/)
+  assert.match(styles, /\.document-review-preview__viewport\s*\{[^}]*overflow:\s*auto[^}]*background:\s*transparent/)
   assert.match(styles, /\.document-review-preview__viewport\s*\{[^}]*contain:\s*layout paint[^}]*cursor:\s*grab/)
   assert.match(styles, /\.document-review-preview__viewport\.is-panning\s*\{[^}]*cursor:\s*grabbing/)
+  assert.match(styles, /\.document-review-preview__page\s*\{[^}]*border:\s*0/)
   assert.match(styles, /\.document-review-preview\s*\{[^}]*position:\s*sticky[^}]*top:\s*12px/)
-  assert.match(styles, /\.document-review-magnifier\s*\{[^}]*height:\s*100%/)
+  assert.match(styles, /\.document-review-magnifier\s*\{[^}]*position:\s*relative[^}]*height:\s*100%/)
+  assert.match(styles, /\.document-review-controls\s*\{[^}]*position:\s*static[^}]*flex-direction:\s*column[^}]*flex-wrap:\s*nowrap[^}]*box-shadow:\s*none/)
+  assert.match(styles, /\.document-review-controls button\s*\{[^}]*width:\s*100%/)
   assert.doesNotMatch(client, /function refreshDocumentReviewSticky\(\)/)
   assert.match(client, /function documentSourceOrder\(objects\)/)
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
+
+  let exclusionAction = dom.window.document.querySelector('[data-object-id="workflow-object"] .document-review-segment__action')
+  assert.equal(exclusionAction.textContent, '')
+  assert.equal(exclusionAction.getAttribute('aria-label'), 'Исключить сегмент')
+  assert.equal(exclusionAction.previousElementSibling.classList.contains('document-review-segment__number'), true)
+  const editableReviewContent = exclusionAction.closest('.scene-object__content')
+  editableReviewContent.focus()
+  const exclusionPointerDown = new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true })
+  assert.equal(exclusionAction.dispatchEvent(exclusionPointerDown), false)
+  assert.equal(exclusionPointerDown.defaultPrevented, true)
+  assert.equal(dom.window.document.activeElement, editableReviewContent)
+  exclusionAction.click()
+  assert.equal(dom.window.document.querySelector('#confirmation-modal').hidden, false)
+  assert.equal(scene.objects.find(object => object.id === 'workflow-object').excluded, false)
+  dom.window.document.querySelector('#confirmation-cancel').click()
+  assert.equal(dom.window.document.querySelector('#confirmation-modal').hidden, true)
+  exclusionAction.click()
+  dom.window.document.querySelector('#confirmation-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  let excludedRow = dom.window.document.querySelector('[data-object-id="workflow-object"]')
+  assert.equal(scene.objects.find(object => object.id === 'workflow-object').excluded, true)
+  assert.equal(excludedRow.classList.contains('is-excluded'), true)
+  assert.equal(excludedRow.querySelector('.scene-object__content').contentEditable, 'false')
+  assert.equal(excludedRow.querySelector('.document-review-segment__action').getAttribute('aria-label'), 'Восстановить сегмент')
+  assert.match(excludedRow.querySelector('.document-review-segment__action use').getAttribute('href'), /icon-refresh$/)
+  assert.equal(dom.window.document.querySelector('.document-review-pin[data-review-object-id="workflow-object"]').disabled, true)
+  excludedRow.querySelector('.document-review-segment__action').click()
+  dom.window.document.querySelector('#confirmation-cancel').click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(scene.objects.find(object => object.id === 'workflow-object').excluded, true)
+  dom.window.document.querySelector('[data-object-id="workflow-object"] .document-review-segment__action').click()
+  dom.window.document.querySelector('#confirmation-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(scene.objects.find(object => object.id === 'workflow-object').excluded, false)
+  assert.equal(dom.window.document.querySelector('[data-object-id="workflow-object"] .scene-object__content').contentEditable, 'true')
 
   approve.click()
   assert.equal(studio.dataset.workflowStage, '2')
@@ -1400,6 +1471,60 @@ test('approval advances through isolated document stages and switches the worksp
   dom.window.document.querySelector('#workflow-previous').click()
   assert.equal(studio.dataset.workflowStage, '4')
   assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, true)
+  dom.window.close()
+})
+
+test('segment exclusion applies to the current scene after an editor refresh race', async () => {
+  const id = '9'.repeat(32)
+  const style = { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }
+  const scene = {
+    title: 'Exclusion race', sourceLanguage: 'en', targetLanguage: 'ru', workflowStage: 1,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1000 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'race-target', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText: 'Target', translation: '', confidence: .98,
+      x: 40, y: 60, width: 200, height: 32, rotation: 0, excluded: false,
+      style: { ...style }, sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 60, width: 200, height: 32 },
+    }, {
+      id: 'race-editor', pageIndex: 0, type: 'text', readingOrder: 2,
+      sourceText: 'Editor', translation: '', confidence: .98,
+      x: 40, y: 110, width: 200, height: 32, rotation: 0, excluded: false,
+      style: { ...style }, sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 110, width: 200, height: 32 },
+    }],
+  }
+  let refreshRequests = 0
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    if (value.includes('/knowledge-matches/refresh')) {
+      refreshRequests += 1
+      return { ok: true, json: async () => ({ metadata: { id, revision: 3 }, scene: JSON.parse(JSON.stringify(scene)), matchCount: 0 }) }
+    }
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
+    if (options.method === 'PUT') return { ok: true, json: async () => ({ metadata: { id, revision: 2 } }) }
+    return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
+  }
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  const editor = dom.window.document.querySelector('[data-object-id="race-editor"] .scene-object__content')
+  editor.focus()
+  const action = dom.window.document.querySelector('[data-object-id="race-target"] .document-review-segment__action')
+  action.click()
+  assert.equal(dom.window.document.querySelector('#confirmation-modal').hidden, false)
+  editor.dispatchEvent(new dom.window.FocusEvent('blur'))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(refreshRequests, 1)
+  dom.window.document.querySelector('#confirmation-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(
+    dom.window.document.querySelector('[data-object-id="race-target"] .document-review-segment__action').getAttribute('aria-label'),
+    'Восстановить сегмент',
+  )
   dom.window.close()
 })
 
@@ -2134,7 +2259,6 @@ test('knowledge base manager lists, edits, and deletes stored entries', async ()
     if (pathname.endsWith('/status')) return { ok: true, json: async () => ({ aiProviderConfigured: true, documentAnalysisMode: 'aitunnel' }) }
     return { ok: true, json: async () => ({}) }
   }
-  dom.window.confirm = () => true
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -2151,6 +2275,8 @@ test('knowledge base manager lists, edits, and deletes stored entries', async ()
   assert.equal(JSON.parse(patchRequest.options.body).translation, 'Новая доверенность')
 
   dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
+  assert.equal(dom.window.document.querySelector('#confirmation-modal').hidden, false)
+  dom.window.document.querySelector('#confirmation-submit').click()
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.ok(requests.some(request => request.options.method === 'DELETE'))
   dom.window.close()
@@ -2191,7 +2317,6 @@ test('AI instruction library lists, searches, creates, edits, and deletes preset
     if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
     throw new Error(`Unexpected fetch: ${url}`)
   }
-  dom.window.confirm = () => true
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -2218,6 +2343,8 @@ test('AI instruction library lists, searches, creates, edits, and deletes preset
   assert.equal(dom.window.document.querySelectorAll('.instruction-library-entry').length, 1)
   assert.match(dom.window.document.querySelector('.instruction-library-entry p').textContent, /номера/)
   dom.window.document.querySelector('.instruction-library-entry__actions .button--danger').click()
+  assert.equal(dom.window.document.querySelector('#confirmation-modal').hidden, false)
+  dom.window.document.querySelector('#confirmation-submit').click()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(dom.window.document.querySelectorAll('.instruction-library-entry').length, 0)
   assert.ok(requests.some(request => request.method === 'DELETE' && request.value.endsWith('/preset-2')))
@@ -2293,7 +2420,6 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
     if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: true, translationModel: 'test', documentAnalysisMode: 'aitunnel', aiProviderConfigured: true }) }
     return { ok: true, json: async () => ({ metadata: { id, revision: 1 }, scene }) }
   }
-  dom.window.confirm = () => true
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
   dom.window.eval(client)
@@ -2354,6 +2480,8 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   dom.window.document.querySelector('#knowledge-base-open-button').click()
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('.knowledge-base-entry__actions .button--danger').click()
+  assert.equal(dom.window.document.querySelector('#confirmation-modal').hidden, false)
+  dom.window.document.querySelector('#confirmation-submit').click()
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.equal(dom.window.document.querySelector('.scene-object__knowledge-icon'), null)
   assert.equal(dom.window.document.querySelector('.knowledge-highlight'), null)

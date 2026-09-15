@@ -1,4 +1,5 @@
 :root {
+  --app-gutter: 12px;
   --base-scrollbar-thumb: #98a2b3;
   --base-scrollbar-thumb-hover: #667085;
   --base-scrollbar-radius: 6px;

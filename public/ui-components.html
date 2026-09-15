@@ -33,6 +33,48 @@
       <div class="components-list">
         <details class="component-section" open>
           <summary class="component-section__summary">
+            <span>Контейнер приложения</span>
+            <code>AppContainer</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Базовая оболочка контента с единым горизонтальным отступом <code>var(--app-gutter, 12px)</code>. Токен одинаков на всех страницах и не меняется на адаптивных разрешениях.</p>
+            </div>
+            <div class="component-container-demo">
+              <div class="app-container">
+                <div class="component-container-demo__content">Область контента внутри общего gutter</div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section" open>
+          <summary class="component-section__summary">
+            <span>Подтверждение действия</span>
+            <code>ConfirmationDialog</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Единое модальное подтверждение для действий с последствиями. Опасный вариант использует предупреждающую заметку и красную подтверждающую кнопку.</p>
+            </div>
+            <section class="settings-dialog confirmation-dialog component-confirmation-demo" aria-label="Пример подтверждения действия">
+              <div class="settings-dialog__header">
+                <div><p class="eyebrow">Опасное действие</p><h2>Подтвердите действие</h2></div>
+                <button class="icon-button icon-button--danger" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+              </div>
+              <p class="note note--danger note--roomy confirmation-dialog__message">Опишите пользователю последствия действия до его выполнения.</p>
+              <div class="settings-dialog__actions">
+                <button class="button" type="button">Отмена</button>
+                <button class="button button--danger button--danger-filled" type="button">Подтвердить</button>
+              </div>
+            </section>
+          </div>
+        </details>
+
+        <details class="component-section" open>
+          <summary class="component-section__summary">
             <span>Просмотр оригинала</span>
             <code>SourcePreviewControls</code>
           </summary>

@@ -44,7 +44,7 @@ button {
   position: relative;
   z-index: 20;
   height: 72px;
-  padding: 0 24px;
+  padding: 0 var(--app-gutter, 12px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -141,7 +141,7 @@ button {
 .inspector {
   position: relative;
   z-index: 10;
-  padding: 26px 22px;
+  padding: 26px var(--app-gutter, 12px);
   overflow-y: auto;
   border-right: 1px solid var(--line);
   background: var(--panel);
@@ -966,7 +966,7 @@ button {
 @media (max-width: 860px) {
   .topbar {
     height: auto;
-    padding: 14px;
+    padding: var(--app-gutter, 12px);
     align-items: flex-start;
     flex-direction: column;
   }

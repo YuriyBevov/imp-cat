@@ -76,6 +76,9 @@
     selectionBox: $('#selection-box'), toast: $('#toast'),
     reanalyzeConfirmModal: $('#reanalyze-confirm-modal'), reanalyzeConfirmClose: $('#reanalyze-confirm-close'),
     reanalyzeConfirmCancel: $('#reanalyze-confirm-cancel'), reanalyzeConfirmSubmit: $('#reanalyze-confirm-submit'),
+    confirmationModal: $('#confirmation-modal'), confirmationEyebrow: $('#confirmation-eyebrow'), confirmationTitle: $('#confirmation-title'),
+    confirmationDescription: $('#confirmation-description'), confirmationClose: $('#confirmation-close'),
+    confirmationCancel: $('#confirmation-cancel'), confirmationSubmit: $('#confirmation-submit'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
     aitunnelApiKey: $('#aitunnel-api-key'), aitunnelPersistKey: $('#aitunnel-persist-key'), aitunnelModelNote: $('#aitunnel-model-note'), aiProviderStatus: $('#ai-provider-status'),
@@ -123,6 +126,7 @@
     activeKnowledgeSuggestion: null,
     instructionPresets: [],
     sceneEditRevision: 0,
+    confirmationRequest: null,
   }
 
   function createInspectorPanel(id, key, title, nodes, requiresSelection = false) {
@@ -287,6 +291,38 @@
     elements.toast.classList.toggle('is-error', isError)
     elements.toast.classList.add('is-visible')
     state.toastTimer = setTimeout(() => elements.toast.classList.remove('is-visible'), 4200)
+  }
+
+  function closeConfirmationModal(confirmed = false) {
+    if (elements.confirmationModal.hidden) return
+    elements.confirmationModal.hidden = true
+    const request = state.confirmationRequest
+    state.confirmationRequest = null
+    request?.resolve(Boolean(confirmed))
+    request?.restoreFocus?.focus?.({ preventScroll: true })
+  }
+
+  function requestConfirmation({
+    title = 'Подтвердите действие',
+    message = '',
+    confirmLabel = 'Подтвердить',
+    eyebrow = 'Подтверждение',
+    danger = false,
+  } = {}) {
+    if (state.confirmationRequest) closeConfirmationModal(false)
+    elements.confirmationEyebrow.textContent = eyebrow
+    elements.confirmationTitle.textContent = title
+    elements.confirmationDescription.textContent = message
+    setNoteVariant(elements.confirmationDescription, danger ? 'danger' : 'warning')
+    elements.confirmationSubmit.textContent = confirmLabel
+    elements.confirmationSubmit.className = danger
+      ? 'button button--danger button--danger-filled'
+      : 'button button--primary'
+    elements.confirmationModal.hidden = false
+    return new Promise(resolve => {
+      state.confirmationRequest = { resolve, restoreFocus: document.activeElement }
+      requestAnimationFrame(() => elements.confirmationCancel.focus())
+    })
   }
 
   function setNoteVariant(element, variant) {
@@ -844,7 +880,13 @@
 
   async function deleteLibraryDocument(metadata) {
     const title = metadata.title || metadata.filename || 'Документ'
-    if (!window.confirm(`Удалить «${title}» без возможности восстановления?`)) return
+    if (!await requestConfirmation({
+      title: 'Удалить документ?',
+      message: `Документ «${title}» будет удалён без возможности восстановления.`,
+      confirmLabel: 'Удалить документ',
+      eyebrow: 'Опасное действие',
+      danger: true,
+    })) return
     if (state.metadata?.id === metadata.id) {
       clearTimeout(state.saveTimer)
       state.saveTimer = null
@@ -1049,7 +1091,7 @@
     if (state.workflowStage === 1) {
       let documentReviewIndex = 0
       for (const page of renderedPages) {
-        const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
+        const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index)
         for (const object of documentSourceOrder(pageObjects)) {
           documentReviewIndexes.set(object.id, documentReviewIndex)
           documentReviewIndex += 1
@@ -1071,14 +1113,19 @@
         surface.addEventListener('pointerdown', beginMarquee)
       }
 
-      const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index && !item.excluded)
+      const pageObjects = state.scene.objects.filter(item => (
+        item.pageIndex === page.index && (state.workflowStage === 1 || !item.excluded)
+      ))
       if (segmentsView) {
         const heading = document.createElement('div')
         heading.className = 'segments-page-heading'
         const title = document.createElement('span')
         title.textContent = `Страница ${page.index + 1}`
         const count = document.createElement('small')
-        count.textContent = `${pageObjects.length} сегм.`
+        const excludedCount = pageObjects.filter(object => object.excluded).length
+        count.textContent = excludedCount
+          ? `${pageObjects.length - excludedCount} активн. · ${excludedCount} исключ.`
+          : `${pageObjects.length} сегм.`
         heading.append(title, count)
         const columnHeadings = state.workflowStage === 3 ? document.createElement('div') : null
         if (columnHeadings) {
@@ -1106,8 +1153,9 @@
           const row = document.createElement('article')
           row.className = 'segment-translation-row'
           row.dataset.objectId = object.id
+          const documentReviewIndex = documentReviewIndexes.get(object.id) ?? reviewIndex
           if (state.workflowStage === 1) {
-            decorateDocumentReviewSegment(row, object, documentReviewIndexes.get(object.id) ?? reviewIndex)
+            decorateDocumentReviewSegment(row, object, documentReviewIndex)
           }
           row.append(createSegmentRowMeta(object))
           if (state.workflowStage === 3) {
@@ -1140,7 +1188,11 @@
             row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
             const workspace = createSegmentWorkspace(object)
             if (workspace) row.append(workspace)
-          } else row.append(createObjectElement(object, 'sourceText'))
+          } else {
+            row.append(createObjectElement(object, 'sourceText', {
+              documentReviewIndex: state.workflowStage === 1 ? documentReviewIndex : null,
+            }))
+          }
           list.append(row)
         }
         if (state.workflowStage === 1) {
@@ -1251,16 +1303,73 @@
   }
 
   function decorateDocumentReviewSegment(row, object, index) {
-    const number = index + 1
     row.classList.add('document-review-segment')
+    row.classList.toggle('is-excluded', object.excluded)
     row.dataset.reviewObjectId = object.id
     row.style.setProperty('--segment-review-color', documentReviewColor(index))
-    const marker = document.createElement('span')
-    marker.className = 'document-review-segment__number'
-    marker.textContent = String(number)
-    marker.setAttribute('aria-label', `Сегмент ${number}`)
-    row.append(marker)
-    bindDocumentReviewPair(row, object.id)
+    if (!object.excluded) bindDocumentReviewPair(row, object.id)
+  }
+
+  function createDocumentReviewExclusionAction(object, index) {
+    const objectId = object.id
+    const restore = Boolean(object.excluded)
+    const number = index + 1
+    const action = document.createElement('button')
+    action.className = `icon-button icon-button--small document-review-segment__action ${restore ? 'icon-button--accent' : 'icon-button--danger'}`
+    action.type = 'button'
+    action.innerHTML = iconMarkup(restore ? 'refresh' : 'trash')
+    action.title = restore ? 'Восстановить сегмент' : 'Исключить сегмент'
+    action.setAttribute('aria-label', action.title)
+    action.addEventListener('pointerdown', event => {
+      // Keep focus in the editor until click is delivered. Otherwise the blur
+      // renderer replaces this button between pointerdown and click.
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    action.addEventListener('click', async event => {
+      event.preventDefault()
+      event.stopPropagation()
+      const confirmed = await requestConfirmation(restore ? {
+        title: `Восстановить сегмент ${number}?`,
+        message: 'Сегмент снова станет редактируемым и вернётся в дальнейшую работу с документом.',
+        confirmLabel: 'Восстановить',
+      } : {
+        title: `Исключить сегмент ${number}?`,
+        message: 'Сегмент останется в документе, но станет неактивным и не попадёт в перевод или экспорт.',
+        confirmLabel: 'Исключить',
+        eyebrow: 'Изменение документа',
+        danger: true,
+      })
+      if (!confirmed) return
+      const currentObject = state.scene?.objects.find(item => item.id === objectId)
+      if (!currentObject) {
+        showToast('Сегмент больше не найден в документе', true)
+        return
+      }
+      checkpoint()
+      currentObject.excluded = !restore
+      state.selected.delete(objectId)
+      state.translationSelected.delete(objectId)
+      renderDocument()
+      scheduleSave()
+      showToast(restore ? `Сегмент ${number} восстановлен` : `Сегмент ${number} исключён из работы`)
+    })
+    return action
+  }
+
+  function documentReviewSourceFrame(page) {
+    const frame = page?.sourceFrame
+    const width = Number(frame?.width)
+    const height = Number(frame?.height)
+    if (width > 0 && height > 0) {
+      return {
+        x: Number(frame.x) || 0,
+        y: Number(frame.y) || 0,
+        width,
+        height,
+      }
+    }
+    return { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
   }
 
   function applyDocumentReviewZoom(preview, page, nextZoom, options = {}) {
@@ -1274,7 +1383,8 @@
       : null
     preview.dataset.reviewZoom = String(next)
     preview.dataset.reviewZoomMode = options.mode || 'manual'
-    pageNode.style.width = `${page.widthPx * next}px`
+    const sourceFrame = documentReviewSourceFrame(page)
+    pageNode.style.width = `${sourceFrame.width * next}px`
     const output = preview.querySelector('.document-review-controls output')
     if (output) output.value = `${Math.round(next * 100)}%`
     restoreZoomAnchor(viewport, anchor, next)
@@ -1283,8 +1393,9 @@
   function fitDocumentReviewPreview(preview, page) {
     const viewport = preview.querySelector('.document-review-preview__viewport')
     if (!viewport?.clientWidth || !viewport.clientHeight) return
-    const horizontal = (viewport.clientWidth - 2) / page.widthPx
-    const vertical = (viewport.clientHeight - 2) / page.heightPx
+    const sourceFrame = documentReviewSourceFrame(page)
+    const horizontal = (viewport.clientWidth - 2) / sourceFrame.width
+    const vertical = (viewport.clientHeight - 2) / sourceFrame.height
     applyDocumentReviewZoom(preview, page, Math.min(horizontal, vertical), { mode: 'fit' })
   }
 
@@ -1377,8 +1488,9 @@
     viewport.className = 'document-review-preview__viewport'
     const pageNode = document.createElement('div')
     pageNode.className = 'document-review-preview__page'
-    pageNode.style.aspectRatio = `${page.widthPx} / ${page.heightPx}`
-    pageNode.style.setProperty('--review-page-ratio', String(page.widthPx / page.heightPx))
+    const sourceFrame = documentReviewSourceFrame(page)
+    pageNode.style.aspectRatio = `${sourceFrame.width} / ${sourceFrame.height}`
+    pageNode.style.setProperty('--review-page-ratio', String(sourceFrame.width / sourceFrame.height))
     let magnifier = null
     let magnifierScene = null
     if (page.imageUrl) {
@@ -1386,12 +1498,11 @@
       image.src = page.imageUrl
       image.alt = `Оригинал страницы ${page.index + 1}`
       image.draggable = false
-      const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
       Object.assign(image.style, {
-        left: `${sourceFrame.x / page.widthPx * 100}%`,
-        top: `${sourceFrame.y / page.heightPx * 100}%`,
-        width: `${sourceFrame.width / page.widthPx * 100}%`,
-        height: `${sourceFrame.height / page.heightPx * 100}%`,
+        left: '0%',
+        top: '0%',
+        width: '100%',
+        height: '100%',
       })
       pageNode.append(image)
       magnifier = document.createElement('div')
@@ -1415,6 +1526,8 @@
       const pin = document.createElement('button')
       pin.className = 'document-review-pin'
       pin.type = 'button'
+      pin.disabled = Boolean(object.excluded)
+      pin.classList.toggle('is-excluded', object.excluded)
       pin.dataset.reviewObjectId = object.id
       pin.style.setProperty('--segment-review-color', documentReviewColor(index))
       const sourceRegions = Array.isArray(object.sourceRegions) ? object.sourceRegions.filter(region => (
@@ -1429,7 +1542,6 @@
         const top = Math.min(...sourceRegions.map(region => Number(region.y)))
         const right = Math.max(...sourceRegions.map(region => Number(region.x) + Number(region.width)))
         const bottom = Math.max(...sourceRegions.map(region => Number(region.y) + Number(region.height)))
-        const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
         anchorX = Number(sourceFrame.x) + ((left + right) / 2) * Number(sourceFrame.width)
         anchorY = Number(sourceFrame.y) + ((top + bottom) / 2) * Number(sourceFrame.height)
       } else {
@@ -1438,13 +1550,13 @@
         anchorY = Number(bounds.y) + Number(bounds.height) / 2
       }
       Object.assign(pin.style, {
-        left: `${Math.max(0, Math.min(page.widthPx, anchorX)) / page.widthPx * 100}%`,
-        top: `${Math.max(0, Math.min(page.heightPx, anchorY)) / page.heightPx * 100}%`,
+        left: `${Math.max(0, Math.min(1, (anchorX - sourceFrame.x) / sourceFrame.width)) * 100}%`,
+        top: `${Math.max(0, Math.min(1, (anchorY - sourceFrame.y) / sourceFrame.height)) * 100}%`,
       })
       pin.innerHTML = `${iconMarkup('map-pin')}<span>${index + 1}</span>`
       pin.title = `Сегмент ${index + 1}`
       pin.setAttribute('aria-label', `Перейти к сегменту ${index + 1}`)
-      bindDocumentReviewPair(pin, object.id)
+      if (!object.excluded) bindDocumentReviewPair(pin, object.id)
       pin.addEventListener('click', () => {
         const row = elements.canvas.querySelector(`.document-review-segment[data-object-id="${CSS.escape(object.id)}"]`)
         row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -2213,7 +2325,13 @@
     const before = range.cloneRange()
     before.selectNodeContents(content)
     before.setEnd(range.startContainer, range.startOffset)
-    return { objectId, field, start: before.toString().length, end: before.toString().length + range.toString().length }
+    const textLength = sourceRange => {
+      const fragment = sourceRange.cloneContents()
+      for (const node of fragment.querySelectorAll?.('[data-editor-chrome]') || []) node.remove()
+      return String(fragment.textContent || '').length
+    }
+    const start = textLength(before)
+    return { objectId, field, start, end: start + textLength(range) }
   }
 
   function rememberTextSelection(content, objectId) {
@@ -2228,6 +2346,7 @@
     const ranges = []
     let cursor = 0
     const visit = node => {
+      if (node.nodeType === Node.ELEMENT_NODE && node.matches?.('[data-editor-chrome]')) return
       if (node.nodeType === Node.TEXT_NODE) {
         const length = node.nodeValue?.length || 0
         const parent = node.parentElement?.closest?.('[data-text-style]')
@@ -2249,6 +2368,12 @@
     return cursor === expectedText.length
       ? ranges.filter(range => range.end > range.start && Object.keys(range).length > 2)
       : []
+  }
+
+  function editableContentText(content) {
+    const clone = content.cloneNode(true)
+    for (const node of clone.querySelectorAll('[data-editor-chrome]')) node.remove()
+    return String(clone.innerText ?? clone.textContent).replace(/\n{3,}/g, '\n\n')
   }
 
   function populateInstructionPresetSelect(select) {
@@ -2389,7 +2514,13 @@
 
   async function deleteInstructionPreset(preset) {
     const label = preset?.instruction.length > 80 ? `${preset.instruction.slice(0, 77)}…` : preset?.instruction
-    if (!preset || !confirm(`Удалить сохраненную инструкцию «${label}»?`)) return
+    if (!preset || !await requestConfirmation({
+      title: 'Удалить сохраненную инструкцию?',
+      message: `Инструкция «${label}» будет удалена из списка инструкций.`,
+      confirmLabel: 'Удалить инструкцию',
+      eyebrow: 'Опасное действие',
+      danger: true,
+    })) return
     try {
       await api(`/api/studio/translation-instructions/${encodeURIComponent(preset.id)}`, { method: 'DELETE' })
       state.instructionPresets = state.instructionPresets.filter(item => item.id !== preset.id)
@@ -2591,16 +2722,31 @@
       .trim()
   }
 
-  function appendRecognitionBadges(content, object) {
+  function appendRecognitionBadges(content, object, documentReviewIndex = null) {
     const badges = document.createElement('div')
     badges.className = 'segment-content-badges'
+    badges.contentEditable = 'false'
+    badges.dataset.editorChrome = 'true'
+    badges.setAttribute('aria-label', 'Параметры распознавания сегмента')
     const type = document.createElement('span')
     type.className = 'segment-content-badge segment-content-badge--type'
     type.textContent = typeLabel(object.type)
     const confidence = document.createElement('span')
     confidence.className = 'segment-content-badge segment-content-badge--confidence'
     confidence.textContent = `Уверенность ${Math.round(object.confidence * 100)}%`
-    badges.append(type, confidence)
+    const status = document.createElement('span')
+    status.className = 'segment-content-badges__status'
+    status.append(confidence)
+    if (Number.isInteger(documentReviewIndex)) {
+      const number = documentReviewIndex + 1
+      const marker = document.createElement('span')
+      marker.className = 'document-review-segment__number'
+      marker.textContent = String(number)
+      marker.setAttribute('aria-label', `Сегмент ${number}`)
+      status.append(marker)
+      if (state.workflowStage === 1) status.append(createDocumentReviewExclusionAction(object, documentReviewIndex))
+    }
+    badges.append(type, status)
     content.prepend(badges)
   }
 
@@ -2649,11 +2795,12 @@
     if (workspace) elements.inspectorSegmentWorkspace.append(workspace)
   }
 
-  function createObjectElement(object, requestedField = null) {
+  function createObjectElement(object, requestedField = null, options = {}) {
     const displayField = requestedField || objectOutputField(object)
     const editField = requestedField || 'translation'
     const node = document.createElement('article')
     node.className = 'scene-object'
+    node.classList.toggle('is-excluded', object.excluded)
     node.classList.toggle('is-geometry-locked', state.workflowStage !== 4)
     if (requestedField) node.classList.add(`scene-object--${requestedField === 'sourceText' ? 'source' : 'translation'}`)
     if (editField === 'translation' && !object.translation && isTranslatableType(object.type)) node.classList.add('is-untranslated')
@@ -2671,7 +2818,7 @@
     node.style.textAlign = object.style.textAlign
     node.style.color = object.style.color
     node.style.zIndex = object.readingOrder
-    if (state.workflowStage !== 2) node.addEventListener('pointerdown', event => selectFromPointer(event, object.id))
+    if (state.workflowStage !== 2 && !object.excluded) node.addEventListener('pointerdown', event => selectFromPointer(event, object.id))
 
     const badge = document.createElement('span')
     badge.className = 'scene-object__badge'
@@ -2699,14 +2846,16 @@
     if (state.workflowStage === 4) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
-    const canEditText = state.workflowStage === 1 || state.workflowStage === 3
+    const canEditText = (state.workflowStage === 1 || state.workflowStage === 3) && !object.excluded
     content.tabIndex = canEditText ? 0 : -1
     content.contentEditable = String(canEditText)
     content.classList.toggle('is-readonly', !canEditText)
     content.spellcheck = true
     content.dataset.editField = editField
     renderTextContent(content, object, displayField, state.workflowStage > 2)
-    if (state.workflowStage <= 2 && requestedField === 'sourceText') appendRecognitionBadges(content, object)
+    if (state.workflowStage <= 2 && requestedField === 'sourceText') {
+      appendRecognitionBadges(content, object, options.documentReviewIndex)
+    }
     if (canEditText) content.addEventListener('focus', () => {
       if (!state.selected.has(object.id)) selectOnly(object.id)
       else if (primarySelectedObject()?.id !== object.id) {
@@ -2723,13 +2872,16 @@
     if (canEditText) content.addEventListener('blur', () => {
       state.textCheckpoint = false
       renderTextContent(content, object, displayField)
+      if (state.workflowStage <= 2 && requestedField === 'sourceText') {
+        appendRecognitionBadges(content, object, options.documentReviewIndex)
+      }
       setObjectsKnowledgeEditing([object], false)
       refreshKnowledgeBaseAfterSegmentEdit()
     })
     if (canEditText) content.addEventListener('input', () => {
       setObjectsKnowledgeEditing([object], true)
       state.sceneEditRevision += 1
-      object[editField] = String(content.innerText ?? content.textContent).replace(/\n{3,}/g, '\n\n')
+      object[editField] = editableContentText(content)
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
       object[stylesField] = extractInlineStyles(content, object[editField])
       if (editField === 'sourceText') {
@@ -5431,6 +5583,12 @@
     elements.reanalyzeConfirmModal.addEventListener('pointerdown', event => {
       if (event.target === elements.reanalyzeConfirmModal) closeReanalyzeConfirmation()
     })
+    elements.confirmationClose.addEventListener('click', () => closeConfirmationModal(false))
+    elements.confirmationCancel.addEventListener('click', () => closeConfirmationModal(false))
+    elements.confirmationSubmit.addEventListener('click', () => closeConfirmationModal(true))
+    elements.confirmationModal.addEventListener('pointerdown', event => {
+      if (event.target === elements.confirmationModal) closeConfirmationModal(false)
+    })
     elements.autoLayout.addEventListener('click', () => {
       checkpoint()
       runAgent('auto-layout', 'Расширяем текстовые блоки и устраняем наложения…', 'Расположение сегментов обновлено')
@@ -5559,6 +5717,10 @@
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        if (!elements.confirmationModal.hidden) {
+          closeConfirmationModal(false)
+          return
+        }
         if (!elements.reanalyzeConfirmModal.hidden) {
           closeReanalyzeConfirmation()
           return
@@ -5853,7 +6015,13 @@
   }
 
   async function deleteKnowledgeBaseEntry(entry) {
-    if (!window.confirm(`Удалить пару «${entry.sourceText.slice(0, 80)}»? Подсветка и ссылки на эту запись исчезнут из документов, но текст уже применённых переводов сохранится.`)) return
+    if (!await requestConfirmation({
+      title: 'Удалить запись из Базы знаний?',
+      message: `Пара «${entry.sourceText.slice(0, 80)}» будет удалена. Подсветка и ссылки на эту запись исчезнут из документов, но текст уже применённых переводов сохранится.`,
+      confirmLabel: 'Удалить запись',
+      eyebrow: 'Опасное действие',
+      danger: true,
+    })) return
     try {
       if (state.scene && state.metadata) await saveScene(true)
       await api(`/api/studio/knowledge-base/entries/${encodeURIComponent(entry.id)}`, { method: 'DELETE' })
