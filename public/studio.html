@@ -30,6 +30,7 @@
             <button id="knowledge-base-open-button" class="button" type="button" role="menuitem">База знаний</button>
             <button id="instruction-library-button" class="button" type="button" role="menuitem">AI-инструкции</button>
             <button id="ai-settings-button" class="button" type="button" role="menuitem">AI-провайдер</button>
+            <button id="administration-button" class="button" type="button" role="menuitem">Администрирование</button>
             <button id="undo-button" class="button button--with-icon" type="button" title="Отменить (Cmd/Ctrl+Z)" role="menuitem" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-undo"></use></svg><span>Отменить</span></button>
             <button id="redo-button" class="button button--with-icon" type="button" title="Повторить" role="menuitem" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-redo"></use></svg><span>Повторить</span></button>
             <button id="new-document-button" class="button" type="button" role="menuitem" hidden>Другой документ</button>
@@ -360,6 +361,15 @@
               </div>
             </div>
           </div>
+          <section class="translation-instruction-card segment-batch-ai-card inspector-scope--segments" aria-labelledby="segment-batch-ai-title">
+            <strong id="segment-batch-ai-title">Чат с AI по сегментам</strong>
+            <div id="segment-batch-ai-messages" class="ai-chat__messages" role="log" aria-live="polite"></div>
+            <div class="ai-chat__composer">
+              <label class="visually-hidden" for="segment-batch-ai-instruction">Сообщение для AI</label>
+              <textarea id="segment-batch-ai-instruction" rows="3" maxlength="10000" placeholder="Напишите, что нужно изменить, или ответьте на вопрос агента"></textarea>
+              <button id="segment-batch-ai-apply" class="button button--primary" type="button" disabled>Отправить</button>
+            </div>
+          </section>
           <div class="memory-card inspector-scope--segments">
             <div><strong>Векторная база знаний</strong><span class="memory-card__actions"><button id="memory-search-button" type="button">Найти похожие</button><button id="knowledge-base-open-context-button" type="button">Открыть БЗ</button></span></div>
             <div class="memory-card__glossary">
@@ -438,9 +448,11 @@
           <h2 id="translation-approval-title">Отправить документ на перевод?</h2>
           <button id="translation-approval-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
         </div>
+        <div id="translation-approval-status" class="note note--info translation-approval-status" role="status" hidden>Документ уже переведён. Можно запустить новый перевод или продолжить работу с текущим переводом.</div>
         <div id="translation-approval-content" class="translation-approval-dialog__content"></div>
         <div class="settings-dialog__actions">
           <button id="translation-approval-cancel" class="button" type="button">Отмена</button>
+          <button id="translation-approval-continue" class="button" type="button" hidden>Продолжить с текущим переводом</button>
           <button id="translation-approval-submit" class="button button--primary" type="button">Отправить на перевод</button>
         </div>
       </section>
@@ -523,6 +535,24 @@
           </div>
         </form>
         <div id="instruction-library-list" class="instruction-library-list"><small>Загружаем инструкции…</small></div>
+      </section>
+    </div>
+    <div id="administration-modal" class="modal-backdrop" hidden>
+      <section class="settings-dialog administration-dialog" role="dialog" aria-modal="true" aria-labelledby="administration-title">
+        <div class="settings-dialog__header">
+          <div><p class="eyebrow">Настройки приложения</p><h2 id="administration-title">Администрирование</h2></div>
+          <button id="administration-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+        </div>
+        <p class="settings-dialog__intro">Системный промпт определяет правила массового и посегментного чата с AI. Изменение применяется к следующим сообщениям во всех документах.</p>
+        <label for="chat-agent-system-prompt">Промпт чат-агента
+          <textarea id="chat-agent-system-prompt" rows="12" maxlength="20000"></textarea>
+        </label>
+        <p id="administration-status" class="note note--info note--compact">Загружаем текущий промпт…</p>
+        <div class="settings-dialog__actions">
+          <button id="administration-reset" class="button" type="button">Вернуть базовый промпт</button>
+          <button id="administration-cancel" class="button" type="button">Отмена</button>
+          <button id="administration-save" class="button button--primary" type="button">Сохранить</button>
+        </div>
       </section>
     </div>
     <div id="ai-settings-modal" class="modal-backdrop" hidden>

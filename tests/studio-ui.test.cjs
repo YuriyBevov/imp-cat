@@ -33,8 +33,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'source-text', 'translation-text', 'object-type', 'segment-note', 'reanalyze-button', 'translate-button', 'loading-hint',
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
     'confirmation-modal', 'confirmation-title', 'confirmation-description', 'confirmation-close', 'confirmation-cancel', 'confirmation-submit',
-    'translation-approval-modal', 'translation-approval-title', 'translation-approval-content',
-    'translation-approval-close', 'translation-approval-cancel', 'translation-approval-submit',
+    'translation-approval-modal', 'translation-approval-title', 'translation-approval-content', 'translation-approval-status',
+    'translation-approval-close', 'translation-approval-cancel', 'translation-approval-continue', 'translation-approval-submit',
     'translation-global-instruction',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
@@ -60,6 +60,8 @@ test('studio exposes the complete source-to-export workflow', () => {
     'document-tabs', 'document-library-button', 'document-library-modal', 'document-library-list',
     'ai-settings-button', 'ai-provider-select', 'aitunnel-api-key', 'retry-job-button', 'cancel-job-button', 'loading-progress-details',
     'aitunnel-model', 'aitunnel-persist-key', 'test-ai-connection',
+    'administration-button', 'administration-modal', 'administration-close', 'administration-cancel',
+    'administration-reset', 'administration-save', 'chat-agent-system-prompt', 'administration-status',
   ]) assert.match(html, new RegExp(`id="${id}"`))
   const studioDocument = new JSDOM(html).window.document
   assert.equal(studioDocument.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
@@ -91,7 +93,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.equal(translationInstructionCard.nextElementSibling.querySelector('button').id, 'translate-button')
   assert.equal(studioDocument.querySelector('#translate-button').textContent, 'Перевести документ')
   assert.ok(studioDocument.querySelector('#translate-button').classList.contains('button--primary'))
-  const instructionIconButtons = [...studioDocument.querySelectorAll('.translation-instruction-card button')]
+  const instructionIconButtons = [...translationInstructionCard.querySelectorAll('button')]
   assert.equal(instructionIconButtons.length, 6)
   assert.ok(instructionIconButtons.every(button => button.classList.contains('icon-button') && !button.textContent.trim() && button.getAttribute('aria-label')))
   assert.deepEqual(
@@ -189,7 +191,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /pageSurfaceAtPoint/)
   assert.match(client, /function undo/)
   assert.match(client, /function redo/)
-  assert.match(client, /async function saveScene[\s\S]*?synchronizeReadingOrder\(\)/)
+  assert.match(client, /async function saveScene[\s\S]*?synchronizeReadingOrder\(scene\)/)
   assert.match(client, /queueWheelZoom/)
   assert.match(client, /snapObjectGroups/)
   assert.match(client, /alignSelection/)
@@ -215,7 +217,8 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(client, /setDocumentArchived/)
   assert.match(client, /deleteLibraryDocument/)
   assert.match(client, /segment-translation-workspace/)
-  assert.match(styles, /segment-ai-instruction/)
+  assert.match(styles, /\.ai-chat__message--assistant/)
+  assert.match(styles, /\.ai-chat__message--user/)
   assert.doesNotMatch(html, />Flex-раскладка</)
   assert.match(client, /exportDocument\('docx'\)/)
   assert.match(client, /exportDocument\('pdf'\)/)
@@ -537,6 +540,12 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
     assert.match(uiComponentsHtml, new RegExp(`class="note note--${variant}`))
   }
   assert.match(uiComponentsHtml, /<code>Note<\/code>/)
+  assert.match(uiComponentsHtml, /<code>AiChat<\/code>/)
+  assert.match(uiComponentsHtml, /ai-chat__message--assistant/)
+  assert.match(uiComponentsHtml, /ai-chat__message--user/)
+  assert.equal(dom.window.document.querySelector('.chat-agent-settings-stub'), null)
+  assert.equal(dom.window.document.querySelector('#administration-title').textContent, 'Администрирование')
+  assert.equal(dom.window.document.querySelector('#segment-batch-ai-hint'), null)
   assert.match(uiComponentsHtml, /<code>TranslationApprovalDialog<\/code>/)
   assert.match(uiKit, /\.note--compact\s*\{/)
   assert.match(uiKit, /\.note--roomy\s*\{/)
@@ -794,6 +803,53 @@ test('AI settings load the live AITunnel catalog and disable text-only models', 
   dom.window.close()
 })
 
+test('administration edits the persistent chat-agent prompt', async () => {
+  const defaultPrompt = 'Базовый промпт чат-агента.'
+  let storedPrompt = defaultPrompt
+  const updates = []
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://127.0.0.1:3100/',
+  })
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    if (value.endsWith('/administration')) {
+      if (options.method === 'PUT') {
+        const body = JSON.parse(options.body)
+        updates.push(body)
+        storedPrompt = body.chatAgentPrompt
+      }
+      return { ok: true, json: async () => ({
+        chatAgentPrompt: storedPrompt, defaultChatAgentPrompt: defaultPrompt, updatedAt: updates.length ? new Date().toISOString() : null,
+      }) }
+    }
+    if (value.endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
+    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [] }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    return { ok: true, json: async () => ({ jobs: [] }) }
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 20))
+
+  dom.window.document.querySelector('#administration-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  const modal = dom.window.document.querySelector('#administration-modal')
+  const input = dom.window.document.querySelector('#chat-agent-system-prompt')
+  assert.equal(modal.hidden, false)
+  assert.equal(input.value, defaultPrompt)
+  input.value = 'Пользовательский промпт.'
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  dom.window.document.querySelector('#administration-save').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.deepEqual(updates, [{ chatAgentPrompt: 'Пользовательский промпт.' }])
+  assert.match(dom.window.document.querySelector('#administration-status').textContent, /сохранён/)
+  dom.window.document.querySelector('#administration-reset').click()
+  assert.equal(input.value, defaultPrompt)
+  dom.window.document.querySelector('#administration-close').click()
+  assert.equal(modal.hidden, true)
+  dom.window.close()
+})
+
 test('failed document jobs stop polling and show a terminal error state', async () => {
   const jobId = '3'.repeat(32)
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
@@ -932,11 +988,11 @@ test('multiple dropped files create independent asynchronous document tabs', asy
       json: async () => ({ codexAvailable: true, codexAuthenticated: true, documentAnalysisMode: 'codex', translationProviderConfigured: false }),
     }
     if (String(url).endsWith('/jobs') && options.method === 'POST') {
-      created += 1
-      const id = String(created).repeat(32)
+      const current = ++created
+      const id = String(current).repeat(32)
       return {
         ok: true,
-        json: async () => ({ job: { id, documentId: String(created + 4).repeat(32), title: `file-${created}.png`, status: 'queued', progress: 0, message: 'Ожидает обработки' } }),
+        json: async () => ({ job: { id, documentId: String(current + 4).repeat(32), title: `file-${current}.png`, status: 'queued', progress: 0, message: `Ожидает file-${current}` } }),
       }
     }
     throw new Error(`Unexpected fetch: ${url}`)
@@ -958,6 +1014,94 @@ test('multiple dropped files create independent asynchronous document tabs', asy
   assert.equal(dom.window.document.querySelector('#document-tabs').hidden, false)
   assert.equal(dom.window.document.body.classList.contains('has-document-tabs'), true)
   assert.equal(dom.window.document.querySelector('#loading-view').hidden, false)
+  const tabs = [...dom.window.document.querySelectorAll('.document-tab')]
+  tabs[1].click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(dom.window.document.querySelector('#loading-message').textContent, 'Ожидает file-2')
+  ;[...dom.window.document.querySelectorAll('.document-tab')].find(tab => tab.textContent.includes('file-1.png')).click()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(dom.window.document.querySelector('#loading-message').textContent, 'Ожидает file-1')
+  dom.window.close()
+})
+
+test('switching tabs preserves an in-progress translation and restores its finished document', async () => {
+  const firstId = 'a'.repeat(32)
+  const secondId = 'b'.repeat(32)
+  const makeScene = (title, sourceText) => ({
+    title, sourceLanguage: 'en', targetLanguage: 'ru', workflowVersion: 2, workflowStage: 1,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: `${title}-object`, pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText, translation: '', confidence: .98, x: 40, y: 40, width: 180, height: 32,
+      rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 40, width: 180, height: 32 },
+    }],
+  })
+  const firstScene = makeScene('Первый документ', 'First source')
+  const secondScene = makeScene('Второй документ', 'Second source')
+  const translatedScene = structuredClone(firstScene)
+  translatedScene.objects[0].translation = 'Первый перевод'
+  let releaseTranslation
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${firstId}`,
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.fetch = async (url, options = {}) => {
+    const value = String(url)
+    if (value.endsWith('/api/studio/status')) return { ok: true, json: async () => ({ translationProviderConfigured: true, translationModel: 'test' }) }
+    if (value.endsWith('/api/studio/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (value.endsWith('/api/studio/documents')) return { ok: true, json: async () => ({ documents: [
+      { id: firstId, title: firstScene.title }, { id: secondId, title: secondScene.title },
+    ] }) }
+    if (value.endsWith(`/documents/${firstId}`) && !options.method) return { ok: true, json: async () => ({ metadata: { id: firstId }, scene: firstScene }) }
+    if (value.endsWith(`/documents/${secondId}`) && !options.method) return { ok: true, json: async () => ({ metadata: { id: secondId }, scene: secondScene }) }
+    if (value.endsWith(`/documents/${firstId}/translate`) && options.method === 'POST') {
+      await new Promise(resolve => { releaseTranslation = resolve })
+      return { ok: true, json: async () => ({ scene: translatedScene, translated: [translatedScene.objects[0].id], suggested: [], pending: [], message: 'Документ переведён' }) }
+    }
+    if (options.method === 'PUT') {
+      const id = value.includes(firstId) ? firstId : secondId
+      return { ok: true, json: async () => ({ metadata: { id, revision: 2 } }) }
+    }
+    if (value.endsWith('/knowledge-base/status')) return { ok: true, json: async () => ({ connected: true, persistent: false, entries: 0 }) }
+    if (value.endsWith('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [] }) }
+    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ instructions: [] }) }
+    throw new Error(`Unexpected fetch: ${url}`)
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 40))
+
+  dom.window.document.querySelector('#workflow-approve').click()
+  dom.window.document.querySelector('#translation-approval-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(typeof releaseTranslation, 'function')
+  assert.match([...dom.window.document.querySelectorAll('.document-tab')][0].textContent, /переводится/)
+
+  const tabs = [...dom.window.document.querySelectorAll('.document-tab')]
+  tabs.find(tab => tab.textContent.includes(secondScene.title)).click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(dom.window.document.querySelector('#document-title').textContent, secondScene.title)
+  assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
+
+  ;[...dom.window.document.querySelectorAll('.document-tab')].find(tab => tab.textContent.includes(firstScene.title)).click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(dom.window.document.querySelector('#loading-view').hidden, false)
+  assert.equal(dom.window.document.querySelector('#loading-title').textContent, 'Переводим документ')
+
+  ;[...dom.window.document.querySelectorAll('.document-tab')].find(tab => tab.textContent.includes(secondScene.title)).click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  releaseTranslation()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelector('#document-title').textContent, secondScene.title)
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '1')
+
+  ;[...dom.window.document.querySelectorAll('.document-tab')].find(tab => tab.textContent.includes(firstScene.title)).click()
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(dom.window.document.querySelector('#document-title').textContent, firstScene.title)
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '2')
+  assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').textContent, 'Первый перевод')
   dom.window.close()
 })
 
@@ -1266,16 +1410,23 @@ test('approval advances through isolated document stages and switches the worksp
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
     runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
   })
-  let translationRequest = null
+  Object.defineProperty(dom.window.HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get() {
+      if (!this.classList?.contains('studio-page--segments')) return 0
+      return this.closest('#studio-view')?.hidden ? 120 : 640
+    },
+  })
+  const translationRequests = []
   let translationShouldFail = false
   let delayTranslation = false
   let releaseTranslation = null
   dom.window.fetch = async (url, options = {}) => {
     if (String(url).endsWith('/status')) return { ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) }
     if (String(url).endsWith('/translate') && options.method === 'POST') {
+      translationRequests.push(JSON.parse(options.body))
       if (translationShouldFail) return { ok: false, status: 503, json: async () => ({ error: 'Перевод временно недоступен' }) }
       if (delayTranslation) await new Promise(resolve => { releaseTranslation = resolve })
-      translationRequest = JSON.parse(options.body)
       return { ok: true, json: async () => ({ scene, translated: [], suggested: [], pending: [], message: 'Документ переведён' }) }
     }
     if (options.method === 'PUT') return { ok: true, json: async () => ({ metadata: { id, revision: 2 } }) }
@@ -1486,17 +1637,36 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(typeof releaseTranslation, 'function')
   releaseTranslation()
   await new Promise(resolve => setTimeout(resolve, 20))
-  assert.deepEqual(translationRequest.objectIds, ['workflow-object', 'workflow-object-2'])
+  assert.deepEqual(translationRequests.at(-1).objectIds, ['workflow-object', 'workflow-object-2'])
+  assert.equal(translationRequests.at(-1).forceRetranslate, false)
 
   assert.equal(studio.dataset.workflowStage, '2')
   assert.equal(dom.window.document.querySelector('#loading-view').hidden, true)
   assert.equal(dom.window.document.querySelector('#studio-view').hidden, false)
   assert.equal(studio.classList.contains('is-segments-mode'), true)
+  assert.equal(dom.window.document.querySelector('.studio-page-shell').style.height, '640px')
   assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').contentEditable, 'true')
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'false')
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').getAttribute('aria-readonly'), 'true')
+  assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--type').length, 2)
+  assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--confidence').length, 2)
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .memory-card') !== null, true)
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .segment-content-fields'), null)
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, false)
+  assert.equal(dom.window.document.querySelector('#undo-button').disabled, true)
+
+  const stageTwoTranslation = dom.window.document.querySelector('.scene-object--translation .scene-object__content')
+  stageTwoTranslation.focus()
+  stageTwoTranslation.textContent = 'Ручная правка'
+  stageTwoTranslation.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+  assert.equal(dom.window.document.querySelector('#undo-button').disabled, false)
 
   approve.click()
+  assert.equal(studio.dataset.workflowStage, '3')
+  assert.equal(dom.window.document.querySelector('#undo-button').disabled, true)
+  dom.window.document.querySelector('#undo-button').click()
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }))
   assert.equal(studio.dataset.workflowStage, '3')
   assert.equal(studio.classList.contains('is-segments-mode'), false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
@@ -1520,6 +1690,117 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(studio.dataset.workflowStage, '2')
   dom.window.document.querySelector('#workflow-previous').click()
   assert.equal(studio.dataset.workflowStage, '1')
+
+  const completedRequestCount = translationRequests.length
+  approve.click()
+  assert.equal(dom.window.document.querySelector('#translation-approval-status').hidden, false)
+  assert.match(dom.window.document.querySelector('#translation-approval-status').textContent, /уже переведён/)
+  assert.equal(dom.window.document.querySelector('#translation-approval-continue').hidden, false)
+  assert.equal(dom.window.document.querySelector('#translation-approval-submit').textContent, 'Перевести заново')
+  const translationsBeforeContinue = scene.objects.map(object => object.translation)
+  dom.window.document.querySelector('#translation-approval-continue').click()
+  assert.equal(studio.dataset.workflowStage, '2')
+  assert.equal(translationRequests.length, completedRequestCount)
+  assert.deepEqual(scene.objects.map(object => object.translation), translationsBeforeContinue)
+
+  dom.window.document.querySelector('#workflow-previous').click()
+  approve.click()
+  delayTranslation = false
+  dom.window.document.querySelector('#translation-approval-submit').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(translationRequests.length, completedRequestCount + 1)
+  assert.equal(translationRequests.at(-1).forceRetranslate, true)
+  assert.equal(studio.dataset.workflowStage, '2')
+  dom.window.close()
+})
+
+test('segment stage keeps the source read-only and provides document and local AI chats', async () => {
+  const id = '6'.repeat(32)
+  const makeObject = (objectId, type, sourceText, readingOrder) => ({
+    id: objectId, pageIndex: 0, type, readingOrder, sourceText, translation: sourceText, confidence: .87,
+    agentNotes: readingOrder === 1 ? 'Проверьте текст по оригиналу.' : '',
+    x: 40, y: 40 + readingOrder * 60, width: 220, height: 40, rotation: 0, excluded: false,
+    style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+    sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 40 + readingOrder * 60, width: 220, height: 40 },
+  })
+  const scene = {
+    title: 'Every segment', sourceLanguage: 'en', targetLanguage: 'ru', workflowVersion: 2, workflowStage: 2,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [makeObject('text-object', 'text', 'Text', 1), makeObject('logo-object', 'logo', 'Brand', 2)],
+  }
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  const revisionRequests = []
+  dom.window.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/translate/revise') && options.method === 'POST') {
+      const request = JSON.parse(options.body)
+      revisionRequests.push(request)
+      scene.batchRevisionInstruction = ''
+      scene.batchRevisionChat = [
+        { role: 'user', text: request.revisionInstruction },
+        { role: 'assistant', text: 'Маркировка удалена.' },
+      ]
+      return { ok: true, json: async () => ({ scene, revised: [{ objectId: 'logo-object' }], excluded: [], assistantMessage: 'Маркировка удалена.', message: 'Сегменты исправлены' }) }
+    }
+    return {
+      ok: true,
+      json: async () => String(url).endsWith('/status')
+        ? { translationProviderConfigured: false, translationModel: null }
+        : { metadata: { id, revision: 1 }, scene },
+    }
+  }
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  const rows = [...dom.window.document.querySelectorAll('.segment-translation-row')]
+  const batchInstruction = dom.window.document.querySelector('#segment-batch-ai-instruction')
+  const batchApply = dom.window.document.querySelector('#segment-batch-ai-apply')
+  assert.equal(rows.length, 2)
+  assert.equal(dom.window.document.querySelector('#segment-batch-ai-scope'), null)
+  assert.equal(dom.window.document.querySelectorAll('[data-translation-select]').length, 0)
+  rows[0].querySelector('.scene-object--source').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+  rows[1].querySelector('.scene-object--source').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0, ctrlKey: true }))
+  assert.equal(dom.window.document.querySelectorAll('.scene-object--source.is-selected').length, 1)
+  assert.equal(dom.window.document.querySelector('.scene-object--source.is-primary-selected').dataset.id, 'logo-object')
+  batchInstruction.value = 'Убрать маркировку списка'
+  batchInstruction.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(batchApply.disabled, false)
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'false')
+  assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').contentEditable, 'true')
+  assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--type').length, 2)
+  assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--confidence').length, 2)
+  assert.equal(rows[0].querySelector('.segment-row-note').parentElement.className, 'segment-translation-row__meta')
+  assert.match(styles, /\.segment-translation-row__meta\s*\{[^}]*grid-column:\s*1 \/ -1/)
+  assert.equal(rows[1].querySelector('.segment-translation-row__meta').hidden, true)
+  assert.ok(rows[1].querySelector('.segment-ai-chat'), 'a logo must expose its local AI chat')
+  assert.ok(rows[1].querySelector('[data-instruction-preset-select]'), 'saved instructions remain available in the segment chat')
+  const localPresetApply = rows[1].querySelector('[data-instruction-preset-apply]')
+  const localPresetSave = rows[1].querySelector('[aria-label="Сохранить инструкцию в список инструкций"]')
+  assert.ok(localPresetApply.matches('.icon-button.icon-button--compact.icon-button--ghost'))
+  assert.equal(localPresetApply.querySelector('use').getAttribute('href'), '/icons.svg#icon-plus')
+  assert.ok(localPresetSave.matches('.icon-button.icon-button--compact.icon-button--ghost'))
+  assert.equal(localPresetSave.querySelector('use').getAttribute('href'), '/icons.svg#icon-save')
+  assert.equal(localPresetSave.disabled, true)
+  const localChatInput = rows[1].querySelector('.ai-chat__composer textarea')
+  localChatInput.value = 'Сохранить название бренда'
+  localChatInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(localPresetSave.disabled, false)
+  assert.match(styles, /\.studio-page--segments \.scene-object__content[^}]*text-align:\s*left !important/)
+  batchApply.click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.deepEqual(revisionRequests[0], {
+    objectIds: [], scope: 'document', revisionInstruction: 'Убрать маркировку списка', chatTarget: { kind: 'batch' },
+  })
+  assert.deepEqual(
+    [...dom.window.document.querySelectorAll('#segment-batch-ai-messages .ai-chat__author')].map(node => node.textContent),
+    ['Вы', 'AI-агент'],
+  )
+  assert.ok(dom.window.document.querySelector('#inspector-translation-panel .memory-card'))
+  assert.ok(dom.window.document.querySelector('#inspector-translation-panel .segment-batch-ai-card'))
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .segment-content-fields'), null)
   dom.window.close()
 })
 
@@ -1626,7 +1907,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelectorAll('.inspector-section').length, 4)
   assert.deepEqual(
     [...dom.window.document.querySelectorAll('.inspector-section__title')].map(node => node.textContent),
-    ['Перевод', 'Сегмент', 'Типографика и расстановка', 'Тестирование'],
+    ['Перевод', 'Сегменты', 'Типографика и расстановка', 'Тестирование'],
   )
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel .global-translation-tools'))
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel .agent-card'), null)
@@ -1645,7 +1926,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(dom.window.document.querySelector('#inspector-layout-panel .typography-card'))
   assert.ok(dom.window.document.querySelector('#inspector-layout-panel .segment-actions-card'))
   assert.ok(dom.window.document.querySelector('#inspector-layout-panel .flex-layout'))
-  assert.ok(dom.window.document.querySelector('#inspector-translation-panel .segment-content-fields'))
+  assert.ok(dom.window.document.querySelector('#inspector-translation-panel .memory-card'))
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .segment-content-fields'), null)
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').hidden, false)
@@ -1716,8 +1998,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
     dom.window.document.querySelector('#segment-grid-coordinates').textContent,
     /^Координаты: [A-Z]+\d+\.[1-4]\.[1-4]\(левый верхний угол\) - [A-Z]+\d+\.[1-4]\.[1-4]\(правый нижний угол\)$/,
   )
-  assert.ok(dom.window.document.querySelector('#inspector-segment-workspace > .segment-translation-workspace'))
-  assert.ok(dom.window.document.querySelector('#inspector-segment-workspace .segment-ai-instruction'))
+  assert.equal(dom.window.document.querySelector('#inspector-segment-workspace').childElementCount, 0)
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
@@ -2108,8 +2389,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-panel-body').hasAttribute('inert'), false)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
-  assert.equal(dom.window.document.querySelector('#inspector-translation-panel [data-inspector-selection-note]').hidden, false)
-  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .inspector-section__content').hidden, true)
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel [data-inspector-selection-note]'), null)
+  assert.equal(dom.window.document.querySelector('#inspector-translation-panel .inspector-section__content').hidden, false)
   let independentlyFitted = [...dom.window.document.querySelectorAll('.scene-object')]
   independentlyFitted[0].dispatchEvent(pointer('pointerdown', 240, 240))
   dom.window.document.querySelector('#fit-content-both-button').click()
@@ -2268,7 +2549,7 @@ test('legacy internal units stay hidden and collapse into one unit when the full
   dom.window.eval(translationUnits)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
-  const object = dom.window.document.querySelector('.scene-object')
+  const object = dom.window.document.querySelector('.scene-object--translation')
   object.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
   assert.equal(dom.window.document.querySelector('#translation-units-card'), null)
   assert.equal(dom.window.document.querySelector('#translation-text').disabled, false)

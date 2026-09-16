@@ -166,6 +166,46 @@ test('provider key can be persisted server-side without exposing it through the 
   assert.doesNotMatch(await fs.promises.readFile(envPath, 'utf8'), /(?:TRANSLATION|AI)_API_KEY=/)
 })
 
+test('administration persists the editable chat-agent prompt and restores its default', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-administration-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const createApp = () => {
+    const app = express()
+    app.use(express.json())
+    app.use('/api/studio', createStudioRouter({
+      rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
+      runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
+    }))
+    app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+    return app
+  }
+  const firstBase = await listen(createApp(), t)
+
+  let response = await fetch(`${firstBase}/administration`)
+  assert.equal(response.status, 200)
+  const defaults = await response.json()
+  assert.match(defaults.chatAgentPrompt, /Отвечай чётко, понятно и по существу/)
+  assert.match(defaults.chatAgentPrompt, /Ничего не додумывай/)
+  assert.match(defaults.chatAgentPrompt, /конечном языке перевода/)
+  assert.match(defaults.chatAgentPrompt, /задай один короткий уточняющий вопрос/)
+  assert.equal(defaults.chatAgentPrompt, defaults.defaultChatAgentPrompt)
+
+  response = await fetch(`${firstBase}/administration`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatAgentPrompt: 'Работай только с согласованной терминологией.' }),
+  })
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).chatAgentPrompt, 'Работай только с согласованной терминологией.')
+
+  const secondBase = await listen(createApp(), t)
+  response = await fetch(`${secondBase}/administration`)
+  assert.equal((await response.json()).chatAgentPrompt, 'Работай только с согласованной терминологией.')
+  response = await fetch(`${secondBase}/administration`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }),
+  })
+  assert.equal((await response.json()).chatAgentPrompt, defaults.defaultChatAgentPrompt)
+})
+
 test('ready AI instructions support persistent CRUD without automatic duplicates', async t => {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-instruction-presets-'))
   t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
@@ -217,6 +257,54 @@ test('ready AI instructions support persistent CRUD without automatic duplicates
   assert.equal(response.status, 204)
   response = await fetch(`${secondBase}/translation-instructions`)
   assert.deepEqual((await response.json()).presets, [])
+})
+
+test('equal source and target languages copy the recognized text without an AI request', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-same-language-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = '1'.repeat(32)
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Same language', filename: 'same-language.pdf', revision: 1, pageCount: 1, objectCount: 1,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Same language', sourceLanguage: 'Turkish', targetLanguage: 'tr',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'same-language-object', pageIndex: 0, type: 'text', readingOrder: 1,
+      sourceText: 'Vekaletname', translation: 'Старый перевод', confidence: 1,
+      x: 40, y: 40, width: 200, height: 40,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [{ start: 0, end: 11, fontWeight: 700 }],
+      translationTextStyles: [], originalBounds: { x: 40, y: 40, width: 200, height: 40 },
+    }],
+  }))
+  let aiRequests = 0
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({
+    rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
+    runProcess: async (command, args) => {
+      if (args?.[0] === 'exec') aiRequests += 1
+      return { code: 0, stdout: 'Logged in', stderr: '' }
+    },
+  }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  const response = await fetch(`${base}/documents/${id}/translate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectIds: ['same-language-object'], forceRetranslate: true }),
+  })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  const object = result.scene.objects[0]
+  assert.equal(aiRequests, 0)
+  assert.equal(object.translation, object.sourceText)
+  assert.deepEqual(object.translationTextStyles, object.sourceTextStyles)
+  assert.equal(object.translationUnits[0].translation, object.translationUnits[0].sourceText)
+  assert.equal(result.translated[0].source, 'source-copy')
 })
 
 test('translation route proposes exact knowledge-base matches without silently applying them', async t => {
@@ -483,13 +571,18 @@ test('multiple selected segments are translated, persisted, and leave unselected
       },
     ],
   }))
+  let translationRun = 0
   const runProcess = async (command, args) => {
     if (args[0] === 'login') return { code: 0, stdout: 'Logged in', stderr: '' }
     if (args[0] === 'exec') {
+      translationRun += 1
       const outputPath = args[args.indexOf('--output-last-message') + 1]
       const unitIds = [...args.at(-1).matchAll(/"id":"([^"]+)"/g)].map(match => match[1])
       await fs.promises.writeFile(outputPath, JSON.stringify({
-        translations: unitIds.map((unitId, index) => ({ id: unitId, translatedText: `Перевод ${index + 1}.` })),
+        translations: unitIds.map((unitId, index) => ({
+          id: unitId,
+          translatedText: `${translationRun === 1 ? 'Перевод' : 'Новый перевод'} ${index + 1}.`,
+        })),
       }))
       return { code: 0, stdout: '', stderr: '' }
     }
@@ -520,6 +613,17 @@ test('multiple selected segments are translated, persisted, and leave unselected
   assert.equal(persisted.scene.objects[0].translation, 'Перевод 1.')
   assert.equal(persisted.scene.objects[1].translation, 'Перевод 2.')
   assert.equal(persisted.scene.objects[2].translation, '')
+
+  response = await fetch(`${base}/documents/${id}/translate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectIds: ['object-machine-1', 'object-machine-2'], forceRetranslate: true }),
+  })
+  assert.equal(response.status, 200)
+  const repeated = await response.json()
+  assert.equal(repeated.translated.length, 2)
+  assert.equal(repeated.scene.objects[0].translation, 'Новый перевод 1.')
+  assert.equal(repeated.scene.objects[1].translation, 'Новый перевод 2.')
+  assert.equal(repeated.scene.objects[0].translationUnits[0].aiTranslation, 'Новый перевод 1.')
 })
 
 test('stamps, seals and signatures use the required translated service labels', async t => {
@@ -588,7 +692,7 @@ test('AI revises translated segments with global and local comments and can excl
   const directory = path.join(dataDir, id)
   await fs.promises.mkdir(directory)
   await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
-    id, title: 'Instruction revision', filename: 'instructions.pdf', revision: 1, pageCount: 1, objectCount: 2,
+    id, title: 'Instruction revision', filename: 'instructions.pdf', revision: 1, pageCount: 1, objectCount: 3,
   }))
   const object = (objectId, type, sourceText, translation, unitId, y, translationInstruction = '') => ({
     id: objectId, pageIndex: 0, type, readingOrder: y, sourceText, translation, translationInstruction, confidence: 1,
@@ -603,6 +707,7 @@ test('AI revises translated segments with global and local comments and can excl
     objects: [
       object('person-object', 'text', 'John Smith vekildir.', 'Джон Смит является поверенным.', 'person-unit', 40, 'Имя передай как Иван Иванов'),
       object('stamp-object', 'stamp', '18871', '/Штамп: № 18871/', 'stamp-unit', 90),
+      object('logo-object', 'logo', 'NEWMARK', 'NEWMARK', 'logo-unit', 140, 'Сохрани название бренда'),
     ],
   }))
   const prompts = []
@@ -615,6 +720,7 @@ test('AI revises translated segments with global and local comments and can excl
       await fs.promises.writeFile(outputPath, JSON.stringify({ revisions: [
         { id: 'person-unit', translatedText: 'Иван Иванов является поверенным.', excludeFromExport: false },
         { id: 'stamp-unit', translatedText: '№ 18871', excludeFromExport: true },
+        { id: 'service:logo-object', translatedText: 'NEWMARK', excludeFromExport: false },
       ] }))
       return { code: 0, stdout: '', stderr: '' }
     }
@@ -635,11 +741,132 @@ test('AI revises translated segments with global and local comments and can excl
   assert.equal(prompts.length, 1)
   assert.match(prompts[0], /Переведи имена\. Все печати не включай в сборку\./)
   assert.match(prompts[0], /Имя передай как Иван Иванов/)
+  assert.match(prompts[0], /Сохрани название бренда/)
   assert.equal(result.scene.globalTranslationInstruction, 'Переведи имена. Все печати не включай в сборку.')
   assert.equal(result.scene.objects[0].translation, 'Иван Иванов является поверенным.')
   assert.equal(result.scene.objects[0].translationUnits[0].status, 'ai-revised')
   assert.equal(result.scene.objects[1].excluded, true)
+  assert.equal(result.scene.objects[2].translation, 'NEWMARK')
+  assert.equal(result.scene.objects[2].status, 'ai-revised')
   assert.equal(result.excluded[0], 'stamp-object')
-  assert.equal(result.scene.instructionRevision.objectCount, 2)
+  assert.equal(result.scene.instructionRevision.objectCount, 3)
   assert.equal(result.scene.instructionRevision.excludedCount, 1)
+})
+
+test('segment AI chat persists both sides and does not change translation before clarification', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-segment-chat-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = '7'.repeat(32)
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Chat clarification', filename: 'chat.pdf', revision: 1, pageCount: 1, objectCount: 1,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Chat clarification', sourceLanguage: 'tr', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'chat-object', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'Madde 1', translation: 'Пункт 1', confidence: 1,
+      x: 40, y: 40, width: 500, height: 40,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      originalBounds: { x: 40, y: 40, width: 500, height: 40 },
+      translationUnits: [{ id: 'chat-unit', sourceText: 'Madde 1', separatorAfter: '', translation: 'Пункт 1', status: 'machine-translated', activeTranslationSource: 'ai' }],
+    }],
+  }))
+  const chatPrompts = []
+  const runProcess = async (command, args) => {
+    if (args[0] === 'login') return { code: 0, stdout: 'Logged in', stderr: '' }
+    if (args[0] === 'exec') {
+      const outputPath = args[args.indexOf('--output-last-message') + 1]
+      chatPrompts.push(args.at(-1))
+      await fs.promises.writeFile(outputPath, JSON.stringify({
+        assistantMessage: 'Какую именно маркировку нужно убрать?',
+        needsClarification: true,
+        revisions: [],
+      }))
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 1, stdout: '', stderr: 'unexpected command' }
+  }
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  const response = await fetch(`${base}/documents/${id}/translate/revise`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      objectIds: ['chat-object'],
+      scope: 'selection',
+      revisionInstruction: 'Убери маркировку',
+      chatTarget: { kind: 'segment', objectId: 'chat-object' },
+    }),
+  })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.match(chatPrompts[0], /Отвечай чётко, понятно и по существу/)
+  assert.match(chatPrompts[0], /Работай только с текстом сегментов на конечном языке перевода/)
+  assert.equal(result.needsClarification, true)
+  assert.deepEqual(result.revised, [])
+  assert.equal(result.scene.objects[0].translation, 'Пункт 1')
+  assert.equal(result.scene.objects[0].translationInstruction, '')
+  assert.deepEqual(result.scene.objects[0].revisionChat.map(message => [message.role, message.text]), [
+    ['user', 'Убери маркировку'],
+    ['assistant', 'Какую именно маркировку нужно убрать?'],
+  ])
+})
+
+test('mass AI chat shows one assistant response when the document uses several batches', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-chat-batches-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = '6'.repeat(32)
+  const directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Chat batches', filename: 'batches.pdf', revision: 1, pageCount: 1, objectCount: 21,
+  }))
+  const style = { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }
+  const objects = Array.from({ length: 21 }, (_, index) => ({
+    id: `batch-object-${index + 1}`, pageIndex: 0, type: 'logo', readingOrder: index + 1,
+    sourceText: `Logo ${index + 1}`, translation: `Логотип ${index + 1}`, confidence: 1,
+    x: 40, y: 40 + index * 4, width: 300, height: 30, style, originalBounds: { x: 40, y: 40 + index * 4, width: 300, height: 30 },
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Chat batches', sourceLanguage: 'en', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects,
+  }))
+  let batchNumber = 0
+  const runProcess = async (command, args) => {
+    if (args[0] === 'login') return { code: 0, stdout: 'Logged in', stderr: '' }
+    if (args[0] === 'exec') {
+      batchNumber += 1
+      const outputPath = args[args.indexOf('--output-last-message') + 1]
+      const ids = [...args.at(-1).matchAll(/"id":"(service:[^"]+)"/g)].map(match => match[1])
+      await fs.promises.writeFile(outputPath, JSON.stringify({
+        assistantMessage: batchNumber === 1 ? 'Круги перед текстом удалены.' : 'Круги перед текстом убраны.',
+        needsClarification: false,
+        revisions: ids.map(itemId => ({ id: itemId, translatedText: `Исправлено ${itemId}`, excludeFromExport: false })),
+      }))
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 1, stdout: '', stderr: 'unexpected command' }
+  }
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  const response = await fetch(`${base}/documents/${id}/translate/revise`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: 'document', objectIds: [], revisionInstruction: 'Убери круги', chatTarget: { kind: 'batch' } }),
+  })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.equal(batchNumber, 2)
+  assert.equal(result.assistantMessage, 'Круги перед текстом удалены.')
+  assert.equal(result.scene.batchRevisionChat.at(-1).text, 'Круги перед текстом удалены.')
+  assert.doesNotMatch(result.scene.batchRevisionChat.at(-1).text, /убраны/)
 })

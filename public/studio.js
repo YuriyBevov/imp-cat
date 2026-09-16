@@ -13,6 +13,42 @@
     de: 'Немецкий', german: 'Немецкий', deutsch: 'Немецкий', 'немецкий': 'Немецкий',
   })
   const languageLabel = value => LANGUAGE_LABELS[String(value || 'auto').trim().toLocaleLowerCase()] || String(value || 'Авто')
+
+  function sceneLanguagesMatch(scene = state.scene) {
+    const source = String(scene?.sourceLanguage || '').trim()
+    const target = String(scene?.targetLanguage || '').trim()
+    return Boolean(source && target && source.toLocaleLowerCase() !== 'auto'
+      && languageLabel(source).toLocaleLowerCase() === languageLabel(target).toLocaleLowerCase())
+  }
+
+  function duplicateSourceTranslations(scene = state.scene) {
+    if (!sceneLanguagesMatch(scene)) return 0
+    let changed = 0
+    for (const object of scene?.objects || []) {
+      if (object.excluded || !String(object.sourceText || '').length) continue
+      const sourceText = String(object.sourceText)
+      const styles = (object.sourceTextStyles || []).map(range => ({ ...range }))
+      if (object.translation !== sourceText
+        || JSON.stringify(object.translationTextStyles || []) !== JSON.stringify(styles)) changed += 1
+      object.translation = sourceText
+      object.translationTextStyles = styles
+      object.translationUnits = []
+      if (isTranslatableType(object.type)) {
+        const units = ensureObjectTranslationUnits(object)
+        for (const unit of units) {
+          unit.translation = unit.sourceText
+          unit.aiTranslation = ''
+          unit.activeTranslationSource = 'manual'
+          unit.status = 'edited'
+          unit.memorySuggestion = null
+          unit.memoryEntryId = null
+        }
+        translationUnits.syncObjectTranslation(object)
+      }
+      object.status = 'edited'
+    }
+    return changed
+  }
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), loadingHint: $('#loading-hint'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
@@ -38,6 +74,8 @@
     agentStatus: $('#agent-status'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
     layoutReview: $('#layout-review-button'), layoutReviewStatus: $('#layout-review-status'),
     globalTranslationInstruction: $('#translation-global-instruction'),
+    batchRevisionInstruction: $('#segment-batch-ai-instruction'), batchRevisionMessages: $('#segment-batch-ai-messages'),
+    batchRevisionApply: $('#segment-batch-ai-apply'),
     instructionPresetSelect: $('#instruction-preset-select'), instructionPresetApply: $('#instruction-preset-apply'),
     instructionPresetSave: $('#instruction-preset-save'), instructionPresetEdit: $('#instruction-preset-edit'), instructionPresetDelete: $('#instruction-preset-delete'),
     instructionPresetEditor: $('#instruction-preset-editor'), instructionPresetText: $('#instruction-preset-text'), instructionPresetEditCancel: $('#instruction-preset-edit-cancel'),
@@ -80,12 +118,16 @@
     confirmationDescription: $('#confirmation-description'), confirmationClose: $('#confirmation-close'),
     confirmationCancel: $('#confirmation-cancel'), confirmationSubmit: $('#confirmation-submit'),
     translationApprovalModal: $('#translation-approval-modal'), translationApprovalContent: $('#translation-approval-content'),
+    translationApprovalStatus: $('#translation-approval-status'), translationApprovalContinue: $('#translation-approval-continue'),
     translationApprovalClose: $('#translation-approval-close'), translationApprovalCancel: $('#translation-approval-cancel'),
     translationApprovalSubmit: $('#translation-approval-submit'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
     aitunnelApiKey: $('#aitunnel-api-key'), aitunnelPersistKey: $('#aitunnel-persist-key'), aitunnelModelNote: $('#aitunnel-model-note'), aiProviderStatus: $('#ai-provider-status'),
     saveAiSettings: $('#save-ai-settings'), testAiConnection: $('#test-ai-connection'), removeAitunnelKey: $('#remove-aitunnel-key'),
+    administrationButton: $('#administration-button'), administrationModal: $('#administration-modal'), administrationClose: $('#administration-close'),
+    administrationCancel: $('#administration-cancel'), administrationReset: $('#administration-reset'), administrationSave: $('#administration-save'),
+    chatAgentSystemPrompt: $('#chat-agent-system-prompt'), administrationStatus: $('#administration-status'),
   }
 
   const state = {
@@ -116,9 +158,12 @@
     pendingSourceZoom: null,
     tabs: new Map(),
     activeTabKey: null,
+    tabActivationRevision: 0,
+    translationRequestRevision: 0,
     jobsPollTimer: null,
     layoutReviewJobs: new Map(),
     providerSettings: null,
+    administrationSettings: null,
     aitunnelModels: [],
     documentLibrary: [],
     glossaries: [],
@@ -195,6 +240,7 @@
       : ({ 1: 1, 2: 1, 3: 2, 4: 3, 5: 4 }[storedStage] || 1)
     scene.workflowVersion = 2
     scene.workflowStage = stage
+    scene.translationCompleted = Boolean(scene.translationCompleted || stage > 1)
     return stage
   }
 
@@ -219,7 +265,13 @@
     elements.inspectorPanel.hidden = stage === 1
     elements.sourcePanelToggle.hidden = stage === 1
     elements.zoomControls.hidden = stage === 1
-    if (stage === 1) elements.studioView.classList.add('is-source-collapsed')
+    const sourceIsCollapsed = stage === 1 || state.sourceCollapsed
+    elements.studioView.classList.toggle('is-source-collapsed', sourceIsCollapsed)
+    elements.sourcePanelToggle.classList.toggle('is-active', !sourceIsCollapsed)
+    elements.sourcePanelToggle.setAttribute('aria-expanded', String(!sourceIsCollapsed))
+    const sourcePanelLabel = sourceIsCollapsed ? 'Показать оригинал' : 'Скрыть оригинал'
+    elements.sourcePanelToggle.title = sourcePanelLabel
+    elements.sourcePanelToggle.setAttribute('aria-label', sourcePanelLabel)
     elements.exportDocx.disabled = stage !== 4
     elements.exportPdf.disabled = stage !== 4
     renderInspectorPanelState()
@@ -229,6 +281,12 @@
     if (!state.scene) return
     const stage = Math.max(1, Math.min(4, Math.trunc(Number(nextStage) || 1)))
     const changed = stage !== state.workflowStage
+    if (changed) {
+      state.history = []
+      state.future = []
+      state.textCheckpoint = false
+      refreshUndoButtons()
+    }
     state.workflowStage = stage
     state.scene.workflowVersion = 2
     state.scene.workflowStage = stage
@@ -248,9 +306,24 @@
 
   function openTranslationApprovalModal() {
     if (!state.scene || state.workflowStage !== 1) return
+    refreshTranslationApprovalState()
     elements.translationApprovalContent.append(elements.globalTranslationTools)
     elements.translationApprovalModal.hidden = false
     requestAnimationFrame(() => elements.sourceLanguage.focus())
+  }
+
+  function refreshTranslationApprovalState() {
+    const translated = Boolean(state.scene?.translationCompleted)
+    elements.translationApprovalStatus.hidden = !translated
+    elements.translationApprovalContinue.hidden = !translated
+    elements.translationApprovalSubmit.textContent = translated ? 'Перевести заново' : 'Отправить на перевод'
+  }
+
+  function continueWithCurrentTranslation() {
+    if (!state.scene?.translationCompleted || state.workflowStage !== 1) return
+    closeTranslationApprovalModal(false)
+    setWorkflowStage(2)
+    showToast('Текущий перевод сохранён')
   }
 
   function closeTranslationApprovalModal(restoreFocus = true) {
@@ -262,6 +335,8 @@
 
   async function submitTranslationApproval() {
     if (!state.scene || state.workflowStage !== 1 || elements.translationApprovalModal.dataset.busy === 'true') return
+    const forceRetranslate = Boolean(state.scene.translationCompleted)
+    duplicateSourceTranslations(state.scene)
     const objectCount = translationCandidates().length
     if (!objectCount) {
       showToast('В документе нет сегментов для перевода', true)
@@ -272,19 +347,29 @@
     elements.translationApprovalCancel.disabled = true
     elements.translationApprovalClose.disabled = true
     elements.translationApprovalSubmit.textContent = 'Отправляем…'
+    const tabKey = state.activeTabKey
     elements.translationApprovalModal.dataset.busy = 'false'
     closeTranslationApprovalModal(false)
-    showTranslationLoading(objectCount)
-    try {
-      const translated = await translateDocument({ deferRender: true })
-      setWorkflowStage(translated ? 2 : 1)
-      setView('studio')
-    } finally {
-      elements.translationApprovalSubmit.disabled = false
-      elements.translationApprovalCancel.disabled = false
-      elements.translationApprovalClose.disabled = false
-      elements.translationApprovalSubmit.textContent = 'Отправить на перевод'
+    elements.translationApprovalSubmit.disabled = false
+    elements.translationApprovalCancel.disabled = false
+    elements.translationApprovalClose.disabled = false
+    refreshTranslationApprovalState()
+    const tab = state.tabs.get(tabKey)
+    if (tab) {
+      tab.translationState = {
+        status: 'running',
+        requestId: ++state.translationRequestRevision,
+        objectCount,
+      }
+      renderDocumentTabs()
+      showTranslationLoading(tab)
     }
+    await translateDocument({
+      tabKey,
+      advanceToStage: 2,
+      forceRetranslate,
+      translationRequestId: tab?.translationState?.requestId,
+    })
   }
 
   function approveWorkflowStage() {
@@ -316,12 +401,18 @@
     const placement = currentNodes.find(node => (
       node.classList.contains('layout-card') && node !== typography && node !== segmentActions
     ))
+    const batchRevisionCard = elements.objectInspector.querySelector('.segment-batch-ai-card')
+    const memoryCard = elements.objectInspector.querySelector('.memory-card')
     const correctionNodes = currentNodes.filter(node => ![typography, segmentActions, placement].includes(node))
     const segmentWorkspace = document.createElement('div')
     segmentWorkspace.id = 'inspector-segment-workspace'
     segmentWorkspace.className = 'inspector-segment-workspace'
     const notesIndex = correctionNodes.findIndex(node => node.id === 'segment-note')
     correctionNodes.splice(notesIndex >= 0 ? notesIndex + 1 : correctionNodes.length, 0, segmentWorkspace)
+    const legacySegmentTools = document.createElement('div')
+    legacySegmentTools.className = 'inspector-legacy-segment-tools'
+    legacySegmentTools.hidden = true
+    legacySegmentTools.append(...correctionNodes.filter(node => ![batchRevisionCard, memoryCard].includes(node)))
     for (const node of currentNodes) node.classList.remove('inspector-scope--layout', 'inspector-scope--segments')
     const globalTranslationPanel = createInspectorPanel(
       'inspector-global-translation-panel',
@@ -336,10 +427,10 @@
       [finalTestingTools],
     )
     const objectPanels = [
-      createInspectorPanel('inspector-translation-panel', 'translation', 'Сегмент', correctionNodes, true),
+      createInspectorPanel('inspector-translation-panel', 'translation', 'Сегменты', [batchRevisionCard, memoryCard]),
       createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typography, segmentActions, placement], true),
     ]
-    elements.objectInspector.replaceChildren(...objectPanels)
+    elements.objectInspector.replaceChildren(...objectPanels, legacySegmentTools)
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
     elements.objectInspector.after(finalTestingPanel)
     elements.inspectorSegmentWorkspace = segmentWorkspace
@@ -528,6 +619,70 @@
     elements.aiSettingsModal.hidden = true
   }
 
+  function renderAdministrationSettings(settings) {
+    state.administrationSettings = settings
+    elements.chatAgentSystemPrompt.value = settings.chatAgentPrompt || ''
+    elements.administrationSave.disabled = !elements.chatAgentSystemPrompt.value.trim()
+    setNoteVariant(elements.administrationStatus, 'success')
+    elements.administrationStatus.textContent = settings.updatedAt
+      ? 'Промпт сохранён и используется чат-агентом.'
+      : 'Используется базовый промпт.'
+  }
+
+  async function loadAdministrationSettings() {
+    const response = await api('/api/studio/administration')
+    const settings = await response.json()
+    renderAdministrationSettings(settings)
+    return settings
+  }
+
+  async function openAdministration() {
+    elements.administrationModal.hidden = false
+    elements.administrationSave.disabled = true
+    setNoteVariant(elements.administrationStatus, 'info')
+    elements.administrationStatus.textContent = 'Загружаем текущий промпт…'
+    try {
+      await loadAdministrationSettings()
+      elements.chatAgentSystemPrompt.focus()
+    } catch (error) {
+      setNoteVariant(elements.administrationStatus, 'danger')
+      elements.administrationStatus.textContent = error.message
+    }
+  }
+
+  function closeAdministration() {
+    elements.administrationModal.hidden = true
+  }
+
+  function resetAdministrationPrompt() {
+    const prompt = state.administrationSettings?.defaultChatAgentPrompt || ''
+    if (!prompt) return
+    elements.chatAgentSystemPrompt.value = prompt
+    elements.administrationSave.disabled = false
+    setNoteVariant(elements.administrationStatus, 'info')
+    elements.administrationStatus.textContent = 'Базовый промпт восстановлен в поле. Нажмите «Сохранить», чтобы применить его.'
+  }
+
+  async function saveAdministrationSettings() {
+    const chatAgentPrompt = elements.chatAgentSystemPrompt.value.trim()
+    if (!chatAgentPrompt) return
+    elements.administrationSave.disabled = true
+    setNoteVariant(elements.administrationStatus, 'info')
+    elements.administrationStatus.textContent = 'Сохраняем промпт…'
+    try {
+      const response = await api('/api/studio/administration', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatAgentPrompt }),
+      })
+      renderAdministrationSettings(await response.json())
+      showToast('Промпт чат-агента сохранён')
+    } catch (error) {
+      setNoteVariant(elements.administrationStatus, 'danger')
+      elements.administrationStatus.textContent = error.message
+    } finally {
+      elements.administrationSave.disabled = !elements.chatAgentSystemPrompt.value.trim()
+    }
+  }
+
   async function persistProviderSettings(options = {}) {
     const provider = elements.aiProviderSelect.value
     const payload = {
@@ -616,13 +771,16 @@
       const button = document.createElement('button')
       button.type = 'button'
       button.className = `document-tab${tab.key === state.activeTabKey ? ' is-active' : ''}`
-      button.dataset.status = tab.status
-      button.title = tab.error || tab.title
+      const translating = tab.translationState?.status === 'running'
+      button.dataset.status = translating ? 'running' : tab.status
+      button.title = translating ? `${tab.title} · переводится` : (tab.error || tab.title)
       const dot = document.createElement('span')
       dot.className = 'document-tab__dot'
       const title = document.createElement('span')
       title.className = 'document-tab__title'
-      title.textContent = tab.status === 'running' || tab.status === 'queued'
+      title.textContent = translating
+        ? `${tab.title} · переводится`
+        : tab.status === 'running' || tab.status === 'queued'
         ? `${tab.title} · ${tab.progress || 0}%`
         : tab.title
       const close = document.createElement('span')
@@ -667,7 +825,11 @@
     elements.cancelJob.disabled = false
   }
 
-  function showTranslationLoading(objectCount) {
+  function showTranslationLoading(tabOrObjectCount) {
+    const translationState = typeof tabOrObjectCount === 'object'
+      ? tabOrObjectCount?.translationState
+      : null
+    const objectCount = translationState?.objectCount ?? tabOrObjectCount
     elements.loadingView.classList.remove('is-failed')
     elements.loadingView.classList.add('is-indeterminate')
     elements.loadingTitle.textContent = 'Переводим документ'
@@ -686,18 +848,35 @@
     const tab = state.tabs.get(state.activeTabKey)
     if (tab?.status === 'completed' && state.scene && state.metadata) {
       tab.documentData = { metadata: state.metadata, scene: state.scene }
+      tab.workspaceState = {
+        selectedIds: [...state.selected],
+        translationSelectedIds: [...state.translationSelected],
+        activePage: state.activePage,
+        zoom: state.zoom,
+        sourceZoom: state.sourceZoom,
+        sourceCollapsed: state.sourceCollapsed,
+        activeInspectorPanel: state.activeInspectorPanel,
+        history: [...state.history],
+        future: [...state.future],
+        canvasScrollLeft: elements.canvasScroll.scrollLeft,
+        canvasScrollTop: elements.canvasScroll.scrollTop,
+        sourceScrollLeft: elements.sourcePreviewScroll.scrollLeft,
+        sourceScrollTop: elements.sourcePreviewScroll.scrollTop,
+      }
     }
   }
 
   async function activateTab(key, forceReload = false) {
     const tab = state.tabs.get(key)
     if (!tab) return
+    const activationRevision = ++state.tabActivationRevision
     if (key !== state.activeTabKey) {
       rememberCurrentDocument()
       if (state.saveTimer) {
         try { await saveScene(true) } catch {}
       }
     }
+    if (activationRevision !== state.tabActivationRevision || !state.tabs.has(key)) return
     state.activeTabKey = key
     renderDocumentTabs()
     if (tab.status === 'failed' || tab.status === 'cancelled') {
@@ -717,7 +896,11 @@
         const response = await api(`/api/studio/documents/${tab.documentId}`)
         tab.documentData = await response.json()
       }
+      if (activationRevision !== state.tabActivationRevision || state.activeTabKey !== key) return
       openDocument(tab.documentData)
+      if (tab.translationState?.status === 'running') {
+        showTranslationLoading(tab)
+      }
       history.replaceState(null, '', `/?document=${tab.documentId}`)
     } catch (error) {
       tab.status = 'failed'
@@ -734,6 +917,7 @@
     const wasActive = state.activeTabKey === key
     state.tabs.delete(key)
     if (wasActive) {
+      state.tabActivationRevision += 1
       state.activeTabKey = null
       state.metadata = null
       state.scene = null
@@ -1046,18 +1230,26 @@
 
   function openDocument(documentData) {
     const activeTab = state.tabs.get(state.activeTabKey)
+    const workspaceState = activeTab?.workspaceState
     state.metadata = documentData.metadata
     state.scene = documentData.scene
     initializeScenePageMetadata(state.scene)
-    state.selected.clear()
-    state.translationSelected = activeTab?.translationSelected instanceof Set
-      ? new Set(activeTab.translationSelected)
-      : new Set()
-    state.history = []
-    state.future = []
+    const objectIds = new Set(state.scene.objects.map(object => object.id))
+    state.selected = new Set((workspaceState?.selectedIds || []).filter(id => objectIds.has(id)))
+    state.translationSelected = new Set(
+      (workspaceState?.translationSelectedIds || [...(activeTab?.translationSelected || [])])
+        .filter(id => objectIds.has(id)),
+    )
+    state.history = Array.isArray(workspaceState?.history) ? [...workspaceState.history] : []
+    state.future = Array.isArray(workspaceState?.future) ? [...workspaceState.future] : []
     state.sceneEditRevision = 0
-    state.activePage = 0
-    state.zoom = 1
+    state.activePage = Number.isInteger(workspaceState?.activePage)
+      ? Math.max(0, Math.min(workspaceState.activePage, state.scene.pages.length - 1))
+      : 0
+    state.zoom = Number.isFinite(workspaceState?.zoom) ? workspaceState.zoom : 1
+    state.sourceZoom = Number.isFinite(workspaceState?.sourceZoom) ? workspaceState.sourceZoom : .5
+    state.sourceCollapsed = workspaceState?.sourceCollapsed ?? true
+    state.activeInspectorPanel = workspaceState?.activeInspectorPanel || state.activeInspectorPanel
     state.workflowStage = normalizeWorkflowStage(state.scene)
     state.sourceRenderedPage = null
     if (activeTab) {
@@ -1075,7 +1267,9 @@
     elements.targetLanguage.value = state.scene.targetLanguage
     elements.knowledgeBaseMode.value = state.scene.knowledgeBaseMode === 'priority' ? 'priority' : 'suggestions'
     elements.globalTranslationInstruction.value = state.scene.globalTranslationInstruction || ''
+    elements.batchRevisionInstruction.value = state.scene.batchRevisionInstruction || ''
     refreshGlobalInstructionControls()
+    refreshBatchRevisionControls()
     loadKnowledgeBase().catch(() => {})
     const recognition = state.scene.recognition
     const recognitionSummary = recognition?.mode === 'codex'
@@ -1090,6 +1284,13 @@
     renderWorkflowStageState()
     renderDocument()
     requestAnimationFrame(() => {
+      if (activeTab?.key !== state.activeTabKey) return
+      if (workspaceState) {
+        elements.canvasScroll.scrollLeft = workspaceState.canvasScrollLeft || 0
+        elements.canvasScroll.scrollTop = workspaceState.canvasScrollTop || 0
+        elements.sourcePreviewScroll.scrollLeft = workspaceState.sourceScrollLeft || 0
+        elements.sourcePreviewScroll.scrollTop = workspaceState.sourceScrollTop || 0
+      }
       if (!workflowUsesSegments() && fitObjectsToRenderedContent(state.scene.objects, true)) {
         rebuildClientTables()
         scheduleSave()
@@ -1209,21 +1410,11 @@
         const columnHeadings = state.workflowStage === 2 ? document.createElement('div') : null
         if (columnHeadings) {
           columnHeadings.className = 'segments-column-headings'
-          const selectPage = document.createElement('button')
-          selectPage.className = 'compact-button segments-select-all'
-          selectPage.type = 'button'
-          selectPage.textContent = 'Все'
-          selectPage.dataset.pageIndex = String(page.index)
-          selectPage.addEventListener('pointerdown', event => event.stopPropagation())
-          selectPage.addEventListener('click', event => {
-            event.stopPropagation()
-            togglePageSegmentSelection(page.index)
-          })
           const sourceHeading = document.createElement('span')
           sourceHeading.textContent = 'Распознанный исходник'
           const translationHeading = document.createElement('span')
           translationHeading.textContent = 'Перевод'
-          columnHeadings.append(selectPage, sourceHeading, translationHeading)
+          columnHeadings.append(sourceHeading, translationHeading)
         }
         const list = document.createElement('div')
         list.className = 'segments-list'
@@ -1238,30 +1429,6 @@
           }
           row.append(createSegmentRowMeta(object))
           if (state.workflowStage === 2) {
-            const selectable = isTranslatableType(object.type) && hasTranslationSource(object)
-            if (selectable) {
-              const selector = document.createElement('label')
-              selector.className = 'segment-translation-selector'
-              const checkbox = document.createElement('input')
-              checkbox.type = 'checkbox'
-              checkbox.className = 'segment-translation-selector__input'
-              checkbox.dataset.translationSelect = object.id
-              checkbox.checked = state.translationSelected.has(object.id)
-              checkbox.setAttribute('aria-label', `Выбрать сегмент ${object.readingOrder || object.id} для перевода`)
-              selector.addEventListener('pointerdown', event => event.stopPropagation())
-              checkbox.addEventListener('change', () => changeTranslationSegmentSelection(object.id, checkbox, selector))
-              const label = document.createElement('span')
-              label.className = 'segment-translation-selector__label'
-              label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
-              label.setAttribute('aria-hidden', 'true')
-              selector.append(checkbox, label)
-              row.append(selector)
-            } else {
-              const placeholder = document.createElement('span')
-              placeholder.className = 'segment-translation-selector is-disabled'
-              placeholder.title = 'Этот тип объекта не переводится автоматически'
-              row.append(placeholder)
-            }
             row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
             row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
             row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
@@ -2011,10 +2178,15 @@
     } else if (!object.translation) object.translation = servicePlaceholder(object.type, object.sourceText)
   }
 
-  function translationCandidates() {
-    return state.scene?.objects.filter(object => (
+  function translationCandidates(scene = state.scene) {
+    return scene?.objects.filter(object => (
       !object.excluded && isTranslatableType(object.type) && hasTranslationSource(object)
     )) || []
+  }
+
+  function selectableSegmentObjects(scene = state.scene) {
+    if (state.workflowStage === 2) return scene?.objects.filter(object => !object.excluded) || []
+    return translationCandidates(scene)
   }
 
   function rememberTranslationSelection() {
@@ -2024,78 +2196,13 @@
 
   function refreshTranslationSelectionControls() {
     const candidates = translationCandidates()
-    const validIds = new Set(candidates.map(object => object.id))
+    const selectableObjects = selectableSegmentObjects()
+    const validIds = new Set(selectableObjects.map(object => object.id))
     state.translationSelected = new Set([...state.translationSelected].filter(id => validIds.has(id)))
     rememberTranslationSelection()
     const total = candidates.length
     elements.translate.disabled = total === 0
     elements.translate.textContent = 'Перевести документ'
-    for (const checkbox of elements.canvas.querySelectorAll('[data-translation-select]')) {
-      checkbox.checked = state.translationSelected.has(checkbox.dataset.translationSelect)
-      const row = checkbox.closest('.segment-translation-row')
-      const selector = checkbox.closest('.segment-translation-selector')
-      row?.classList.toggle('is-translation-selected', checkbox.checked)
-      const label = selector?.querySelector('.segment-translation-selector__label')
-      if (label) label.textContent = checkbox.checked ? 'Выбран' : 'Выбрать'
-    }
-    for (const button of elements.canvas.querySelectorAll('.segments-select-all')) {
-      const pageIndex = Number(button.dataset.pageIndex)
-      const pageCandidates = candidates.filter(object => object.pageIndex === pageIndex)
-      const allSelected = pageCandidates.length > 0 && pageCandidates.every(object => state.translationSelected.has(object.id))
-      const label = `${allSelected ? 'Снять выбор со всех' : 'Выбрать все'} сегментов страницы ${pageIndex + 1}`
-      button.classList.toggle('is-active', allSelected)
-      button.setAttribute('aria-pressed', String(allSelected))
-      button.setAttribute('aria-label', label)
-      button.title = label
-    }
-  }
-
-  function changeTranslationSegmentSelection(objectId, checkbox, selector) {
-    const wasPrimary = primarySelectedObject()?.id === objectId
-    if (!checkbox.checked && wasPrimary) {
-      state.translationSelected.delete(objectId)
-      state.selected.delete(objectId)
-      if (state.lastTextSelection?.objectId === objectId) state.lastTextSelection = null
-      refreshTranslationSelectionControls()
-      refreshSelection()
-      return
-    }
-    state.translationSelected.add(objectId)
-    checkbox.checked = true
-    focusTranslationSegment(objectId, selector)
-    refreshTranslationSelectionControls()
-  }
-
-  function togglePageSegmentSelection(pageIndex) {
-    const objects = visualReadingOrder(state.scene?.objects.filter(object => object.pageIndex === pageIndex && !object.excluded) || [])
-    const candidates = objects.filter(object => isTranslatableType(object.type) && hasTranslationSource(object))
-    const allSelected = candidates.length > 0 && candidates.every(object => state.translationSelected.has(object.id))
-    for (const object of objects) {
-      if (allSelected) state.selected.delete(object.id)
-      else state.selected.add(object.id)
-    }
-    for (const object of candidates) {
-      if (allSelected) state.translationSelected.delete(object.id)
-      else state.translationSelected.add(object.id)
-    }
-    state.activePage = pageIndex
-    state.lastTextSelection = null
-    refreshSelection()
-    refreshTranslationSelectionControls()
-  }
-
-  function focusTranslationSegment(objectId, selector) {
-    const object = state.scene?.objects.find(item => item.id === objectId)
-    if (!object) return
-    state.activePage = object.pageIndex
-    state.selected.delete(objectId)
-    state.selected.add(objectId)
-    refreshSelection()
-    if (state.workflowStage === 2) {
-      selector.closest('.segment-translation-row')
-        ?.querySelector('.scene-object--source .scene-object__content')
-        ?.focus({ preventScroll: true })
-    }
   }
 
   function servicePlaceholder(type, sourceText = '') {
@@ -2475,7 +2582,7 @@
   function refreshInstructionPresetControls() {
     for (const select of document.querySelectorAll('[data-instruction-preset-select], #instruction-preset-select')) {
       populateInstructionPresetSelect(select)
-      const container = select.closest('.instruction-preset-picker, .segment-ai-instruction__presets')
+      const container = select.closest('.instruction-preset-picker, .segment-ai-chat__presets')
       const apply = container?.querySelector('[data-instruction-preset-apply], #instruction-preset-apply')
       if (apply) apply.disabled = !select.value
     }
@@ -2486,6 +2593,45 @@
 
   function refreshGlobalInstructionControls() {
     elements.instructionPresetSave.disabled = !elements.globalTranslationInstruction.value.trim()
+  }
+
+  function normalizedAiChatMessages(messages) {
+    return (Array.isArray(messages) ? messages : [])
+      .map(message => ({
+        role: message?.role === 'user' ? 'user' : 'assistant',
+        text: String(message?.text || '').trim(),
+      }))
+      .filter(message => message.text)
+  }
+
+  function renderAiChatMessages(container, messages, emptyText) {
+    if (!container) return
+    const normalized = normalizedAiChatMessages(messages)
+    const visibleMessages = normalized.length
+      ? normalized
+      : [{ role: 'assistant', text: emptyText }]
+    container.replaceChildren(...visibleMessages.map(message => {
+      const bubble = document.createElement('article')
+      bubble.className = `ai-chat__message ai-chat__message--${message.role}`
+      const author = document.createElement('strong')
+      author.className = 'ai-chat__author'
+      author.textContent = message.role === 'user' ? 'Вы' : 'AI-агент'
+      const text = document.createElement('p')
+      text.textContent = message.text
+      bubble.append(author, text)
+      return bubble
+    }))
+    container.scrollTop = container.scrollHeight
+  }
+
+  function refreshBatchRevisionControls() {
+    if (!elements.batchRevisionInstruction) return
+    renderAiChatMessages(
+      elements.batchRevisionMessages,
+      state.scene?.batchRevisionChat,
+      'Опишите нужные изменения. Если запрос неоднозначен, я задам уточняющий вопрос до исправления перевода.',
+    )
+    elements.batchRevisionApply.disabled = !elements.batchRevisionInstruction.value.trim()
   }
 
   async function loadInstructionPresets() {
@@ -2689,55 +2835,86 @@
 
   function createSegmentInstructionControl(object) {
     const control = document.createElement('div')
-    control.className = 'segment-ai-instruction'
+    control.className = 'ai-chat segment-ai-chat'
     control.addEventListener('pointerdown', event => event.stopPropagation())
+    const title = document.createElement('strong')
+    title.className = 'segment-ai-chat__title'
+    title.textContent = 'Чат с AI по сегменту'
+    const messages = document.createElement('div')
+    messages.className = 'ai-chat__messages'
+    messages.setAttribute('role', 'log')
+    messages.setAttribute('aria-live', 'polite')
+    renderAiChatMessages(
+      messages,
+      object.revisionChat,
+      'Опишите нужное изменение этого сегмента. При необходимости я сначала задам уточняющий вопрос.',
+    )
     const input = document.createElement('textarea')
     input.rows = 2
-    input.maxLength = 5000
+    input.maxLength = 10000
     input.value = object.translationInstruction || ''
-    input.placeholder = 'Комментарий для ИИ по этому сегменту…'
-    input.setAttribute('aria-label', `Комментарий для ИИ к сегменту ${object.readingOrder || object.id}`)
+    input.placeholder = 'Напишите сообщение или ответьте на вопрос агента'
+    input.setAttribute('aria-label', `Сообщение для AI по сегменту ${object.readingOrder || object.id}`)
     input.addEventListener('pointerdown', event => event.stopPropagation())
-    input.addEventListener('input', () => {
-      object.translationInstruction = input.value.slice(0, 5000)
-      refreshTranslationSelectionControls()
-      scheduleSave()
-    })
     const presetControls = document.createElement('div')
-    presetControls.className = 'segment-ai-instruction__presets'
+    presetControls.className = 'segment-ai-chat__presets instruction-preset-picker'
     const presetSelect = document.createElement('select')
     presetSelect.dataset.instructionPresetSelect = 'true'
     presetSelect.setAttribute('aria-label', `Сохраненная инструкция для сегмента ${object.readingOrder || object.id}`)
     populateInstructionPresetSelect(presetSelect)
     const addPreset = document.createElement('button')
     addPreset.type = 'button'
+    addPreset.className = 'icon-button icon-button--compact icon-button--ghost'
     addPreset.dataset.instructionPresetApply = 'true'
-    addPreset.textContent = 'Добавить'
+    addPreset.setAttribute('aria-label', 'Использовать инструкцию')
+    addPreset.innerHTML = iconMarkup('plus')
     addPreset.disabled = true
     presetSelect.addEventListener('change', () => { addPreset.disabled = !presetSelect.value })
     addPreset.addEventListener('click', event => {
       event.preventDefault()
-      applyInstructionPreset(presetSelect, input, 5000)
+      applyInstructionPreset(presetSelect, input, 10000)
     })
     const savePreset = document.createElement('button')
     savePreset.type = 'button'
-    savePreset.textContent = 'Сохранить'
+    savePreset.className = 'icon-button icon-button--compact icon-button--ghost'
+    savePreset.setAttribute('aria-label', 'Сохранить инструкцию в список инструкций')
+    savePreset.innerHTML = iconMarkup('save')
+    savePreset.disabled = !input.value.trim()
     savePreset.addEventListener('click', event => {
       event.preventDefault()
       saveInstructionPreset(input.value, presetSelect)
     })
     presetControls.append(presetSelect, addPreset, savePreset)
-    const apply = document.createElement('button')
-    apply.type = 'button'
-    apply.textContent = 'Исправить ИИ'
-    apply.disabled = !String(object.translation || '').trim()
-    apply.addEventListener('pointerdown', event => event.stopPropagation())
-    apply.addEventListener('click', event => {
+    const composer = document.createElement('div')
+    composer.className = 'ai-chat__composer'
+    const send = document.createElement('button')
+    send.type = 'button'
+    send.className = 'button button--primary'
+    send.textContent = 'Отправить'
+    const refreshSendState = () => {
+      object.translationInstruction = input.value.slice(0, 10000)
+      send.disabled = !String(object.translation || '').trim() || !object.translationInstruction.trim()
+      savePreset.disabled = !object.translationInstruction.trim()
+    }
+    input.addEventListener('input', () => {
+      refreshSendState()
+      scheduleSave()
+    })
+    refreshSendState()
+    send.addEventListener('pointerdown', event => event.stopPropagation())
+    send.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
-      reviseTranslations([object.id], 'selection', apply)
+      reviseTranslations(
+        [object.id],
+        'selection',
+        send,
+        input.value,
+        { kind: 'segment', objectId: object.id },
+      )
     })
-    control.append(input, presetControls, apply)
+    composer.append(input, send)
+    control.append(title, messages, presetControls, composer)
     return control
   }
 
@@ -2756,40 +2933,8 @@
       notesText.textContent = agentNotes
       notes.append(warning, notesText)
     }
-    if (state.workflowStage === 1) {
-      if (notes) meta.append(notes)
-      else meta.hidden = true
-      return meta
-    }
-    const confidence = document.createElement('div')
-    confidence.className = 'segment-row-confidence'
-    const confidenceLabel = document.createElement('span')
-    confidenceLabel.textContent = 'Уверенность распознавания'
-    const confidenceValue = document.createElement('strong')
-    confidenceValue.textContent = `${Math.round(object.confidence * 100)}%`
-    confidence.append(confidenceLabel, confidenceValue)
-    const type = document.createElement('label')
-    type.className = 'segment-row-type'
-    type.addEventListener('pointerdown', event => event.stopPropagation())
-    const typeLabelText = document.createElement('span')
-    typeLabelText.textContent = 'Тип содержимого'
-    const select = document.createElement('select')
-    select.setAttribute('aria-label', `Тип содержимого сегмента ${object.readingOrder || object.id}`)
-    for (const sourceOption of elements.objectType.options) select.append(sourceOption.cloneNode(true))
-    select.value = object.type
-    select.disabled = state.workflowStage !== 2
-    select.addEventListener('change', () => applySelectionChange(
-      selectedObject => setObjectType(selectedObject, select.value), true, false, [object],
-    ))
-    type.append(typeLabelText, select)
-    const controls = document.createElement('div')
-    controls.className = 'segment-translation-row__meta-controls'
-    controls.append(confidence, type)
-    if (notes) meta.append(notes, controls)
-    else {
-      meta.classList.add('has-no-note')
-      meta.append(controls)
-    }
+    if (notes) meta.append(notes)
+    else meta.hidden = true
     return meta
   }
 
@@ -2848,8 +2993,7 @@
   }
 
   function createSegmentWorkspace(object) {
-    const controls = []
-    if (isTranslatableType(object.type)) controls.push(createSegmentInstructionControl(object))
+    const controls = [createSegmentInstructionControl(object)]
     const alternative = createAiTranslationAlternativeControl(object)
     if (alternative) controls.push(alternative)
     if (!controls.length) return null
@@ -2863,15 +3007,6 @@
   function renderInspectorSegmentWorkspace(selection) {
     if (!elements.inspectorSegmentWorkspace) return
     elements.inspectorSegmentWorkspace.replaceChildren()
-    if (selection.length !== 1) {
-      const hint = document.createElement('small')
-      hint.className = 'note note--muted note--compact inspector-segment-workspace__hint'
-      hint.textContent = 'Для корректировки через AI выберите один сегмент.'
-      elements.inspectorSegmentWorkspace.append(hint)
-      return
-    }
-    const workspace = createSegmentWorkspace(selection[0])
-    if (workspace) elements.inspectorSegmentWorkspace.append(workspace)
   }
 
   function createObjectElement(object, requestedField = null, options = {}) {
@@ -2925,14 +3060,18 @@
     if (state.workflowStage === 3) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
-    const canEditText = (state.workflowStage === 1 || state.workflowStage === 2) && !object.excluded
+    const canEditText = !object.excluded && (
+      (state.workflowStage === 1 && requestedField === 'sourceText')
+      || (state.workflowStage === 2 && requestedField === 'translation')
+    )
     content.tabIndex = canEditText ? 0 : -1
     content.contentEditable = String(canEditText)
     content.classList.toggle('is-readonly', !canEditText)
+    if (!canEditText) content.setAttribute('aria-readonly', 'true')
     content.spellcheck = true
     content.dataset.editField = editField
     renderTextContent(content, object, displayField, state.workflowStage > 1)
-    if (state.workflowStage === 1 && requestedField === 'sourceText') {
+    if (workflowUsesSegments() && requestedField === 'sourceText') {
       appendRecognitionBadges(content, object, options.documentReviewIndex)
     }
     if (canEditText) content.addEventListener('focus', () => {
@@ -2951,7 +3090,7 @@
     if (canEditText) content.addEventListener('blur', () => {
       state.textCheckpoint = false
       renderTextContent(content, object, displayField)
-      if (state.workflowStage === 1 && requestedField === 'sourceText') {
+      if (workflowUsesSegments() && requestedField === 'sourceText') {
         appendRecognitionBadges(content, object, options.documentReviewIndex)
       }
       setObjectsKnowledgeEditing([object], false)
@@ -3651,6 +3790,13 @@
   function selectFromPointer(event, id) {
     if (event.button !== 0 || event.target.closest('.scene-object__handle, .scene-object__resize')) return
     event.stopPropagation()
+    if (state.workflowStage === 2) {
+      state.selected = new Set([id])
+      const object = state.scene.objects.find(item => item.id === id)
+      if (object) state.activePage = object.pageIndex
+      refreshSelection()
+      return
+    }
     if (event.metaKey || event.ctrlKey) {
       if (!state.selected.has(id)) {
         state.selected.add(id)
@@ -3717,7 +3863,7 @@
   }
 
   function refreshSelection() {
-    const candidateIds = new Set(translationCandidates().map(object => object.id))
+    const candidateIds = new Set(selectableSegmentObjects().map(object => object.id))
     state.translationSelected = new Set([...state.selected].filter(id => candidateIds.has(id)))
     rememberTranslationSelection()
     refreshTranslationSelectionControls()
@@ -3733,6 +3879,7 @@
     }
     const selection = selectedObjects()
     refreshInspectorSelectionState(selection.length > 0)
+    refreshBatchRevisionControls()
     refreshSegmentGridCoordinates(selection)
     renderInspectorSegmentWorkspace(selection)
     updateQaSegmentCheckAvailability()
@@ -4510,10 +4657,10 @@
     elements.redo.disabled = !state.future.length
   }
 
-  function synchronizeReadingOrder() {
-    if (!state.scene) return
-    for (const page of state.scene.pages) {
-      state.scene.objects
+  function synchronizeReadingOrder(scene = state.scene) {
+    if (!scene) return
+    for (const page of scene.pages) {
+      scene.objects
         .filter(object => object.pageIndex === page.index && !object.excluded)
         .sort((left, right) => left.y - right.y || left.x - right.x || left.id.localeCompare(right.id))
         .forEach((object, index) => { object.readingOrder = index + 1 })
@@ -4524,16 +4671,22 @@
     clearTimeout(state.saveTimer)
     state.saveTimer = null
     if (!state.scene || !state.metadata) return
+    const tabKey = state.activeTabKey
+    const scene = state.scene
+    const metadata = state.metadata
     try {
-      synchronizeReadingOrder()
-      const response = await api(`/api/studio/documents/${state.metadata.id}/scene`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state.scene),
+      synchronizeReadingOrder(scene)
+      const response = await api(`/api/studio/documents/${metadata.id}/scene`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scene),
       })
       const data = await response.json()
-      state.metadata = data.metadata
-      const activeTab = state.tabs.get(state.activeTabKey)
-      if (activeTab?.status === 'completed') activeTab.documentData = { metadata: state.metadata, scene: state.scene }
-      elements.documentStatus.textContent = `${state.scene.pages.length} стр. · ${state.scene.objects.filter(item => !item.excluded).length} в сборке · изменения сохранены`
+      const savedMetadata = data.metadata || metadata
+      const tab = state.tabs.get(tabKey)
+      if (tab?.status === 'completed') tab.documentData = { metadata: savedMetadata, scene }
+      if (state.activeTabKey === tabKey && state.scene === scene) {
+        state.metadata = savedMetadata
+        elements.documentStatus.textContent = `${scene.pages.length} стр. · ${scene.objects.filter(item => !item.excluded).length} в сборке · изменения сохранены`
+      }
     } catch (error) {
       showToast(`Не удалось сохранить: ${error.message}`, true)
       if (immediate) throw error
@@ -4598,55 +4751,105 @@
   }
 
   async function translateDocument(options = {}) {
-    if (!state.scene) return false
-    refreshTranslationSelectionControls()
-    const objectIds = translationCandidates().map(object => object.id)
+    const tabKey = options.tabKey || state.activeTabKey
+    const tab = state.tabs.get(tabKey)
+    const scene = tabKey === state.activeTabKey ? state.scene : tab?.documentData?.scene
+    const metadata = tabKey === state.activeTabKey ? state.metadata : tab?.documentData?.metadata
+    if (!scene || !metadata) return false
+    if (tabKey === state.activeTabKey) refreshTranslationSelectionControls()
+    const objectIds = translationCandidates(scene).map(object => object.id)
     if (!objectIds.length) {
       showToast('В документе нет сегментов для перевода', true)
       return false
     }
-    elements.translate.disabled = true
-    elements.translate.textContent = `Переводим ${objectIds.length}…`
-    elements.agentStatus.textContent = `Ищем совпадения в БЗ и переводим сегменты: ${objectIds.length}…`
+    const requestId = options.translationRequestId || ++state.translationRequestRevision
+    if (tab && tab.translationState?.requestId !== requestId) {
+      tab.translationState = { status: 'running', requestId, objectCount: objectIds.length }
+      renderDocumentTabs()
+    }
+    if (tabKey === state.activeTabKey) {
+      elements.translate.disabled = true
+      elements.translate.textContent = `Переводим ${objectIds.length}…`
+      elements.agentStatus.textContent = `Ищем совпадения в БЗ и переводим сегменты: ${objectIds.length}…`
+    }
     try {
-      await saveScene(true)
-      const response = await api(`/api/studio/documents/${state.metadata.id}/translate`, {
+      synchronizeReadingOrder(scene)
+      const savedResponse = await api(`/api/studio/documents/${metadata.id}/scene`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scene),
+      })
+      const savedData = await savedResponse.json()
+      const response = await api(`/api/studio/documents/${metadata.id}/translate`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objectIds }),
+        body: JSON.stringify({ objectIds, forceRetranslate: Boolean(options.forceRetranslate) }),
       })
       const data = await response.json()
-      checkpoint()
-      state.scene = data.scene
-      const translatedObjects = state.scene.objects.filter(object => objectIds.includes(object.id))
-      if (!options.deferRender) renderDocumentWithContentFit(translatedObjects)
-      scheduleSave()
-      elements.agentStatus.textContent = data.message
-      showToast(data.message, data.pending.length > 0 && !data.translated.length && !data.suggested?.length)
+      const translatedScene = data.scene
+      if (options.advanceToStage) {
+        translatedScene.workflowVersion = 2
+        translatedScene.workflowStage = options.advanceToStage
+        translatedScene.translationCompleted = true
+      }
+      const finalResponse = await api(`/api/studio/documents/${metadata.id}/scene`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(translatedScene),
+      })
+      const finalData = await finalResponse.json()
+      const translatedMetadata = finalData.metadata || savedData.metadata || metadata
+      if (tab && tab.translationState?.requestId === requestId) {
+        tab.documentData = { metadata: translatedMetadata, scene: translatedScene }
+        tab.translationState = null
+      }
+      if (state.activeTabKey === tabKey && state.metadata?.id === metadata.id) {
+        checkpoint()
+        state.metadata = translatedMetadata
+        state.scene = translatedScene
+        setView('studio')
+        if (options.advanceToStage) setWorkflowStage(options.advanceToStage, { save: false })
+        else {
+          state.workflowStage = normalizeWorkflowStage(translatedScene)
+          renderWorkflowStageState()
+          renderDocumentWithContentFit(translatedScene.objects.filter(object => objectIds.includes(object.id)))
+        }
+        elements.agentStatus.textContent = data.message
+      }
+      renderDocumentTabs()
+      showToast(
+        state.activeTabKey === tabKey ? data.message : `Перевод документа «${tab?.title || scene.title}» завершён`,
+        data.pending.length > 0 && !data.translated.length && !data.suggested?.length,
+      )
       return true
     } catch (error) {
-      elements.agentStatus.textContent = 'Перевод не выполнен.'
-      showToast(error.message, true)
+      if (tab && tab.translationState?.requestId === requestId) tab.translationState = null
+      if (state.activeTabKey === tabKey && state.metadata?.id === metadata.id) {
+        setView('studio')
+        elements.agentStatus.textContent = 'Перевод не выполнен.'
+      }
+      renderDocumentTabs()
+      showToast(state.activeTabKey === tabKey ? error.message : `Не удалось перевести «${tab?.title || scene.title}»: ${error.message}`, true)
       return false
     } finally {
-      refreshTranslationSelectionControls()
+      if (state.activeTabKey === tabKey && state.metadata?.id === metadata.id) refreshTranslationSelectionControls()
     }
   }
 
-  async function reviseTranslations(requestedIds = [], scope = 'selection', trigger = null) {
+  async function reviseTranslations(requestedIds = [], scope = 'selection', trigger = null, instructionOverride = null, chatTarget = null) {
     if (!state.scene || !state.metadata) return
     const objectIds = scope === 'document' ? [] : requestedIds
     const requested = new Set(objectIds)
     const hasSegmentInstruction = state.scene.objects.some(object => (
       String(object.translationInstruction || '').trim() && (scope === 'document' || requested.has(object.id))
     ))
-    const globalInstruction = String(elements.globalTranslationInstruction.value || '').trim()
+    const usesRevisionInstruction = typeof instructionOverride === 'string'
+    const globalInstruction = String(usesRevisionInstruction
+      ? instructionOverride
+      : elements.globalTranslationInstruction.value || '').trim()
     if (scope === 'document' && !globalInstruction) {
       return showToast('Введите инструкцию для AI', true)
     }
     if (scope !== 'document' && !globalInstruction && !hasSegmentInstruction) {
       return showToast('Добавьте инструкцию для AI или комментарий к сегменту', true)
     }
-    state.scene.globalTranslationInstruction = globalInstruction
+    if (usesRevisionInstruction) state.scene.batchRevisionInstruction = globalInstruction
+    else state.scene.globalTranslationInstruction = globalInstruction
     const previousLabel = trigger?.getAttribute('aria-label')
     if (trigger) {
       trigger.disabled = true
@@ -4660,18 +4863,24 @@
       await saveScene(true)
       const response = await api(`/api/studio/documents/${state.metadata.id}/translate/revise`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objectIds, scope, globalInstruction }),
+        body: JSON.stringify(usesRevisionInstruction
+          ? { objectIds, scope, revisionInstruction: globalInstruction, chatTarget }
+          : { objectIds, scope, globalInstruction }),
       })
       const data = await response.json()
       checkpoint()
       state.scene = data.scene
+      if (chatTarget?.kind === 'batch') {
+        elements.batchRevisionInstruction.value = state.scene.batchRevisionInstruction || ''
+      }
       const revisedObjects = scope === 'document'
         ? allFormattingObjects()
         : state.scene.objects.filter(object => objectIds.includes(object.id))
-      renderDocumentWithContentFit(revisedObjects)
+      if (data.revised?.length) renderDocumentWithContentFit(revisedObjects)
+      else renderDocument()
       scheduleSave()
       elements.agentStatus.textContent = data.message
-      showToast(data.message)
+      showToast(data.assistantMessage || data.message)
     } catch (error) {
       elements.agentStatus.textContent = 'Корректировка по комментариям не выполнена.'
       showToast(error.message, true)
@@ -4679,8 +4888,10 @@
       if (trigger) {
         trigger.removeAttribute('aria-busy')
         if (previousLabel) trigger.setAttribute('aria-label', previousLabel)
+        else trigger.removeAttribute('aria-label')
       }
       refreshTranslationSelectionControls()
+      refreshBatchRevisionControls()
     }
   }
 
@@ -5603,6 +5814,17 @@
     elements.saveAiSettings.addEventListener('click', saveProviderSettings)
     elements.testAiConnection.addEventListener('click', testAiConnection)
     elements.removeAitunnelKey.addEventListener('click', removeAitunnelKey)
+    elements.administrationButton.addEventListener('click', openAdministration)
+    elements.administrationClose.addEventListener('click', closeAdministration)
+    elements.administrationCancel.addEventListener('click', closeAdministration)
+    elements.administrationReset.addEventListener('click', resetAdministrationPrompt)
+    elements.administrationSave.addEventListener('click', saveAdministrationSettings)
+    elements.chatAgentSystemPrompt.addEventListener('input', () => {
+      elements.administrationSave.disabled = !elements.chatAgentSystemPrompt.value.trim()
+    })
+    elements.administrationModal.addEventListener('pointerdown', event => {
+      if (event.target === elements.administrationModal) closeAdministration()
+    })
     elements.retryJob.addEventListener('click', retryFailedJob)
     elements.cancelJob.addEventListener('click', cancelActiveJob)
     elements.zoomOut.addEventListener('click', () => setZoom(state.zoom - .1))
@@ -5613,6 +5835,7 @@
     elements.workflowApprove.addEventListener('click', approveWorkflowStage)
     elements.translationApprovalClose.addEventListener('click', () => closeTranslationApprovalModal())
     elements.translationApprovalCancel.addEventListener('click', () => closeTranslationApprovalModal())
+    elements.translationApprovalContinue.addEventListener('click', continueWithCurrentTranslation)
     elements.translationApprovalSubmit.addEventListener('click', submitTranslationApproval)
     elements.translationApprovalModal.addEventListener('pointerdown', event => {
       if (event.target === elements.translationApprovalModal) closeTranslationApprovalModal()
@@ -5664,8 +5887,16 @@
       event.preventDefault()
       queueWheelZoom(event, true)
     }, { passive: false })
-    elements.sourceLanguage.addEventListener('change', () => { state.scene.sourceLanguage = elements.sourceLanguage.value; scheduleSave() })
-    elements.targetLanguage.addEventListener('change', () => { state.scene.targetLanguage = elements.targetLanguage.value; scheduleSave() })
+    elements.sourceLanguage.addEventListener('change', () => {
+      state.scene.sourceLanguage = elements.sourceLanguage.value
+      duplicateSourceTranslations(state.scene)
+      scheduleSave()
+    })
+    elements.targetLanguage.addEventListener('change', () => {
+      state.scene.targetLanguage = elements.targetLanguage.value
+      duplicateSourceTranslations(state.scene)
+      scheduleSave()
+    })
     elements.reanalyze.addEventListener('click', openReanalyzeConfirmation)
     elements.reanalyzeConfirmClose.addEventListener('click', closeReanalyzeConfirmation)
     elements.reanalyzeConfirmCancel.addEventListener('click', closeReanalyzeConfirmation)
@@ -5690,6 +5921,22 @@
       state.scene.globalTranslationInstruction = elements.globalTranslationInstruction.value.slice(0, 10000)
       refreshTranslationSelectionControls()
       scheduleSave()
+    })
+    elements.batchRevisionInstruction.addEventListener('input', () => {
+      if (state.scene) {
+        state.scene.batchRevisionInstruction = elements.batchRevisionInstruction.value.slice(0, 10000)
+        scheduleSave()
+      }
+      refreshBatchRevisionControls()
+    })
+    elements.batchRevisionApply.addEventListener('click', () => {
+      reviseTranslations(
+        [],
+        'document',
+        elements.batchRevisionApply,
+        elements.batchRevisionInstruction.value,
+        { kind: 'batch' },
+      )
     })
     elements.instructionPresetSelect.addEventListener('change', () => {
       const selected = Boolean(elements.instructionPresetSelect.value)
@@ -5829,6 +6076,7 @@
         closeKnowledgeSuggestion()
         closeInstructionPresetEditor()
         if (!elements.aiSettingsModal.hidden) closeProviderSettings()
+        if (!elements.administrationModal.hidden) closeAdministration()
         if (!elements.knowledgeBaseModal.hidden) closeKnowledgeBase()
         if (!elements.instructionLibraryModal.hidden) closeInstructionLibrary()
         elements.documentLibraryModal.hidden = true

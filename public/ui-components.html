@@ -185,6 +185,35 @@
 
         <details class="component-section" open>
           <summary class="component-section__summary">
+            <span>Чат с AI</span>
+            <code>AiChat</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Диалог для массовой или посегментной корректировки. Стороны беседы визуально разделены, история прокручивается, а сообщение отправляется из отдельной области ввода.</p>
+            </div>
+            <div class="ai-chat component-ai-chat-demo">
+              <div class="ai-chat__messages" role="log" aria-label="Пример диалога с AI">
+                <article class="ai-chat__message ai-chat__message--user">
+                  <strong class="ai-chat__author">Вы</strong>
+                  <p>Уберите маркировку списка.</p>
+                </article>
+                <article class="ai-chat__message ai-chat__message--assistant">
+                  <strong class="ai-chat__author">AI-агент</strong>
+                  <p>Убрать номера только у выбранных пунктов или у всех строк?</p>
+                </article>
+              </div>
+              <div class="ai-chat__composer">
+                <textarea rows="2" aria-label="Сообщение для AI" placeholder="Напишите сообщение или ответьте на вопрос агента"></textarea>
+                <button class="button button--primary" type="button">Отправить</button>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section" open>
+          <summary class="component-section__summary">
             <span>Этапы работы</span>
             <code>WorkflowStagebar</code>
           </summary>

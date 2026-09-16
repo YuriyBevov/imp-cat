@@ -47,6 +47,7 @@
 .component-stage-tools-demo__body { display: grid; align-content: start; gap: 12px; padding: 18px; }
 .component-stage-tools-demo__cards { display: grid; gap: 10px; }
 .component-note-demo { width: min(520px, 100%); display: grid; gap: 8px; }
+.component-ai-chat-demo { width: min(560px, 100%); }
 .component-workflow-demo { width: 100%; overflow-x: auto; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: #fafbfc; }
 .component-workflow-demo .workflow-stagebar { width: 100%; }
 .component-scrollbar-demo { width: min(520px, 100%); height: 150px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }

@@ -181,6 +181,9 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.snapToGrid, true)
   assert.equal(normalized.workflowVersion, 2)
   assert.equal(normalized.workflowStage, 4)
+  assert.equal(normalized.translationCompleted, true)
+  assert.deepEqual(normalized.batchRevisionChat, [])
+  assert.ok(normalized.objects.every(object => Array.isArray(object.revisionChat)))
 })
 
 test('normalizeScene migrates the removed translation stage without shifting current scenes', () => {
@@ -192,6 +195,11 @@ test('normalizeScene migrates the removed translation stage without shifting cur
   const current = buildScene(analysisFixture(), { documentId: '8'.repeat(32) })
   current.workflowStage = 3
   assert.equal(normalizeScene(current, '8'.repeat(32), 'Current').workflowStage, 3)
+
+  const translated = buildScene(analysisFixture(), { documentId: '9'.repeat(32) })
+  translated.translationCompleted = true
+  translated.workflowStage = 1
+  assert.equal(normalizeScene(translated, '9'.repeat(32), 'Translated').translationCompleted, true)
 })
 
 test('normalizeScene preserves legacy dimensions that differ from original bounds', () => {
