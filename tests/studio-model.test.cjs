@@ -38,6 +38,7 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.snapToGrid, true)
   assert.equal(scene.workflowVersion, 2)
   assert.equal(scene.workflowStage, 1)
+  assert.equal(scene.layoutInitializationVersion, 0)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
   assert.equal(scene.pages[0].heightPx, 1123)
@@ -97,14 +98,14 @@ test('buildSceneFromAgent preserves normalized geometry and labels special objec
   assert.ok(Math.abs(scene.objects[0].width - 198.5) < .01)
   assert.equal(scene.objects[0].translation, '')
   assert.equal(scene.objects[0].sourceText, 'TÜRKİYE CUMHURİYETİ')
-  assert.equal(scene.objects[0].style.fontFamily, 'Arial')
-  assert.equal(scene.objects[0].style.color, '#000000')
-  assert.equal(scene.objects[0].style.lineHeight, 1.2)
+  assert.equal(scene.objects[0].style.fontFamily, 'Times New Roman')
+  assert.equal(scene.objects[0].style.color, '#112233')
+  assert.equal(scene.objects[0].style.lineHeight, 1.1)
   assert.equal(scene.objects[0].style.fontWeight, 700)
   assert.ok(scene.objects[0].style.fontSizePx <= 14)
   assert.equal(scene.objects[1].translation, '/Подпись/')
   assert.equal(scene.objects[1].status, 'needs-review')
-  assert.ok(scene.objects.every(object => object.manualWidth === false && object.manualHeight === false))
+  assert.ok(scene.objects.every(object => object.manualPosition === false && object.manualWidth === false && object.manualHeight === false && object.manualTypography === false))
   assert.equal(scene.recognition.mode, 'codex')
 })
 
@@ -174,6 +175,8 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(normalized.pages[0].widthPx, normalized.pages[0].heightPx))
   assert.equal(normalized.objects[0].manualWidth, false)
   assert.equal(normalized.objects[0].manualHeight, false)
+  assert.equal(normalized.objects[0].manualPosition, false)
+  assert.equal(normalized.objects[0].manualTypography, false)
   assert.equal(normalized.objects[0].x, normalized.pages[0].contentBounds.x)
   assert.equal(normalized.objects[0].y, normalized.pages[0].contentBounds.y)
   assert.equal(normalized.objects[0].width, normalized.pages[0].contentBounds.width)
@@ -182,6 +185,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.workflowVersion, 2)
   assert.equal(normalized.workflowStage, 4)
   assert.equal(normalized.translationCompleted, true)
+  assert.equal(normalized.layoutInitializationVersion, 0)
   assert.deepEqual(normalized.batchRevisionChat, [])
   assert.ok(normalized.objects.every(object => Array.isArray(object.revisionChat)))
 })
@@ -202,16 +206,43 @@ test('normalizeScene migrates the removed translation stage without shifting cur
   assert.equal(normalizeScene(translated, '9'.repeat(32), 'Translated').translationCompleted, true)
 })
 
+test('normalizeScene preserves explicit layout initialization and safely migrates older stages', () => {
+  const pending = buildScene(analysisFixture(), { documentId: '4'.repeat(32) })
+  pending.workflowStage = 2
+  assert.equal(normalizeScene(pending, '4'.repeat(32), 'Pending').layoutInitializationVersion, 0)
+
+  const existingLayout = buildScene(analysisFixture(), { documentId: '5'.repeat(32) })
+  existingLayout.workflowStage = 3
+  delete existingLayout.layoutInitializationVersion
+  assert.equal(normalizeScene(existingLayout, '5'.repeat(32), 'Existing').layoutInitializationVersion, 1)
+
+  existingLayout.layoutInitializationVersion = 0
+  assert.equal(normalizeScene(existingLayout, '5'.repeat(32), 'Explicit pending').layoutInitializationVersion, 0)
+  existingLayout.layoutInitializationVersion = 2
+  existingLayout.pages.push({ ...existingLayout.pages[0], index: 1, isAdded: true, sourcePageIndex: null, imageUrl: null, layoutContinuation: true })
+  Object.assign(existingLayout.objects[0], { pageIndex: 1, layoutSourcePageIndex: 0, layoutSourceOrder: 1, layoutWidthLimit: 187.5, layoutContentKey: '42:12345' })
+  const restored = normalizeScene(existingLayout, '5'.repeat(32), 'Paginated')
+  assert.equal(restored.layoutInitializationVersion, 2)
+  assert.equal(restored.pages[1].layoutContinuation, true)
+  assert.equal(restored.pages[1].imageUrl, null)
+  assert.equal(restored.objects[0].layoutSourcePageIndex, 0)
+  assert.equal(restored.objects[0].layoutWidthLimit, 187.5)
+  assert.equal(restored.objects[0].layoutContentKey, '42:12345')
+})
+
 test('normalizeScene preserves legacy dimensions that differ from original bounds', () => {
   const input = buildScene(analysisFixture(), { documentId: 'e'.repeat(32) })
   const object = input.objects[0]
   delete object.manualWidth
   delete object.manualHeight
+  delete object.manualPosition
   object.width += 30
   object.height += 20
+  object.x += 20
   const normalized = normalizeScene(input, 'e'.repeat(32), 'Legacy')
   assert.equal(normalized.objects[0].manualWidth, true)
   assert.equal(normalized.objects[0].manualHeight, true)
+  assert.equal(normalized.objects[0].manualPosition, true)
 })
 
 test('short source pages use an A4-height workspace without stretching the source frame', () => {

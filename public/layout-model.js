@@ -388,11 +388,133 @@
     return positions;
   }
 
+  function gridCellRectsOverlap(first, second) {
+    return first.left < second.right
+      && first.right > second.left
+      && first.top < second.bottom
+      && first.bottom > second.top;
+  }
+
+  // Input boxes have already been measured by the rendering engine. Keep the
+  // source column and propagate growth only through vertically related boxes.
+  // Page offsets are relative to this source page, never another source page.
+  function layoutSourceFlow(boxes, area, obstacles = []) {
+    const horizontalOverlap = (a, b) => a.x < b.x + b.width - .01 && a.x + a.width > b.x + .01;
+    const ordered = [...boxes].sort((a, b) => a.anchor.y - b.anchor.y
+      || a.anchor.x - b.anchor.x || (a.order || 0) - (b.order || 0));
+    const bands = [];
+    for (const box of ordered) {
+      if (box.width > area.width + .01 || box.height > area.height + .01) {
+        throw new Error(`Сегмент ${box.id} больше целой страницы. Разделите его на несколько блоков.`);
+      }
+      const previous = box.rowGroup ? bands.find(band => band.rowGroup === box.rowGroup) : null;
+      if (previous) previous.boxes.push(box);
+      else bands.push({ y: box.anchor.y, rowGroup: box.rowGroup, boxes: [box] });
+    }
+    const placed = [];
+    const placements = new Map();
+    let pageCount = 1;
+    for (const band of bands) {
+      const rowHeight = Math.max(...band.boxes.map(box => box.height));
+      const predecessors = placed.filter(item => band.boxes.some(box => horizontalOverlap(box.anchor, item.anchor)));
+      let pageOffset = Math.max(0, ...predecessors.map(item => item.pageOffset));
+      let y = pageOffset ? area.y : Math.max(area.y, band.y);
+      for (const predecessor of predecessors.filter(item => item.pageOffset === pageOffset)) {
+        const sourceGap = Math.max(0, band.y - predecessor.anchor.y - predecessor.anchor.height);
+        y = Math.max(y, predecessor.y + predecessor.height + sourceGap);
+      }
+      const positioned = band.boxes.map(box => ({ ...box, x: clamp(box.x, area.x, area.x + area.width - box.width) }));
+      const firstOnPage = () => [...placed.filter(item => item.pageOffset === pageOffset), ...(pageOffset === 0 ? obstacles : [])];
+      const moveBelowBlockers = () => {
+        for (let attempt = 0; attempt <= placed.length + obstacles.length; attempt += 1) {
+          const blockers = firstOnPage().filter(item => positioned.some(box => horizontalOverlap(box, item)
+            && y < item.y + item.height - .01 && y + rowHeight > item.y + .01));
+          if (!blockers.length) break;
+          y = Math.max(...blockers.map(item => item.y + item.height + 2));
+        }
+      };
+      moveBelowBlockers();
+      if (y + rowHeight > area.y + area.height + .01) {
+        pageOffset += 1;
+        y = area.y;
+        moveBelowBlockers();
+        while (y + rowHeight > area.y + area.height + .01) {
+          pageOffset += 1;
+          y = area.y;
+          moveBelowBlockers();
+        }
+      }
+      for (const box of positioned) {
+        // Source boxes on the same line can themselves overlap (e.g. OCR).
+        // Keep the column; move this box down rather than placing text on text.
+        let boxY = y;
+        let boxPage = pageOffset;
+        while (true) {
+          const blockers = [...placed.filter(item => item.pageOffset === boxPage), ...(boxPage === 0 ? obstacles : [])]
+            .filter(item => horizontalOverlap(box, item) && boxY < item.y + item.height - .01 && boxY + box.height > item.y + .01);
+          if (blockers.length) boxY = Math.max(...blockers.map(item => item.y + item.height + 2));
+          if (boxY + box.height > area.y + area.height + .01) { boxPage += 1; boxY = area.y; continue; }
+          if (!blockers.length) break;
+        }
+        const result = { x: box.x, y: boxY, width: box.width, height: box.height, pageOffset: boxPage };
+        placements.set(box.id, result);
+        placed.push({ ...box, ...result });
+        pageCount = Math.max(pageCount, boxPage + 1);
+      }
+    }
+    return { placements, pageCount };
+  }
+
+  function findNearestFreeGridRect(anchor, occupiedRects, columns, rows) {
+    const columnCount = Math.max(1, Math.trunc(Number(columns) || 1));
+    const rowCount = Math.max(1, Math.trunc(Number(rows) || 1));
+    const width = clamp(
+      Math.max(1, Math.trunc(Number(anchor?.right) - Number(anchor?.left)) || 1),
+      1,
+      columnCount,
+    );
+    const height = clamp(
+      Math.max(1, Math.trunc(Number(anchor?.bottom) - Number(anchor?.top)) || 1),
+      1,
+      rowCount,
+    );
+    const desiredLeft = clamp(Math.trunc(Number(anchor?.left) || 0), 0, columnCount - width);
+    const desiredTop = clamp(Math.trunc(Number(anchor?.top) || 0), 0, rowCount - height);
+    const occupied = Array.isArray(occupiedRects) ? occupiedRects : [];
+    const candidates = [];
+
+    for (let top = 0; top <= rowCount - height; top += 1) {
+      for (let left = 0; left <= columnCount - width; left += 1) {
+        const rectangle = { left, top, right: left + width, bottom: top + height };
+        if (occupied.some(obstacle => gridCellRectsOverlap(rectangle, obstacle))) continue;
+        const verticalDistance = Math.abs(top - desiredTop);
+        const horizontalDistance = Math.abs(left - desiredLeft);
+        candidates.push({
+          rectangle,
+          // Keep the recognized column whenever possible. Moving down preserves
+          // document reading order better than pushing a segment sideways.
+          distance: verticalDistance + horizontalDistance * (rowCount + 1),
+          beforeAnchor: top < desiredTop,
+        });
+      }
+    }
+
+    candidates.sort((first, second) => (
+      Number(first.beforeAnchor) - Number(second.beforeAnchor)
+      || first.distance - second.distance
+      || first.rectangle.top - second.rectangle.top
+      || first.rectangle.left - second.rectangle.left
+    ));
+    return candidates[0]?.rectangle || null;
+  }
+
   return {
     captureZoomAnchor,
     clampGroupDelta,
     createSegmentMergePlan,
     findSegmentOverlaps,
+    findNearestFreeGridRect,
+    layoutSourceFlow,
     getFlowPageCount,
     getFlowPagePlacement,
     getMergeSeparator,

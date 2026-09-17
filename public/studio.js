@@ -241,6 +241,9 @@
     scene.workflowVersion = 2
     scene.workflowStage = stage
     scene.translationCompleted = Boolean(scene.translationCompleted || stage > 1)
+    if (scene.layoutInitializationVersion == null) {
+      scene.layoutInitializationVersion = stage >= 3 ? 1 : 0
+    }
     return stage
   }
 
@@ -292,8 +295,18 @@
     state.scene.workflowStage = stage
     renderWorkflowStageState()
     if (options.render !== false) {
-      if (changed && stage === 3) renderDocumentWithContentFit(state.scene.objects)
-      else renderDocument()
+      if (changed && stage === 3 && Number(state.scene.layoutInitializationVersion) < 1) {
+        try {
+          arrangeObjectsFromOriginal(state.scene.objects)
+        } catch (error) {
+          showToast(error.message, true)
+        }
+        renderDocument()
+      } else if (changed && stage === 3 && state.scene.layoutInitializationVersion >= 2) {
+        const changedObjects = state.scene.objects.filter(object => !object.excluded && object.layoutContentKey !== layoutContentKey(object))
+        if (changedObjects.length) renderDocumentWithContentFit(changedObjects)
+        else renderDocument()
+      } else renderDocument()
     }
     if (changed && options.save !== false) scheduleSave()
   }
@@ -1291,7 +1304,7 @@
         elements.sourcePreviewScroll.scrollLeft = workspaceState.sourceScrollLeft || 0
         elements.sourcePreviewScroll.scrollTop = workspaceState.sourceScrollTop || 0
       }
-      if (!workflowUsesSegments() && fitObjectsToRenderedContent(state.scene.objects, true)) {
+      if (!workflowUsesSegments() && Number(state.scene.layoutInitializationVersion) < 2 && fitObjectsToRenderedContent(state.scene.objects, true)) {
         rebuildClientTables()
         scheduleSave()
       }
@@ -1365,13 +1378,13 @@
     renderWorkflowStageState()
     elements.canvas.replaceChildren()
     const renderedPages = state.workflowStage === 1
-      ? [...state.scene.pages].sort((left, right) => Number(left.index) - Number(right.index))
+      ? [...state.scene.pages].filter(page => !page.layoutContinuation).sort((left, right) => Number(left.index) - Number(right.index))
       : state.scene.pages
     const documentReviewIndexes = new Map()
     if (state.workflowStage === 1) {
       let documentReviewIndex = 0
       for (const page of renderedPages) {
-        const pageObjects = state.scene.objects.filter(item => item.pageIndex === page.index)
+        const pageObjects = state.scene.objects.filter(item => objectBelongsToReviewPage(item, page))
         for (const object of documentSourceOrder(pageObjects)) {
           documentReviewIndexes.set(object.id, documentReviewIndex)
           documentReviewIndex += 1
@@ -1394,13 +1407,13 @@
       }
 
       const pageObjects = state.scene.objects.filter(item => (
-        item.pageIndex === page.index && (state.workflowStage === 1 || !item.excluded)
+        (state.workflowStage === 1 ? objectBelongsToReviewPage(item, page) : item.pageIndex === page.index && !item.excluded)
       ))
       if (segmentsView) {
         const heading = document.createElement('div')
         heading.className = 'segments-page-heading'
         const title = document.createElement('span')
-        title.textContent = `Страница ${page.index + 1}`
+        title.textContent = `Страница ${(state.workflowStage === 1 ? page.sourcePageIndex ?? page.index : page.index) + 1}`
         const count = document.createElement('small')
         const excludedCount = pageObjects.filter(object => object.excluded).length
         count.textContent = excludedCount
@@ -1524,10 +1537,10 @@
 
   function documentSourceOrder(objects) {
     return [...objects].sort((left, right) => {
-      const leftOrder = Number.isFinite(Number(left.readingOrder)) && Number(left.readingOrder) > 0
-        ? Number(left.readingOrder) : Number.POSITIVE_INFINITY
-      const rightOrder = Number.isFinite(Number(right.readingOrder)) && Number(right.readingOrder) > 0
-        ? Number(right.readingOrder) : Number.POSITIVE_INFINITY
+      const leftOrder = Number(left.layoutSourceOrder ?? left.readingOrder) > 0
+        ? Number(left.layoutSourceOrder ?? left.readingOrder) : Number.POSITIVE_INFINITY
+      const rightOrder = Number(right.layoutSourceOrder ?? right.readingOrder) > 0
+        ? Number(right.layoutSourceOrder ?? right.readingOrder) : Number.POSITIVE_INFINITY
       return leftOrder - rightOrder || left.y - right.y || left.x - right.x || String(left.id).localeCompare(String(right.id))
     })
   }
@@ -1535,6 +1548,11 @@
   function documentReviewColor(index) {
     const hue = Math.round((index * 137.508 + 218) % 360)
     return `hsl(${hue} 68% 42%)`
+  }
+
+  function objectBelongsToReviewPage(object, page) {
+    return object.layoutSourcePageIndex != null && page.sourcePageIndex != null
+      ? object.layoutSourcePageIndex === page.sourcePageIndex : object.pageIndex === page.index
   }
 
   function setDocumentReviewHighlight(objectId, active) {
@@ -3172,7 +3190,7 @@
   }
 
   function expandClippedObjects() {
-    if (!state.scene) return
+    if (!state.scene || workflowUsesSegments() || state.scene.layoutInitializationVersion >= 2) return
     let changed = false
     for (const node of elements.canvas.querySelectorAll('.scene-object')) {
       const object = state.scene.objects.find(item => item.id === node.dataset.id)
@@ -3247,8 +3265,10 @@
   function snapObjectToGridCells(object) {
     const page = state.scene?.pages?.[object?.pageIndex]
     if (!object || !page || object.excluded) return false
-    const horizontal = snapAxisToGridCells(object.x, object.width, page, 'x')
-    const vertical = snapAxisToGridCells(object.y, object.height, page, 'y')
+    // The grid is a manual positioning aid. Rendering must never enlarge a
+    // measured text box or shift the source anchor to a cell boundary.
+    const horizontal = { position: Math.max(page.contentBounds.x, Math.min(object.x, page.contentBounds.x + page.contentBounds.width - object.width)), length: Math.min(object.width, page.contentBounds.width) }
+    const vertical = { position: Math.max(page.contentBounds.y, Math.min(object.y, page.contentBounds.y + page.contentBounds.height - object.height)), length: Math.min(object.height, page.contentBounds.height) }
     const changed = Math.abs(object.x - horizontal.position) > 0.001
       || Math.abs(object.y - vertical.position) > 0.001
       || Math.abs(object.width - horizontal.length) > 0.001
@@ -3291,6 +3311,101 @@
     const right = Math.min(columns, Math.max(left + 1, Math.ceil((object.x + object.width - area.x) / size - 0.000001)))
     const bottom = Math.min(rows, Math.max(top + 1, Math.ceil((object.y + object.height - area.y) / size - 0.000001)))
     return { left, top, right, bottom, columns, rows }
+  }
+
+  function arrangeObjectsFromOriginal(objects, options = {}) {
+    const targets = (objects || []).filter(object => object && !object.excluded)
+    const targetIds = new Set(targets.map(object => object.id))
+    const plans = []
+    let addedPages = 0
+    const sourcePage = object => !options.currentAnchors && object.layoutSourcePageIndex != null
+      ? state.scene.pages.find(page => page.sourcePageIndex === object.layoutSourcePageIndex) || state.scene.pages[object.pageIndex]
+      : state.scene.pages[object.pageIndex]
+    // Build the entire plan before changing the scene. A failed measurement
+    // cannot leave half a document rearranged or extra empty pages behind.
+    for (const page of state.scene.pages) {
+      const pageTargets = targets.filter(object => sourcePage(object) === page)
+      if (!pageTargets.length) continue
+      const metrics = currentGridMetrics(page)
+      const layoutPage = { ...page, contentBounds: { ...page.contentBounds, width: metrics.width, height: metrics.height } }
+      const boxes = pageTargets.map(object => {
+        const anchor = { ...(options.currentAnchors ? object : object.originalBounds || object) }
+        const size = measureSourceLayoutBox(object, layoutPage, { ...anchor, width: options.currentAnchors ? object.layoutWidthLimit || anchor.width : anchor.width })
+        if (options.preserveManual && object.manualWidth) {
+          size.width = object.width
+          size.height = Math.ceil(measureObjectContent(object, size.width).height)
+        }
+        if (options.preserveManual && object.manualHeight) size.height = object.height
+        const alignment = object.style?.textAlign
+        const x = alignment === 'right' ? anchor.x + anchor.width - size.width
+          : alignment === 'center' ? anchor.x + (anchor.width - size.width) / 2 : anchor.x
+        const rowGroup = object.type === 'table_cell' && object.tableId && object.rowIndex != null
+          ? `${object.tableId}:${object.rowIndex}` : null
+        return { id: object.id, anchor, x, ...size, rowGroup, order: object.readingOrder }
+      })
+      const obstacles = state.scene.objects.filter(object => !object.excluded && object.pageIndex === page.index && !targetIds.has(object.id))
+      const plan = window.ICATLayout.layoutSourceFlow(boxes, layoutPage.contentBounds, obstacles)
+      plans.push({ page, boxes, targets: pageTargets, ...plan })
+      addedPages += plan.pageCount - 1
+    }
+    if (state.scene.pages.length + addedPages > 400) throw new Error('Макет превышает предел в 400 страниц.')
+    normalizeSceneGridBounds()
+    for (const plan of plans) {
+      const baseIndex = state.scene.pages.indexOf(plan.page)
+      for (let offset = 1; offset < plan.pageCount; offset += 1) {
+        addBlankPageAt(baseIndex + offset, plan.page).layoutContinuation = true
+      }
+      for (const object of plan.targets) {
+        const placement = plan.placements.get(object.id)
+        const measured = plan.boxes.find(box => box.id === object.id)
+        object.layoutSourcePageIndex ??= plan.page.sourcePageIndex
+        object.layoutSourceOrder ??= object.readingOrder
+        object.layoutWidthLimit = measured.widthLimit
+        object.layoutContentKey = layoutContentKey(object)
+        Object.assign(object, { x: placement.x, y: placement.y, width: placement.width, height: placement.height, pageIndex: baseIndex + placement.pageOffset })
+        if (!options.preserveManual) {
+          object.manualPosition = false
+          object.manualWidth = false
+          object.manualHeight = false
+        }
+      }
+    }
+    for (let index = state.scene.pages.length - 1; index >= 0; index -= 1) {
+      if (!state.scene.pages[index].layoutContinuation || state.scene.objects.some(object => object.pageIndex === index)) continue
+      state.scene.pages.splice(index, 1)
+      for (const object of state.scene.objects) if (object.pageIndex > index) object.pageIndex -= 1
+    }
+    state.scene.layoutInitializationVersion = 2
+    reindexScenePages()
+    state.activePage = Math.min(state.activePage, state.scene.pages.length - 1)
+    state.sourceRenderedPage = null
+    return addedPages
+  }
+
+  function layoutContentKey(object) {
+    const content = JSON.stringify([objectOutput(object), object.style, object.translationTextStyles, object.sourceTextStyles])
+    let hash = 2166136261
+    for (let index = 0; index < content.length; index += 1) hash = Math.imul(hash ^ content.charCodeAt(index), 16777619)
+    return `${content.length}:${hash >>> 0}`
+  }
+
+  function measureSourceLayoutBox(object, page, anchor = object.originalBounds || object) {
+    if (['image', 'logo'].includes(object.type) && !objectOutput(object).trim()) {
+      return { width: anchor.width, height: anchor.height, widthLimit: anchor.width }
+    }
+    const area = page.contentBounds
+    const minimum = measureObjectMinContentWidth(object)
+    if (minimum > area.width) throw new Error(`В сегменте ${object.id} есть слово шире страницы. Измените ширину страницы или типографику.`)
+    const widthLimit = Math.min(area.width, Math.max(12, anchor.width, minimum))
+    let width = Math.min(widthLimit, Math.max(12, Math.ceil(measureObjectContent(object).width)))
+    let measured = measureObjectContent(object, width)
+    // Tighten to the longest rendered line, keeping the original wrapping.
+    if (measured.inkWidth > 0 && object.style?.textAlign !== 'justify') {
+      const tight = Math.min(width, Math.max(12, Math.ceil(measured.inkWidth + 8)))
+      const check = measureObjectContent(object, tight)
+      if (check.height <= measured.height + .5) { width = tight; measured = check }
+    }
+    return { width, height: Math.max(12, Math.ceil(measured.height)), widthLimit }
   }
 
   function gridRangesOverlap(firstStart, firstEnd, secondStart, secondEnd) {
@@ -3376,7 +3491,7 @@
     const areaExtent = horizontal ? area.width : area.height
     const position = origin + start * size
     const end = Math.min(origin + areaExtent, origin + (start + occupiedCells) * size)
-    const length = Math.max(0, end - position)
+    const length = Math.max(0, Math.min(requestedLength, end - position))
     const previousPosition = horizontal ? object.x : object.y
     const previousLength = horizontal ? object.width : object.height
     if (horizontal) Object.assign(object, { x: position, width: length })
@@ -3466,18 +3581,9 @@
     return Math.max(12, longestPart * fontSize * .56 + 10)
   }
 
-  function renderedObjectContent(object) {
-    const renderedNodes = [...elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)]
-    const node = renderedNodes.find(candidate => candidate.classList.contains('scene-object--translation'))
-      || renderedNodes.find(candidate => !candidate.classList.contains('scene-object--source'))
-      || renderedNodes[0]
-    return node?.querySelector('.scene-object__content') || null
-  }
-
   function measureObjectContent(object, width = null) {
-    const sourceContent = renderedObjectContent(object)
-    if (!sourceContent) return estimatedContentSize(object, width)
-    const probe = sourceContent.cloneNode(true)
+    const probe = document.createElement('div')
+    renderTextContent(probe, object, objectOutputField(object), false)
     probe.contentEditable = 'false'
     Object.assign(probe.style, {
       position: 'fixed', left: '-100000px', top: '0', display: 'inline-block',
@@ -3496,19 +3602,23 @@
       width: width == null ? Math.max(rectangle.width, probe.scrollWidth) : width,
       height: Math.max(rectangle.height, probe.scrollHeight),
     }
+    const textRange = document.createRange()
+    textRange.selectNodeContents(probe)
+    measured.inkWidth = typeof textRange.getClientRects === 'function'
+      ? Math.max(0, ...Array.from(textRange.getClientRects(), rect => rect.width)) : 0
     probe.remove()
     const fallback = estimatedContentSize(object, width)
     return {
       width: measured.width > 0 ? measured.width : fallback.width,
       height: measured.height > 0 ? measured.height : fallback.height,
+      inkWidth: measured.inkWidth,
     }
   }
 
   function measureObjectMinContentWidth(object) {
     const fallback = estimatedMinContentWidth(object)
-    const sourceContent = renderedObjectContent(object)
-    if (!sourceContent) return fallback
-    const probe = sourceContent.cloneNode(true)
+    const probe = document.createElement('div')
+    renderTextContent(probe, object, objectOutputField(object), false)
     probe.contentEditable = 'false'
     Object.assign(probe.style, {
       position: 'fixed', left: '-100000px', top: '0', display: 'inline-block',
@@ -3564,7 +3674,7 @@
     const fitHeight = options.forceHeight || object.manualHeight === false
     const natural = fitWidth ? measureObjectContent(object) : null
     const width = fitWidth
-      ? Math.min(area.width, Math.max(12, contentSize(natural.width)))
+      ? Math.min(area.width, Math.max(12, Math.min(contentSize(natural.width), Math.max(object.layoutWidthLimit || object.originalBounds?.width || area.width, measureObjectMinContentWidth(object)))))
       : Math.min(area.width, Math.max(12, Number(object.width) || 12))
     const wrapped = measureObjectContent(object, width)
     const height = fitHeight
@@ -3592,6 +3702,15 @@
   function renderDocumentWithContentFit(objects, options = {}) {
     renderDocument()
     if (workflowUsesSegments()) return
+    if (state.scene.layoutInitializationVersion >= 2 && state.workflowStage === 3) {
+      const pages = new Set(objects.map(object => object.pageIndex))
+      const flowObjects = state.scene.objects.filter(object => pages.has(object.pageIndex) && !object.excluded && !object.manualPosition)
+      try {
+        if (flowObjects.length) arrangeObjectsFromOriginal(flowObjects, { currentAnchors: true, preserveManual: true })
+        renderDocument()
+      } catch (error) { showToast(error.message, true) }
+      return
+    }
     if (fitObjectsToRenderedContent(objects, false, options)) renderDocument()
   }
 
@@ -3644,11 +3763,13 @@
       if (axis === 'width') {
         object.x = area.x
         object.width = area.width
+        object.manualPosition = true
         object.manualWidth = true
         fitObjectGeometryToContent(object)
       } else {
         object.y = area.y
         object.height = area.height
+        object.manualPosition = true
         object.manualHeight = true
         constrainObjectToWorkArea(object)
       }
@@ -4105,6 +4226,7 @@
       for (const object of sorted) { object.y = cursor; cursor += object.height + gap }
     }
     snapObjectGroups(objects)
+    for (const object of objects) object.manualPosition = true
     renderDocument()
     scheduleSave()
   }
@@ -4131,6 +4253,7 @@
     const shift = clampGroupShift(objects, 0, 0)
     for (const object of objects) { object.x += shift.x; object.y += shift.y }
     snapObjectGroups(objects)
+    for (const object of objects) object.manualPosition = true
     renderDocument()
     scheduleSave()
   }
@@ -4162,6 +4285,7 @@
   function scaleObjectTypography(object, factor) {
     const scaleValue = value => Math.max(6, Math.round((Number(value) || 6) * factor * 100) / 100)
     object.style.fontSizePx = scaleValue(object.style?.fontSizePx)
+    object.manualTypography = true
     for (const key of ['sourceTextStyles', 'translationTextStyles']) {
       for (const range of object[key] || []) {
         if (range.fontSizePx != null) range.fontSizePx = scaleValue(range.fontSizePx)
@@ -4234,6 +4358,7 @@
       else object.y += shift.y
     }
     snapObjectGroupsOnAxis(objects, horizontal ? 'x' : 'y')
+    for (const object of objects) object.manualPosition = true
     renderDocument()
     scheduleSave()
     showToast(objectsWereReduced
@@ -4396,6 +4521,10 @@
         for (const object of group) { object.x += shift.x; object.y += shift.y }
       }
       snapObjectsToGridCells(objects)
+      for (const object of objects) {
+        const origin = origins.get(object.id)
+        if (!origin || object.pageIndex !== origin.pageIndex || Math.abs(object.x - origin.x) > .5 || Math.abs(object.y - origin.y) > .5) object.manualPosition = true
+      }
       renderDocument()
       scheduleSave()
     }
@@ -4453,6 +4582,7 @@
       object.pageIndex = pageIndex
       object.x = anchorX + offsetX
       object.y = anchorY + offsetY
+      object.manualPosition = true
     }
     const shift = clampGroupShift(objects, 0, 0)
     for (const object of objects) { object.x += shift.x; object.y += shift.y }
@@ -4788,6 +4918,7 @@
         translatedScene.workflowVersion = 2
         translatedScene.workflowStage = options.advanceToStage
         translatedScene.translationCompleted = true
+        translatedScene.layoutInitializationVersion = 0
       }
       const finalResponse = await api(`/api/studio/documents/${metadata.id}/scene`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(translatedScene),
@@ -4911,17 +5042,20 @@
       const pageDetail = Number.isFinite(Number(job.details?.totalPages))
         ? ` · страниц ${Number(job.details?.processedPages) || 0}/${Number(job.details.totalPages)}`
         : ''
-      elements.layoutReviewStatus.textContent = job.error || `${job.message || 'Сравнение макета'} · ${job.progress || 0}%${pageDetail}`
+      const iterationDetail = Number(job.details?.iteration) > 0
+        ? ` · проход ${Number(job.details.iteration)}/${Number(job.details.totalIterations) || 2}`
+        : ''
+      elements.layoutReviewStatus.textContent = job.error || `${job.message || 'AI-расстановка макета'} · ${job.progress || 0}%${pageDetail}${iterationDetail}`
       return
     }
     const review = state.scene?.layoutReview
     if (!review?.reviewedAt) {
-      elements.layoutReviewStatus.textContent = 'Сравнение с оригиналом ещё не запускалось.'
+      elements.layoutReviewStatus.textContent = 'AI-расстановка макета ещё не запускалась.'
       return
     }
     const similarities = review.pageSimilarities || []
     const average = similarities.length ? Math.round(similarities.reduce((sum, item) => sum + Number(item.similarity || 0), 0) / similarities.length * 100) : null
-    elements.layoutReviewStatus.textContent = `Последняя AI-проверка: ${average == null ? 'готово' : `сходство ${average}%`} · применено ${review.applied?.length || 0} · рекомендаций ${review.recommendations?.length || 0}`
+    elements.layoutReviewStatus.textContent = `Последняя AI-проверка: ${average == null ? 'готово' : `сходство ${average}%`} · проходов ${review.iterations || 1} · применено ${review.applied?.length || 0} · рекомендаций ${review.recommendations?.length || 0}`
   }
 
   async function startLayoutReview() {
@@ -4934,7 +5068,7 @@
       state.layoutReviewJobs.set(state.metadata.id, job)
       renderLayoutReviewStatus()
       scheduleJobsPoll(100)
-      showToast('AI-сравнение макета запущено')
+      showToast('AI-агент расстановки макета запущен')
     } catch (error) {
       elements.layoutReview.disabled = false
       showToast(error.message, true)
@@ -5155,6 +5289,7 @@
     first.y = Math.min(...objects.map(item => item.y))
     first.width = right - first.x
     first.height = bottom - first.y
+    first.manualPosition = false
     first.manualWidth = false
     first.manualHeight = false
     first.sourceText = source.text
@@ -5179,6 +5314,16 @@
     cancelPointerAction()
     checkpoint()
     const insertIndex = afterPageIndex + 1
+    addBlankPageAt(insertIndex, reference)
+    state.activePage = insertIndex
+    state.sourceRenderedPage = null
+    renderDocument()
+    scheduleSave()
+    requestAnimationFrame(() => focusPage(insertIndex))
+    showToast(`Добавлена пустая страница ${insertIndex + 1}`)
+  }
+
+  function addBlankPageAt(insertIndex, reference) {
     const blankPage = {
       index: insertIndex,
       sourcePageIndex: null,
@@ -5199,12 +5344,7 @@
       if (object.pageIndex >= insertIndex) object.pageIndex += 1
     }
     reindexScenePages()
-    state.activePage = insertIndex
-    state.sourceRenderedPage = null
-    renderDocument()
-    scheduleSave()
-    requestAnimationFrame(() => focusPage(insertIndex))
-    showToast(`Добавлена пустая страница ${insertIndex + 1}`)
+    return blankPage
   }
 
   function removeEmptyPage(pageIndex) {
@@ -5241,7 +5381,7 @@
       sourceText, translation: '', confidence: 1,
       sourceTextStyles: [], translationTextStyles: [],
       x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42, rotation: 0,
-      manualWidth: false, manualHeight: false,
+      manualPosition: false, manualWidth: false, manualHeight: false, manualTypography: false,
       excluded: false, status: 'manual', sourceLineIds: [],
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
       originalBounds: { x: page.contentBounds.x, y: page.contentBounds.y, width: Math.min(280, page.contentBounds.width), height: 42 },
@@ -5307,6 +5447,7 @@
     next.sourceLineIds = []
     next.confidence = 1
     next.status = 'manual-split'
+    next.manualPosition = false
     next.manualWidth = false
     next.manualHeight = false
     next.sourceText = field === 'sourceText' ? extractedText : ''
@@ -5485,6 +5626,7 @@
     }
     applySelectionChange(object => {
       object.style.fontFamily = family
+      object.manualTypography = true
       if (applyAll) removeInlineStyleProperties(object, ['fontFamily'])
     }, true, true, objects)
   }
@@ -5500,6 +5642,7 @@
     }
     applySelectionChange(object => {
       object.style.color = normalized
+      object.manualTypography = true
       if (applyAll) removeInlineStyleProperties(object, ['color'])
     }, true, false, objects)
   }
@@ -5516,6 +5659,7 @@
     }
     applySelectionChange(object => {
       object.style.fontSizePx = size
+      object.manualTypography = true
       if (applyAll) removeInlineStyleProperties(object, ['fontSizePx'])
     }, true, true, objects)
   }
@@ -5525,7 +5669,7 @@
     const objects = formattingTargetObjects()
     if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     const lineHeight = clampLineHeight(value)
-    applySelectionChange(object => { object.style.lineHeight = lineHeight }, true, true, objects)
+    applySelectionChange(object => { object.style.lineHeight = lineHeight; object.manualTypography = true }, true, true, objects)
   }
 
   function changeFormattingLineHeight(delta) {
@@ -5534,6 +5678,7 @@
     if (!objects.length) return showToast(applyAll ? 'Среди выбранных нет доступных сегментов' : 'Сначала выберите сегмент', true)
     applySelectionChange(object => {
       object.style.lineHeight = clampLineHeight((Number(object.style.lineHeight) || 1.2) + delta)
+      object.manualTypography = true
     }, true, true, objects)
   }
 
@@ -5549,6 +5694,7 @@
     }
     applySelectionChange(object => {
       object.style.fontSizePx = clampFontSize(object.style.fontSizePx + delta)
+      object.manualTypography = true
       if (applyAll) removeInlineStyleProperties(object, ['fontSizePx'])
     }, true, true, objects)
   }
@@ -5558,6 +5704,7 @@
     if (!selection) return false
     checkpoint()
     styleRanges(selection.object, selection.field).push({ start: selection.start, end: selection.end, ...patch })
+    selection.object.manualTypography = true
     renderDocumentWithContentFit([selection.object])
     scheduleSave()
     return true
@@ -5582,6 +5729,7 @@
       if (action === 'bold') object.style.fontWeight = fontWeight
       else if (action === 'italic') object.style.fontStyle = fontStyle
       else object.style.textAlign = action
+      object.manualTypography = true
       if (applyAll && action === 'bold') removeInlineStyleProperties(object, ['fontWeight'])
       if (applyAll && action === 'italic') removeInlineStyleProperties(object, ['fontStyle'])
     }, true, action === 'bold' || action === 'italic', objects)
@@ -5591,12 +5739,7 @@
     const objects = selectedObjects()
     if (!objects.length) return
     checkpoint()
-    for (const object of objects) {
-      Object.assign(object, object.originalBounds)
-      object.manualWidth = true
-      object.manualHeight = true
-      constrainObjectToWorkArea(object)
-    }
+    try { arrangeObjectsFromOriginal(objects) } catch (error) { showToast(error.message, true); return }
     renderDocument()
     scheduleSave()
   }

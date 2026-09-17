@@ -4,6 +4,7 @@ const {
   captureZoomAnchor,
   clampGroupDelta,
   createSegmentMergePlan,
+  findNearestFreeGridRect,
   findSegmentOverlaps,
   getFlowPageCount,
   getFlowPagePlacement,
@@ -15,6 +16,7 @@ const {
   isDocumentSegment,
   isPageEmpty,
   layoutSequentialFlowBoxes,
+  layoutSourceFlow,
   rectangleOverlapRatio,
   rectanglesIntersect,
   resolveVerticalOverlaps,
@@ -75,6 +77,84 @@ test('detects and vertically resolves meaningful segment overlaps', () => {
   assert.equal(placements.get('first'), 10)
   assert.equal(placements.get('second'), 64)
   assert.equal(placements.get('other-column'), 20)
+})
+
+test('places a grid-aligned segment below its anchor before changing the recognized column', () => {
+  const placement = findNearestFreeGridRect(
+    { left: 2, top: 3, right: 6, bottom: 5 },
+    [{ left: 2, top: 3, right: 6, bottom: 6 }],
+    12,
+    16,
+  )
+  assert.deepEqual(placement, { left: 2, top: 6, right: 6, bottom: 8 })
+})
+
+test('returns no placement when the grid has no free rectangle of the requested size', () => {
+  assert.equal(findNearestFreeGridRect(
+    { left: 0, top: 0, right: 2, bottom: 2 },
+    [{ left: 0, top: 0, right: 2, bottom: 2 }],
+    2,
+    2,
+  ), null)
+})
+
+test('source flow keeps columns, exact content dimensions, and adds continuation pages', () => {
+  const area = { x: 40, y: 40, width: 600, height: 300 }
+  const box = (id, x, y, width, height) => ({ id, x, width, height, anchor: { x, y, width: 200, height: 20 } })
+  const result = layoutSourceFlow([
+    box('left-a', 40, 40, 183.5, 180),
+    box('right-a', 360, 40, 192.2, 20),
+    box('left-b', 40, 90, 151.7, 140),
+    box('right-b', 360, 90, 163.2, 30),
+    box('left-c', 40, 140, 153.7, 100),
+  ], area)
+  assert.equal(result.pageCount, 2)
+  assert.equal(result.placements.get('left-b').pageOffset, 1)
+  assert.equal(result.placements.get('left-b').y, 40)
+  assert.equal(result.placements.get('left-c').pageOffset, 1)
+  assert.equal(result.placements.get('right-b').pageOffset, 0, 'independent column stays on its source page')
+  assert.equal(result.placements.get('left-a').width, 183.5)
+  assert.equal(result.placements.get('left-b').x, 40)
+  const placed = [...result.placements.values()]
+  for (let index = 0; index < placed.length; index += 1) {
+    const current = placed[index]
+    assert.ok(current.y + current.height <= 340)
+    for (const other of placed.slice(index + 1)) {
+      if (current.pageOffset === other.pageOffset) assert.equal(rectanglesIntersect(current, other), false)
+    }
+  }
+})
+
+test('source flow leaves an independent column anchored and respects fixed obstacles', () => {
+  const area = { x: 0, y: 0, width: 400, height: 300 }
+  const result = layoutSourceFlow([
+    { id: 'a', x: 0, width: 100, height: 200, anchor: { x: 0, y: 0, width: 100, height: 20 } },
+    { id: 'b', x: 250, width: 100, height: 40, anchor: { x: 250, y: 50, width: 100, height: 20 } },
+    { id: 'c', x: 0, width: 100, height: 180, anchor: { x: 0, y: 80, width: 100, height: 20 } },
+  ], area, [{ x: 250, y: 50, width: 100, height: 50 }])
+  assert.equal(result.placements.get('c').pageOffset, 1)
+  assert.equal(result.placements.get('b').pageOffset, 0)
+  assert.equal(result.placements.get('b').y, 102)
+})
+
+test('source flow refuses an oversized indivisible block without mutating input', () => {
+  const boxes = [{ id: 'large', x: 0, width: 100, height: 400, anchor: { x: 0, y: 0, width: 100, height: 20 } }]
+  const before = JSON.stringify(boxes)
+  assert.throws(() => layoutSourceFlow(boxes, { x: 0, y: 0, width: 300, height: 300 }), /больше целой страницы/)
+  assert.equal(JSON.stringify(boxes), before)
+})
+
+test('source flow carries table cells in one row together without adding blank height to short cells', () => {
+  const boxes = [
+    { id: 'a', x: 0, width: 100, height: 120, rowGroup: 'table:1', anchor: { x: 0, y: 230, width: 100, height: 30 } },
+    { id: 'b', x: 120, width: 100, height: 30, rowGroup: 'table:1', anchor: { x: 120, y: 232, width: 100, height: 30 } },
+  ]
+  const result = layoutSourceFlow(boxes, { x: 0, y: 0, width: 400, height: 300 })
+  assert.equal(result.pageCount, 2)
+  assert.equal(result.placements.get('a').pageOffset, 1)
+  assert.equal(result.placements.get('b').pageOffset, 1)
+  assert.equal(result.placements.get('a').y, result.placements.get('b').y)
+  assert.equal(result.placements.get('b').height, 30)
 })
 
 test('scans dense multi-page layouts without mixing unrelated page rows', () => {

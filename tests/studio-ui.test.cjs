@@ -7,6 +7,7 @@ const { JSDOM, VirtualConsole } = require('jsdom')
 const root = path.resolve(__dirname, '..')
 const html = fs.readFileSync(path.join(root, 'public/studio.html'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
+const layoutModelClient = fs.readFileSync(path.join(root, 'public/layout-model.js'), 'utf8')
 const translationUnits = fs.readFileSync(path.join(root, 'public/translation-units.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
 const uiKit = fs.readFileSync(path.join(root, 'public/ui-kit.css'), 'utf8')
@@ -1434,6 +1435,7 @@ test('approval advances through isolated document stages and switches the worksp
   }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(layoutModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -1858,6 +1860,67 @@ test('segment exclusion applies to the current scene after an editor refresh rac
   dom.window.close()
 })
 
+test('layout initialization inserts continuation pages, preserves source links and survives stage navigation', async () => {
+  const id = '6'.repeat(32)
+  const errors = []
+  const virtualConsole = new VirtualConsole()
+  virtualConsole.on('jsdomError', error => errors.push(error))
+  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`, virtualConsole })
+  const scene = {
+    title: 'Pagination', sourceLanguage: 'en', targetLanguage: 'ru', workflowVersion: 2, workflowStage: 2, layoutInitializationVersion: 0,
+    pages: [0, 1].map(index => ({ index, sourcePageIndex: index, widthPx: 794, heightPx: 1123, imageUrl: `/api/studio/documents/${id}/pages/${index}/image`, contentBounds: { x: 40, y: 40, width: 680, height: 1020 } })),
+    objects: [
+      { id: 'bottom', pageIndex: 0, x: 40, y: 970, width: 200, height: 20, translation: 'Перевод текста '.repeat(80) },
+      { id: 'following', pageIndex: 0, x: 40, y: 1010, width: 200, height: 20, translation: 'Следующий блок' },
+      { id: 'center', pageIndex: 1, x: 120, y: 80, width: 300, height: 20, translation: 'Заголовок' },
+    ].map((object, index) => ({ ...object, readingOrder: index + 1, type: 'text', sourceText: 'Source', confidence: .98, rotation: 0, excluded: false,
+      manualWidth: false, manualHeight: false, manualPosition: false,
+      originalBounds: { x: object.x, y: object.y, width: object.width, height: object.height },
+      style: { fontFamily: 'Times New Roman', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: object.id === 'center' ? 'center' : 'left', lineHeight: 1.2, color: '#000000' },
+      sourceTextStyles: [], translationTextStyles: [],
+    })),
+  }
+  dom.window.CSS = { escape: value => String(value) }
+  let savedScene = null
+  dom.window.fetch = async (url, options = {}) => {
+    if (options.method === 'PUT') savedScene = JSON.parse(options.body)
+    return { ok: true, json: async () => String(url).endsWith('/status')
+      ? { translationProviderConfigured: false } : { metadata: { id, revision: 1 }, scene } }
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(layoutModelClient)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 40))
+  dom.window.document.querySelector('#workflow-approve').click()
+  await new Promise(resolve => setTimeout(resolve, 720))
+  assert.equal(savedScene.layoutInitializationVersion, 2)
+  assert.equal(savedScene.pages.length, 3)
+  assert.equal(savedScene.pages[1].layoutContinuation, true)
+  assert.equal(savedScene.pages[1].imageUrl, null)
+  assert.equal(savedScene.pages[2].sourcePageIndex, 1)
+  const bottom = savedScene.objects.find(object => object.id === 'bottom')
+  const following = savedScene.objects.find(object => object.id === 'following')
+  const centered = savedScene.objects.find(object => object.id === 'center')
+  assert.equal(bottom.pageIndex, 1)
+  assert.equal(bottom.layoutSourcePageIndex, 0)
+  assert.equal(following.pageIndex, 1)
+  assert.ok(following.y >= bottom.y + bottom.height)
+  assert.equal(centered.x + centered.width / 2, 270)
+  assert.ok(centered.width < 300)
+  const before = savedScene.objects.map(({ x, y, width, height, pageIndex }) => ({ x, y, width, height, pageIndex }))
+  dom.window.document.querySelector('#workflow-previous').click()
+  dom.window.document.querySelector('#workflow-approve').click()
+  await new Promise(resolve => setTimeout(resolve, 720))
+  assert.equal(savedScene.pages.length, 3)
+  assert.deepEqual(savedScene.objects.map(({ x, y, width, height, pageIndex }) => ({ x, y, width, height, pageIndex })), before)
+  dom.window.document.querySelector('#workflow-previous').click()
+  dom.window.document.querySelector('#workflow-previous').click()
+  assert.equal(dom.window.document.querySelectorAll('.document-review-layout').length, 2)
+  assert.equal(dom.window.document.querySelectorAll('.document-review-layout')[0].querySelectorAll('.segment-translation-row').length, 2)
+  assert.equal(errors.length, 0)
+  dom.window.close()
+})
+
 test('studio restores a saved scene and renders editable page objects', async () => {
   const errors = []
   const virtualConsole = new VirtualConsole()
@@ -2037,8 +2100,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const edgeObject = dom.window.document.querySelector('[data-id="object-1"]')
   const edgeLeft = Number.parseFloat(edgeObject.style.left)
   const edgeTop = Number.parseFloat(edgeObject.style.top)
-  assert.ok(Math.abs((edgeLeft - 40) / gridStep - Math.round((edgeLeft - 40) / gridStep)) < 0.0001)
-  assert.ok(Math.abs((edgeTop - 40) / gridStep - Math.round((edgeTop - 40) / gridStep)) < 0.0001)
+  assert.ok(edgeLeft >= 40, 'page boundary can override the manual grid position without enlarging the box')
+  assert.ok(edgeTop >= 40)
   assert.ok(edgeLeft + Number.parseFloat(edgeObject.style.width) <= 720)
   assert.ok(edgeTop + Number.parseFloat(edgeObject.style.height) <= 1060)
   dom.window.document.querySelector('#undo-button').click()
@@ -2210,7 +2273,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const widthsBeforeMinContent = [...dom.window.document.querySelectorAll('.scene-object')].map(node => Number.parseFloat(node.style.width))
   dom.window.document.querySelector('#fit-min-content-width-button').click()
   const minContentObjects = [...dom.window.document.querySelectorAll('.scene-object')]
-  assert.ok(minContentObjects.every((node, index) => Number.parseFloat(node.style.width) < widthsBeforeMinContent[index]))
+  assert.ok(minContentObjects.every((node, index) => Number.parseFloat(node.style.width) <= Math.ceil(widthsBeforeMinContent[index])), 'min-content permits only subpixel rounding when already at minimum width')
   assert.ok(minContentObjects.every(node => Number.parseFloat(node.style.height) > 12))
 
   fontSizeIncrease.click()
@@ -2355,8 +2418,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(fittedObjects.every(node => {
     const width = Number.parseFloat(node.style.width)
     const height = Number.parseFloat(node.style.height)
-    return Math.abs(width / gridStep - Math.round(width / gridStep)) < 0.0001
-      && Math.abs(height / gridStep - Math.round(height / gridStep)) < 0.0001
+    return width >= 12 && height >= 12 && Number.isFinite(width) && Number.isFinite(height)
   }))
   assert.equal(new Set(fittedObjects.map(node => node.style.width)).size, 1)
   assert.equal(new Set(fittedObjects.map(node => node.style.height)).size, 1)

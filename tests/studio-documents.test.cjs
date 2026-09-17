@@ -188,6 +188,9 @@ test('administration persists the editable chat-agent prompt and restores its de
   assert.match(defaults.chatAgentPrompt, /Ничего не додумывай/)
   assert.match(defaults.chatAgentPrompt, /конечном языке перевода/)
   assert.match(defaults.chatAgentPrompt, /задай один короткий уточняющий вопрос/)
+  assert.match(defaults.chatAgentPrompt, /самостоятельно выбери только подходящие/)
+  assert.match(defaults.chatAgentPrompt, /не включай в revisions/)
+  assert.match(defaults.chatAgentPrompt, /Не выполняй попутное улучшение/)
   assert.equal(defaults.chatAgentPrompt, defaults.defaultChatAgentPrompt)
 
   response = await fetch(`${firstBase}/administration`, {
@@ -685,14 +688,14 @@ test('stamps, seals and signatures use the required translated service labels', 
   assert.equal(result.scene.objects[2].translationUnits.length, 0)
 })
 
-test('AI revises translated segments with global and local comments and can exclude service objects', async t => {
+test('AI selects applicable translated segments, preserves omitted ones, and can exclude service objects', async t => {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-instruction-revision-'))
   t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
   const id = '9'.repeat(32)
   const directory = path.join(dataDir, id)
   await fs.promises.mkdir(directory)
   await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
-    id, title: 'Instruction revision', filename: 'instructions.pdf', revision: 1, pageCount: 1, objectCount: 3,
+    id, title: 'Instruction revision', filename: 'instructions.pdf', revision: 1, pageCount: 1, objectCount: 5,
   }))
   const object = (objectId, type, sourceText, translation, unitId, y, translationInstruction = '') => ({
     id: objectId, pageIndex: 0, type, readingOrder: y, sourceText, translation, translationInstruction, confidence: 1,
@@ -701,6 +704,8 @@ test('AI revises translated segments with global and local comments and can excl
     originalBounds: { x: 40, y, width: 500, height: 40 },
     translationUnits: [{ id: unitId, sourceText, separatorAfter: '', translation, status: 'machine-translated', activeTranslationSource: 'ai' }],
   })
+  const emptySeal = object('empty-seal-object', 'seal', '', '/Печать/', 'empty-seal-unit', 190)
+  emptySeal.translationUnits = []
   await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
     documentId: id, title: 'Instruction revision', sourceLanguage: 'tr', targetLanguage: 'ru', gridSize: 8, snapToGrid: true,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, sourceWidth: 794, sourceHeight: 1123, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
@@ -708,6 +713,8 @@ test('AI revises translated segments with global and local comments and can excl
       object('person-object', 'text', 'John Smith vekildir.', 'Джон Смит является поверенным.', 'person-unit', 40, 'Имя передай как Иван Иванов'),
       object('stamp-object', 'stamp', '18871', '/Штамп: № 18871/', 'stamp-unit', 90),
       object('logo-object', 'logo', 'NEWMARK', 'NEWMARK', 'logo-unit', 140, 'Сохрани название бренда'),
+      emptySeal,
+      object('unrelated-object', 'text', 'Belge tarihi', 'Дата документа', 'unrelated-unit', 240),
     ],
   }))
   const prompts = []
@@ -748,6 +755,10 @@ test('AI revises translated segments with global and local comments and can excl
   assert.equal(result.scene.objects[1].excluded, true)
   assert.equal(result.scene.objects[2].translation, 'NEWMARK')
   assert.equal(result.scene.objects[2].status, 'ai-revised')
+  assert.equal(result.scene.objects[3].translation, '/Печать/')
+  assert.equal(result.scene.objects[3].status, 'recognized')
+  assert.equal(result.scene.objects[4].translation, 'Дата документа')
+  assert.equal(result.scene.objects[4].status, 'recognized')
   assert.equal(result.excluded[0], 'stamp-object')
   assert.equal(result.scene.instructionRevision.objectCount, 3)
   assert.equal(result.scene.instructionRevision.excludedCount, 1)
@@ -806,7 +817,8 @@ test('segment AI chat persists both sides and does not change translation before
   assert.equal(response.status, 200)
   const result = await response.json()
   assert.match(chatPrompts[0], /Отвечай чётко, понятно и по существу/)
-  assert.match(chatPrompts[0], /Работай только с текстом сегментов на конечном языке перевода/)
+  assert.match(chatPrompts[0], /Работай только с текстом конечного языка перевода/)
+  assert.match(chatPrompts[0], /самостоятельно выбери только подходящие/)
   assert.equal(result.needsClarification, true)
   assert.deepEqual(result.revised, [])
   assert.equal(result.scene.objects[0].translation, 'Пункт 1')

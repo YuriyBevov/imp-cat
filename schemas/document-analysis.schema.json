@@ -144,9 +144,15 @@
                     "fontSizePt",
                     "fontWeight",
                     "fontStyle",
-                    "textAlign"
+                    "textAlign",
+                    "fontFamily",
+                    "lineHeight",
+                    "color"
                   ],
                   "properties": {
+                    "fontFamily": { "type": "string", "enum": ["Arial", "Aptos", "Calibri", "Cambria", "Times New Roman", "Georgia", "Verdana", "Tahoma", "Courier New"] },
+                    "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 3 },
+                    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
                     "fontSizePt": { "type": "number", "minimum": 4, "maximum": 96 },
                     "fontWeight": { "type": "integer", "enum": [400, 700] },
                     "fontStyle": { "type": "string", "enum": ["normal", "italic"] },

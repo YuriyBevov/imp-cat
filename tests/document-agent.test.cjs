@@ -27,11 +27,11 @@ function style(overrides = {}) {
 
 test('analysis schema requests only supported typography and layout properties', () => {
   const styleSchema = analysisSchema.properties.pages.items.properties.segments.items.properties.style
-  assert.deepEqual(styleSchema.required, ['fontSizePt', 'fontWeight', 'fontStyle', 'textAlign'])
+  assert.deepEqual(styleSchema.required, ['fontSizePt', 'fontWeight', 'fontStyle', 'textAlign', 'fontFamily', 'lineHeight', 'color'])
   assert.deepEqual(styleSchema.properties.fontWeight.enum, [400, 700])
-  assert.equal(styleSchema.properties.fontFamily, undefined)
-  assert.equal(styleSchema.properties.color, undefined)
-  assert.equal(styleSchema.properties.lineHeight, undefined)
+  assert.ok(styleSchema.properties.fontFamily.enum.includes('Times New Roman'))
+  assert.equal(styleSchema.properties.color.pattern, '^#[0-9a-fA-F]{6}$')
+  assert.equal(styleSchema.properties.lineHeight.minimum, .8)
 })
 
 test('Codex prompt requires complete text and readable service-object content', () => {
@@ -43,7 +43,7 @@ test('Codex prompt requires complete text and readable service-object content', 
   assert.match(prompt, /Не переводи/)
   assert.match(prompt, /Arial/)
   assert.match(prompt, /fontWeight строго 400 или 700/)
-  assert.match(prompt, /Не определяй семейство шрифта, цвет/)
+  assert.match(prompt, /Сохраняй отдельные колонки, строки таблиц/)
   assert.match(prompt, /tableId/)
 })
 
@@ -98,7 +98,7 @@ test('normalizes all pages, regions, styles and duplicate agent IDs', () => {
   assert.equal(normalized.pages.length, 2)
   assert.equal(normalized.pages[0].segments[0].sourceText, 'VEKALETNAME')
   assert.equal(normalized.pages[0].segments[0].style.fontWeight, 700)
-  assert.equal(normalized.pages[0].segments[0].style.fontFamily, 'Arial')
+  assert.equal(normalized.pages[0].segments[0].style.fontFamily, 'Times New Roman')
   assert.equal(normalized.pages[0].segments[0].style.color, '#000000')
   assert.equal(normalized.pages[0].segments[0].style.lineHeight, 1.2)
   assert.equal(normalized.pages[1].segments[0].type, 'signature')
