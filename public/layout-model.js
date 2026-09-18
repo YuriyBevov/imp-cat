@@ -445,6 +445,13 @@
         }
       }
       for (const box of positioned) {
+        if (band.rowGroup) {
+          const result = { x: box.x, y, width: box.width, height: rowHeight, pageOffset };
+          placements.set(box.id, result);
+          placed.push({ ...box, ...result });
+          pageCount = Math.max(pageCount, pageOffset + 1);
+          continue;
+        }
         // Source boxes on the same line can themselves overlap (e.g. OCR).
         // Keep the column; move this box down rather than placing text on text.
         let boxY = y;
@@ -463,6 +470,95 @@
       }
     }
     return { placements, pageCount };
+  }
+
+  function alignTableColumnsToGrid(boxes, area, gridSize) {
+    const size = Math.max(1, Number(gridSize) || 1);
+    const columns = Math.max(1, Math.floor(Number(area?.width) / size + .000001));
+    const aligned = (boxes || []).map(box => ({ ...box, anchor: { ...box.anchor } }));
+    const tables = new Map();
+    for (const box of aligned) {
+      if (!box.tableId || !Number.isInteger(box.columnIndex)) continue;
+      if (!tables.has(box.tableId)) tables.set(box.tableId, []);
+      tables.get(box.tableId).push(box);
+    }
+    const median = values => {
+      const sorted = [...values].sort((a, b) => a - b);
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+    };
+
+    for (const [tableId, tableBoxes] of tables) {
+      const columnCount = Math.max(...tableBoxes.map(box => box.columnIndex + Math.max(1, Number(box.columnSpan) || 1)));
+      const candidates = Array.from({ length: columnCount + 1 }, () => []);
+      for (const box of tableBoxes) {
+        const span = Math.max(1, Math.trunc(Number(box.columnSpan) || 1));
+        candidates[box.columnIndex].push(box.anchor.x);
+        candidates[Math.min(columnCount, box.columnIndex + span)].push(box.anchor.x + box.anchor.width);
+      }
+      const rawBoundaries = candidates.map((values, index) => {
+        if (values.length) return median(values);
+        const previous = candidates.slice(0, index).map((items, offset) => items.length ? { offset, value: median(items) } : null).filter(Boolean).at(-1);
+        const nextOffset = candidates.findIndex((items, offset) => offset > index && items.length);
+        if (!previous || nextOffset < 0) return Number(area.x) + index * size;
+        const nextValue = median(candidates[nextOffset]);
+        return previous.value + (nextValue - previous.value) * (index - previous.offset) / (nextOffset - previous.offset);
+      });
+      const desired = rawBoundaries.map(value => Math.round((value - Number(area.x)) / size));
+      const preferredWidths = Array.from(
+        { length: columnCount },
+        (_, index) => Math.max(1, desired[index + 1] - desired[index]),
+      );
+      const requiredWidths = [...preferredWidths];
+      for (const box of tableBoxes) {
+        const span = Math.max(1, Math.trunc(Number(box.columnSpan) || 1));
+        const required = Math.max(1, Math.ceil((Number(box.minimumWidth) || 1) / size - .000001));
+        const current = requiredWidths.slice(box.columnIndex, box.columnIndex + span).reduce((sum, value) => sum + value, 0);
+        if (current < required) requiredWidths[Math.min(columnCount - 1, box.columnIndex + span - 1)] += required - current;
+      }
+      if (columnCount > columns) {
+        throw new Error(`В таблице ${tableId} больше колонок, чем малых ячеек сетки на странице.`);
+      }
+      const widths = [...preferredWidths];
+      while (widths.reduce((sum, value) => sum + value, 0) > columns) {
+        const shrinkIndex = widths.reduce((best, value, index) => (
+          value > 1 && (best < 0 || value > widths[best]) ? index : best
+        ), -1);
+        if (shrinkIndex < 0) break;
+        widths[shrinkIndex] -= 1;
+      }
+      let remaining = columns - widths.reduce((sum, value) => sum + value, 0);
+      while (remaining > 0) {
+        const growIndex = widths.reduce((best, value, index) => {
+          if (value >= requiredWidths[index]) return best;
+          if (best < 0) return index;
+          const pressure = requiredWidths[index] / value;
+          const bestPressure = requiredWidths[best] / widths[best];
+          return pressure > bestPressure
+            || (pressure === bestPressure && requiredWidths[index] - value > requiredWidths[best] - widths[best])
+            ? index : best;
+        }, -1);
+        if (growIndex < 0) break;
+        widths[growIndex] += 1;
+        remaining -= 1;
+      }
+      const totalWidth = widths.reduce((sum, value) => sum + value, 0);
+      const desiredStart = Math.round((rawBoundaries[0] - Number(area.x)) / size);
+      const start = clamp(desiredStart, 0, columns - totalWidth);
+      const boundaries = [start];
+      for (const width of widths) boundaries.push(boundaries.at(-1) + width);
+      for (const box of tableBoxes) {
+        const span = Math.max(1, Math.trunc(Number(box.columnSpan) || 1));
+        const left = boundaries[box.columnIndex];
+        const right = boundaries[Math.min(columnCount, box.columnIndex + span)];
+        box.x = Number(area.x) + left * size;
+        box.width = (right - left) * size;
+        box.widthLimit = box.width;
+        box.anchor.x = box.x;
+        box.anchor.width = box.width;
+      }
+    }
+    return aligned;
   }
 
   function findNearestFreeGridRect(anchor, occupiedRects, columns, rows) {
@@ -510,6 +606,7 @@
 
   return {
     captureZoomAnchor,
+    alignTableColumnsToGrid,
     clampGroupDelta,
     createSegmentMergePlan,
     findSegmentOverlaps,

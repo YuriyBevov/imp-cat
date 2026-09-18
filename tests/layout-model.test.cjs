@@ -1,6 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  alignTableColumnsToGrid,
   captureZoomAnchor,
   clampGroupDelta,
   createSegmentMergePlan,
@@ -144,7 +145,7 @@ test('source flow refuses an oversized indivisible block without mutating input'
   assert.equal(JSON.stringify(boxes), before)
 })
 
-test('source flow carries table cells in one row together without adding blank height to short cells', () => {
+test('source flow carries a table row together and gives every cell the complete row height', () => {
   const boxes = [
     { id: 'a', x: 0, width: 100, height: 120, rowGroup: 'table:1', anchor: { x: 0, y: 230, width: 100, height: 30 } },
     { id: 'b', x: 120, width: 100, height: 30, rowGroup: 'table:1', anchor: { x: 120, y: 232, width: 100, height: 30 } },
@@ -154,7 +155,40 @@ test('source flow carries table cells in one row together without adding blank h
   assert.equal(result.placements.get('a').pageOffset, 1)
   assert.equal(result.placements.get('b').pageOffset, 1)
   assert.equal(result.placements.get('a').y, result.placements.get('b').y)
-  assert.equal(result.placements.get('b').height, 30)
+  assert.equal(result.placements.get('a').height, 120)
+  assert.equal(result.placements.get('b').height, 120)
+})
+
+test('table columns share grid boundaries without overlap and reserve their minimum content width', () => {
+  const boxes = [
+    { id: 'a1', tableId: 't1', columnIndex: 0, columnSpan: 1, minimumWidth: 22, x: 42, width: 29, anchor: { x: 42, y: 20, width: 29, height: 20 } },
+    { id: 'b1', tableId: 't1', columnIndex: 1, columnSpan: 1, minimumWidth: 52, x: 71, width: 36, anchor: { x: 71, y: 20, width: 36, height: 20 } },
+    { id: 'c1', tableId: 't1', columnIndex: 2, columnSpan: 1, minimumWidth: 30, x: 107, width: 43, anchor: { x: 107, y: 20, width: 43, height: 20 } },
+    { id: 'a2', tableId: 't1', columnIndex: 0, columnSpan: 1, minimumWidth: 18, x: 43, width: 28, anchor: { x: 43, y: 60, width: 28, height: 20 } },
+    { id: 'b2', tableId: 't1', columnIndex: 1, columnSpan: 1, minimumWidth: 40, x: 71, width: 36, anchor: { x: 71, y: 60, width: 36, height: 20 } },
+    { id: 'c2', tableId: 't1', columnIndex: 2, columnSpan: 1, minimumWidth: 28, x: 107, width: 43, anchor: { x: 107, y: 60, width: 43, height: 20 } },
+  ]
+  const aligned = alignTableColumnsToGrid(boxes, { x: 40, y: 10, width: 170, height: 200 }, 17)
+  const firstRow = aligned.slice(0, 3)
+  const secondRow = aligned.slice(3)
+  assert.deepEqual(secondRow.map(box => [box.x, box.width]), firstRow.map(box => [box.x, box.width]))
+  assert.ok(firstRow.every(box => (box.x - 40) % 17 === 0 && box.width % 17 === 0))
+  assert.ok(firstRow.every(box => box.width >= box.minimumWidth))
+  assert.equal(firstRow[0].x + firstRow[0].width, firstRow[1].x)
+  assert.equal(firstRow[1].x + firstRow[1].width, firstRow[2].x)
+})
+
+test('table columns stay on shared grid boundaries when all minimum widths cannot fit', () => {
+  const boxes = [
+    { id: 'a', tableId: 'wide', columnIndex: 0, minimumWidth: 68, anchor: { x: 40, y: 20, width: 34, height: 20 } },
+    { id: 'b', tableId: 'wide', columnIndex: 1, minimumWidth: 102, anchor: { x: 74, y: 20, width: 51, height: 20 } },
+    { id: 'c', tableId: 'wide', columnIndex: 2, minimumWidth: 85, anchor: { x: 125, y: 20, width: 51, height: 20 } },
+  ]
+  const aligned = alignTableColumnsToGrid(boxes, { x: 40, y: 10, width: 136, height: 200 }, 17)
+  assert.equal(aligned.reduce((sum, box) => sum + box.width, 0), 136)
+  assert.ok(aligned.every(box => (box.x - 40) % 17 === 0 && box.width % 17 === 0))
+  assert.equal(aligned[0].x + aligned[0].width, aligned[1].x)
+  assert.equal(aligned[1].x + aligned[1].width, aligned[2].x)
 })
 
 test('scans dense multi-page layouts without mixing unrelated page rows', () => {

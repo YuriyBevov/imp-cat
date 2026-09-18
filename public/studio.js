@@ -2,8 +2,7 @@
   const $ = selector => document.querySelector(selector)
   const iconMarkup = name => `<svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-${name}"></use></svg>`
   const translationUnits = window.IcatTranslationUnits
-  const GRID_XL_COLUMNS = 16
-  const GRID_XL_SCALE = 1.5
+  const GRID_OUTER_SIZE = 68
   const GRID_FINE_DIVISIONS = 4
   const LANGUAGE_LABELS = Object.freeze({
     auto: 'Авто',
@@ -1519,7 +1518,17 @@
     elements.newDocument.hidden = false
     setView('studio')
     renderWorkflowStageState()
+    let initializedLayout = false
+    if (state.workflowStage === 3 && Number(state.scene.layoutInitializationVersion) < 1) {
+      try {
+        arrangeObjectsFromOriginal(state.scene.objects)
+        initializedLayout = true
+      } catch (error) {
+        showToast(error.message, true)
+      }
+    }
     renderDocument()
+    if (initializedLayout) scheduleSave()
     requestAnimationFrame(() => {
       if (activeTab?.key !== state.activeTabKey) return
       if (workspaceState) {
@@ -3534,8 +3543,7 @@
 
   function currentGridMetrics(page = state.scene?.pages?.[state.activePage] || state.scene?.pages?.[0]) {
     const available = gridAvailableBounds(page)
-    const approximateOuterSize = available.width / GRID_XL_COLUMNS * GRID_XL_SCALE
-    const outerSize = Math.max(GRID_FINE_DIVISIONS, Math.round(approximateOuterSize / GRID_FINE_DIVISIONS) * GRID_FINE_DIVISIONS)
+    const outerSize = GRID_OUTER_SIZE
     const middleSize = outerSize / 2
     const size = outerSize / GRID_FINE_DIVISIONS
     const outerColumns = Math.max(1, Math.floor(available.width / outerSize))
@@ -3653,7 +3661,7 @@
       if (!pageTargets.length) continue
       const metrics = currentGridMetrics(page)
       const layoutPage = { ...page, contentBounds: { ...page.contentBounds, width: metrics.width, height: metrics.height } }
-      const boxes = pageTargets.map(object => {
+      let boxes = pageTargets.map(object => {
         const anchor = { ...(options.currentAnchors ? object : object.originalBounds || object) }
         const size = measureSourceLayoutBox(object, layoutPage, { ...anchor, width: options.currentAnchors ? object.layoutWidthLimit || anchor.width : anchor.width })
         if (options.preserveManual && object.manualWidth) {
@@ -3666,8 +3674,21 @@
           : alignment === 'center' ? anchor.x + (anchor.width - size.width) / 2 : anchor.x
         const rowGroup = object.type === 'table_cell' && object.tableId && object.rowIndex != null
           ? `${object.tableId}:${object.rowIndex}` : null
-        return { id: object.id, anchor, x, ...size, rowGroup, order: object.readingOrder }
+        return {
+          id: object.id, anchor, x, ...size, rowGroup, order: object.readingOrder,
+          tableId: object.type === 'table_cell' ? object.tableId : null,
+          columnIndex: object.type === 'table_cell' ? object.columnIndex : null,
+          columnSpan: object.type === 'table_cell' ? object.columnSpan : null,
+        }
       })
+      boxes = window.ICATLayout.alignTableColumnsToGrid(boxes, layoutPage.contentBounds, metrics.size)
+      const pageObjects = new Map(pageTargets.map(object => [object.id, object]))
+      for (const box of boxes) {
+        if (!box.tableId) continue
+        const object = pageObjects.get(box.id)
+        if (!object || (options.preserveManual && object.manualHeight)) continue
+        box.height = Math.max(12, Math.ceil(measureObjectContent(object, box.width).height))
+      }
       const obstacles = state.scene.objects.filter(object => !object.excluded && object.pageIndex === page.index && !targetIds.has(object.id))
       const plan = window.ICATLayout.layoutSourceFlow(boxes, layoutPage.contentBounds, obstacles)
       plans.push({ page, boxes, targets: pageTargets, ...plan })
@@ -3700,7 +3721,7 @@
       state.scene.pages.splice(index, 1)
       for (const object of state.scene.objects) if (object.pageIndex > index) object.pageIndex -= 1
     }
-    state.scene.layoutInitializationVersion = 2
+    state.scene.layoutInitializationVersion = 4
     reindexScenePages()
     state.activePage = Math.min(state.activePage, state.scene.pages.length - 1)
     state.sourceRenderedPage = null
@@ -3722,15 +3743,17 @@
     const minimum = measureObjectMinContentWidth(object)
     if (minimum > area.width) throw new Error(`В сегменте ${object.id} есть слово шире страницы. Измените ширину страницы или типографику.`)
     const widthLimit = Math.min(area.width, Math.max(12, anchor.width, minimum))
-    let width = Math.min(widthLimit, Math.max(12, Math.ceil(measureObjectContent(object).width)))
+    let width = object.type === 'table_cell'
+      ? widthLimit
+      : Math.min(widthLimit, Math.max(12, Math.ceil(measureObjectContent(object).width)))
     let measured = measureObjectContent(object, width)
     // Tighten to the longest rendered line, keeping the original wrapping.
-    if (measured.inkWidth > 0 && object.style?.textAlign !== 'justify') {
+    if (object.type !== 'table_cell' && measured.inkWidth > 0 && object.style?.textAlign !== 'justify') {
       const tight = Math.min(width, Math.max(12, Math.ceil(measured.inkWidth + 8)))
       const check = measureObjectContent(object, tight)
       if (check.height <= measured.height + .5) { width = tight; measured = check }
     }
-    return { width, height: Math.max(12, Math.ceil(measured.height)), widthLimit }
+    return { width, height: Math.max(12, Math.ceil(measured.height)), widthLimit, minimumWidth: minimum }
   }
 
   function gridRangesOverlap(firstStart, firstEnd, secondStart, secondEnd) {

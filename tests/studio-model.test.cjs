@@ -259,14 +259,17 @@ test('normalizeScene preserves explicit layout initialization and safely migrate
   assert.equal(normalizeScene(existingLayout, '5'.repeat(32), 'Explicit pending').layoutInitializationVersion, 0)
   existingLayout.layoutInitializationVersion = 2
   existingLayout.pages.push({ ...existingLayout.pages[0], index: 1, isAdded: true, sourcePageIndex: null, imageUrl: null, layoutContinuation: true })
-  Object.assign(existingLayout.objects[0], { pageIndex: 1, layoutSourcePageIndex: 0, layoutSourceOrder: 1, layoutWidthLimit: 187.5, layoutContentKey: '42:12345' })
+  Object.assign(existingLayout.objects[0], { pageIndex: 1, layoutSourcePageIndex: 0, layoutSourceOrder: 1, layoutWidthLimit: 187.5, layoutContentKey: '42:12345', manualPosition: true })
   const restored = normalizeScene(existingLayout, '5'.repeat(32), 'Paginated')
-  assert.equal(restored.layoutInitializationVersion, 2)
+  assert.equal(restored.layoutInitializationVersion, 4)
   assert.equal(restored.pages[1].layoutContinuation, true)
   assert.equal(restored.pages[1].imageUrl, null)
   assert.equal(restored.objects[0].layoutSourcePageIndex, 0)
   assert.equal(restored.objects[0].layoutWidthLimit, 187.5)
   assert.equal(restored.objects[0].layoutContentKey, '42:12345')
+
+  existingLayout.objects[0].manualPosition = false
+  assert.equal(normalizeScene(existingLayout, '5'.repeat(32), 'Automatic pagination').layoutInitializationVersion, 0)
 })
 
 test('normalizeScene preserves the document-specific segment type label preference', () => {
@@ -297,9 +300,10 @@ test('source pages preserve their physical aspect ratio through scene normalizat
   const scene = buildScene({
     pages: [{ index: 0, width: 1600, height: 1200, lines: [] }],
   }, { documentId: 'f'.repeat(32) })
-  assert.equal(scene.pages[0].heightPx, 595.5)
-  assert.equal(scene.pages[0].sourceFrame.width, 794)
-  assert.equal(scene.pages[0].sourceFrame.height, 595.5)
+  assert.equal(scene.pages[0].widthPx, 1058.67)
+  assert.equal(scene.pages[0].heightPx, 794)
+  assert.equal(scene.pages[0].sourceFrame.width, 1058.67)
+  assert.equal(scene.pages[0].sourceFrame.height, 794)
 
   const normalized = normalizeScene({
     pages: [{
@@ -309,9 +313,51 @@ test('source pages preserve their physical aspect ratio through scene normalizat
     }],
     objects: [],
   }, 'f'.repeat(32), 'Short page')
-  assert.equal(normalized.pages[0].heightPx, 595.5)
-  assert.equal(normalized.pages[0].sourceFrame.height, 595.5)
-  assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(794, 595.5))
+  assert.equal(normalized.pages[0].widthPx, 1058.67)
+  assert.equal(normalized.pages[0].heightPx, 794)
+  assert.equal(normalized.pages[0].sourceFrame.width, 1058.67)
+  assert.equal(normalized.pages[0].sourceFrame.height, 794)
+  assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(1058.67, 794))
+})
+
+test('legacy landscape workspaces migrate to the confirmed source orientation and rebuild automatic pagination', () => {
+  const scene = buildSceneFromAgent({
+    pages: [{
+      index: 0, width: 1600, height: 1200,
+      segments: [{
+        segmentId: 'cell-1', type: 'table_cell', sourceText: 'Value', readingOrder: 1,
+        tableId: 'table-1', rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 1,
+        regions: [{ x: .1, y: .2, width: .3, height: .1 }],
+        style: { fontFamily: 'Arial', fontSizePt: 10, fontWeight: 400, textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+        confidence: .98,
+      }],
+    }],
+  }, { documentId: '1'.repeat(32) })
+  delete scene.workspaceOrientationVersion
+  Object.assign(scene.pages[0], {
+    widthPx: 794, heightPx: 595.5,
+    sourceFrame: { x: 0, y: 0, width: 794, height: 595.5 },
+    contentBounds: pageContentBounds(794, 595.5),
+  })
+  scene.pages.push({
+    ...scene.pages[0], index: 1, sourcePageIndex: null, isAdded: true,
+    imageUrl: null, layoutContinuation: true, widthPx: 794, heightPx: 1123,
+  })
+  Object.assign(scene.objects[0], {
+    pageIndex: 1, layoutSourcePageIndex: 0, layoutInitializationVersion: 2,
+    x: 40, y: 100, width: 200, height: 50,
+  })
+  scene.layoutInitializationVersion = 2
+
+  const normalized = normalizeScene(scene, '1'.repeat(32), 'Landscape migration')
+  assert.equal(normalized.workspaceOrientationVersion, 1)
+  assert.equal(normalized.pages.length, 1)
+  assert.equal(normalized.pages[0].widthPx, 1058.67)
+  assert.equal(normalized.pages[0].heightPx, 794)
+  assert.equal(normalized.objects[0].pageIndex, 0)
+  assert.equal(normalized.layoutInitializationVersion, 0)
+  assert.ok(Math.abs(normalized.objects[0].originalBounds.x - 105.867) < .001)
+  assert.ok(Math.abs(normalized.objects[0].originalBounds.width - 317.601) < .001)
 })
 
 test('normalizeScene preserves a reduced content-area height inside the A4 page', () => {

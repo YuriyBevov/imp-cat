@@ -98,3 +98,19 @@ test('layout review moves an automatic candidate to free grid cells instead of o
     && moved.y < fixed.y + fixed.height && moved.y + moved.height > fixed.y
   assert.equal(overlaps, false)
 })
+
+test('layout review uses the same fixed 17 px grid on a landscape workspace', () => {
+  const { page, objects } = fixture()
+  Object.assign(page, {
+    widthPx: 1122.81,
+    heightPx: 794,
+    contentBounds: { x: 40, y: 40, width: 1020, height: 680 },
+    gridAvailableBounds: { width: 1042.81, height: 714 },
+  })
+  Object.assign(objects[0], { manualPosition: false, manualWidth: true, manualHeight: true })
+  applyLayoutReview({ layoutInitializationVersion: 1, pages: [page], objects }, [{ pageIndex: 0, adjustments: [
+    { objectId: 'stamp-1', x: 111, y: 111, width: null, height: null, confidence: .95, reason: 'Align' },
+  ] }])
+  assert.equal(objects[0].x, 108)
+  assert.equal(objects[0].y, 108)
+})

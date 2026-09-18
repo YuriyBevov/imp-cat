@@ -2015,7 +2015,7 @@ test('layout initialization inserts continuation pages, preserves source links a
   await new Promise(resolve => setTimeout(resolve, 40))
   dom.window.document.querySelector('#workflow-approve').click()
   await new Promise(resolve => setTimeout(resolve, 720))
-  assert.equal(savedScene.layoutInitializationVersion, 2)
+  assert.equal(savedScene.layoutInitializationVersion, 4)
   assert.equal(savedScene.pages.length, 3)
   assert.equal(savedScene.pages[1].layoutContinuation, true)
   assert.equal(savedScene.pages[1].imageUrl, null)
