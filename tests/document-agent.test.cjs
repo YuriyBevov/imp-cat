@@ -45,6 +45,7 @@ test('Codex prompt requires complete text and readable service-object content', 
   assert.match(prompt, /fontWeight строго 400 или 700/)
   assert.match(prompt, /Сохраняй отдельные колонки, строки таблиц/)
   assert.match(prompt, /tableId/)
+  assert.match(prompt, /Никогда не возвращай всю строку таблицы одним сегментом/)
 })
 
 test('normalizes structural table coordinates for native export', () => {

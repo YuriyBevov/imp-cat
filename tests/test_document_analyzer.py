@@ -51,6 +51,21 @@ class DocumentRendererTests(unittest.TestCase):
             self.assertEqual(analysis["pages"][0]["image"], "page-001.png")
             self.assertTrue((output / "page-001.png").is_file())
 
+    def test_raster_can_be_rotated_clockwise_before_analysis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "sideways.png"
+            Image.new("RGB", (1800, 2400), "white").save(source)
+            output = root / "pages"
+
+            analysis = ANALYZER.render_document(source, output, [90])
+
+            self.assertEqual(analysis["pages"][0]["rotation"], 90)
+            self.assertEqual(analysis["pages"][0]["width"], 2400)
+            self.assertEqual(analysis["pages"][0]["height"], 1800)
+            with Image.open(output / "page-001.png") as page:
+                self.assertEqual(page.size, (2400, 1800))
+
 
 if __name__ == "__main__":
     unittest.main()

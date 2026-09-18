@@ -36,12 +36,13 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.gridSize, 8)
   assert.equal(scene.gridDensity, 'xs')
   assert.equal(scene.snapToGrid, true)
+  assert.equal(scene.showSegmentTypeLabels, true)
   assert.equal(scene.workflowVersion, 2)
   assert.equal(scene.workflowStage, 1)
   assert.equal(scene.layoutInitializationVersion, 0)
   assert.equal(scene.pages.length, 1)
   assert.equal(scene.pages[0].widthPx, 794)
-  assert.equal(scene.pages[0].heightPx, 1123)
+  assert.equal(scene.pages[0].heightPx, 1121.53)
   assert.equal(scene.objects.length, 3)
   assert.match(scene.objects[1].sourceText, /First line[\s\S]*continues/)
   assert.equal(scene.objects[2].type, 'signature')
@@ -59,6 +60,31 @@ test('structural table model groups positioned cells by page and table id', () =
   assert.equal(tables[0].rowCount, 2)
   assert.equal(tables[0].columnCount, 2)
   assert.deepEqual(tables[0].cells.map(cell => cell.objectId), ['a', 'b', 'c'])
+})
+
+test('merged tab-delimited table rows are recovered as individual physical cells', () => {
+  const cell = (segmentId, sourceText, pageIndex, columnIndex, region) => ({
+    segmentId, type: 'table_cell', sourceText, readingOrder: columnIndex,
+    flowGroup: `page-${pageIndex + 1}-table-1`, tableId: `table-${pageIndex + 1}`,
+    rowIndex: 0, columnIndex, rowSpan: 1, columnSpan: 1, regions: [region],
+    style: { fontFamily: 'Arial', fontSizePt: 10, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' },
+    confidence: .98, needsReview: false, notes: '',
+  })
+  const scene = buildSceneFromAgent({
+    pages: [
+      { index: 0, width: 1600, height: 900, segments: [cell('merged', 'First\tSecond', 0, 0, { x: .1, y: .2, width: .8, height: .1 })] },
+      { index: 1, width: 1600, height: 900, segments: [
+        cell('template-a', 'First', 1, 0, { x: .1, y: .2, width: .25, height: .1 }),
+        cell('template-b', 'Second', 1, 1, { x: .35, y: .2, width: .55, height: .1 }),
+      ] },
+    ],
+  }, { documentId: 'c'.repeat(32) })
+  const recovered = scene.objects.filter(object => object.pageIndex === 0)
+  assert.deepEqual(recovered.map(object => object.sourceText), ['First', 'Second'])
+  assert.deepEqual(recovered.map(object => object.columnIndex), [0, 1])
+  assert.ok(Math.abs(recovered[0].x + recovered[0].width - recovered[1].x) < .01)
+  assert.equal(scene.tables[0].columnCount, 2)
+  assert.equal(scene.tableSegmentationVersion, 1)
 })
 
 test('buildScene fits standalone raster sources onto an undistorted A4 workspace', () => {
@@ -93,7 +119,7 @@ test('buildSceneFromAgent preserves normalized geometry and labels special objec
       }],
     }],
   }, { documentId: '1'.repeat(32), title: 'Agent fixture' })
-  assert.equal(scene.pages[0].heightPx, 1123)
+  assert.equal(scene.pages[0].heightPx, 1058.67)
   assert.ok(Math.abs(scene.objects[0].x - 476.4) < .01)
   assert.ok(Math.abs(scene.objects[0].width - 198.5) < .01)
   assert.equal(scene.objects[0].translation, '')
@@ -153,6 +179,17 @@ test('QA reports untranslated, low-confidence, outside, overflow, and overlap is
   assert.ok(codes.has('outside-page'))
   assert.ok(codes.has('text-overflow'))
   assert.ok(codes.has('overlap'))
+})
+
+test('QA keeps empty structural table cells without reporting missing content or translation', () => {
+  const page = { index: 0, widthPx: 794, heightPx: 561, contentBounds: { x: 28, y: 28, width: 738, height: 505 } }
+  const emptyCell = {
+    id: 'empty-cell', pageIndex: 0, type: 'table_cell', tableId: 'table', rowIndex: 1, columnIndex: 2,
+    sourceText: '', translation: '', confidence: 1, x: 100, y: 100, width: 80, height: 24,
+    style: { fontSizePx: 12, lineHeight: 1.2 },
+  }
+  const report = validateScene({ pages: [page], objects: [emptyCell] })
+  assert.equal(report.warnings.some(item => item.objectIds.includes('empty-cell')), false)
 })
 
 test('normalizeScene constrains data and restores server-owned image URLs', () => {
@@ -232,6 +269,15 @@ test('normalizeScene preserves explicit layout initialization and safely migrate
   assert.equal(restored.objects[0].layoutContentKey, '42:12345')
 })
 
+test('normalizeScene preserves the document-specific segment type label preference', () => {
+  const input = buildScene(analysisFixture(), { documentId: '6'.repeat(32) })
+  input.showSegmentTypeLabels = false
+  assert.equal(normalizeScene(input, '6'.repeat(32), 'Hidden labels').showSegmentTypeLabels, false)
+
+  delete input.showSegmentTypeLabels
+  assert.equal(normalizeScene(input, '6'.repeat(32), 'Default labels').showSegmentTypeLabels, true)
+})
+
 test('normalizeScene preserves legacy dimensions that differ from original bounds', () => {
   const input = buildScene(analysisFixture(), { documentId: 'e'.repeat(32) })
   const object = input.objects[0]
@@ -247,11 +293,11 @@ test('normalizeScene preserves legacy dimensions that differ from original bound
   assert.equal(normalized.objects[0].manualPosition, true)
 })
 
-test('short source pages use an A4-height workspace without stretching the source frame', () => {
+test('source pages preserve their physical aspect ratio through scene normalization', () => {
   const scene = buildScene({
     pages: [{ index: 0, width: 1600, height: 1200, lines: [] }],
   }, { documentId: 'f'.repeat(32) })
-  assert.equal(scene.pages[0].heightPx, minimumA4PageHeight(scene.pages[0].widthPx))
+  assert.equal(scene.pages[0].heightPx, 595.5)
   assert.equal(scene.pages[0].sourceFrame.width, 794)
   assert.equal(scene.pages[0].sourceFrame.height, 595.5)
 
@@ -263,9 +309,9 @@ test('short source pages use an A4-height workspace without stretching the sourc
     }],
     objects: [],
   }, 'f'.repeat(32), 'Short page')
-  assert.equal(normalized.pages[0].heightPx, 1123)
+  assert.equal(normalized.pages[0].heightPx, 595.5)
   assert.equal(normalized.pages[0].sourceFrame.height, 595.5)
-  assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(794, 1123))
+  assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(794, 595.5))
 })
 
 test('normalizeScene preserves a reduced content-area height inside the A4 page', () => {

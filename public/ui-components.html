@@ -32,6 +32,27 @@
 
       <div class="components-list">
         <details class="component-section" open>
+          <summary class="component-section__summary"><span>Видимость типов сегментов</span><code>SegmentTypeLabelsToggle</code></summary>
+          <div class="component-section__body">
+            <div class="component-meta"><span class="component-status">Согласовано</span><p>Иконная кнопка этапа «Макет» скрывает служебные подписи типов сегментов и повторным нажатием возвращает их. Иконка и адаптивный тултип всегда обозначают следующее доступное действие.</p></div>
+            <div class="component-control-demo">
+              <button class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye-off"></use></svg></button>
+              <button class="icon-button is-active" type="button" aria-label="Показать типы сегментов" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye"></use></svg></button>
+            </div>
+          </div>
+        </details>
+        <details class="component-section" open>
+          <summary class="component-section__summary"><span>Управление ориентацией страниц</span><code>PageOrientationControls</code></summary>
+          <div class="component-section__body">
+            <div class="component-meta"><span class="component-status">Согласовано</span><p>Иконные команды поворачивают одну страницу или весь документ влево и вправо с шагом 90°, а также сбрасывают поворот. Назначение каждой команды показывает общий адаптивный тултип.</p></div>
+            <div class="component-control-demo">
+              <button class="icon-button icon-button--field" type="button" aria-label="Повернуть страницу влево"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-rotate-counterclockwise"></use></svg></button>
+              <button class="icon-button icon-button--field" type="button" aria-label="Сбросить поворот страницы"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-refresh"></use></svg></button>
+              <button class="icon-button icon-button--field" type="button" aria-label="Повернуть страницу вправо"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-rotate-clockwise"></use></svg></button>
+            </div>
+          </div>
+        </details>
+        <details class="component-section" open>
           <summary class="component-section__summary"><span>Действия Базы знаний в сегменте</span><code>SegmentKnowledgeActions</code></summary>
           <div class="component-section__body">
             <div class="component-meta"><span class="component-status">Согласовано</span><p>На этапе «Сегменты» весь блок открывает точные совпадения и добавляет пару непосредственно из служебной строки поля перевода. Иконки используют общий компонент кнопки и адаптивные тултипы.</p></div>

@@ -53,7 +53,7 @@
         <div class="upload-card__icon">PDF</div>
         <p class="eyebrow">Новый проект</p>
         <h1>Загрузите документ на перевод</h1>
-        <p>PDF, скан или изображение. Страницы будут подготовлены локально и разобраны агентом до открытия редактора.</p>
+        <p>PDF, скан или изображение. Перед распознаванием вы сможете проверить и повернуть подготовленные страницы.</p>
         <label class="button button--primary button--large" for="file-input">Выбрать документы</label>
         <small id="analysis-service-note">Проверяем готовность агента анализа…</small>
       </section>
@@ -77,6 +77,28 @@
         <button id="retry-job-button" class="button button--primary loading-retry" type="button" hidden>Повторить обработку</button>
       </div>
       <small id="loading-hint">Сложный многостраничный скан может обрабатываться несколько минут.</small>
+    </main>
+
+    <main id="orientation-view" class="orientation-view" hidden>
+      <section class="orientation-panel">
+        <header class="orientation-panel__header">
+          <div>
+            <p class="eyebrow">Подготовка документа</p>
+            <h1>Проверьте ориентацию страниц</h1>
+            <p>Агент распознает страницы именно в показанном положении. Поверните боковые или перевёрнутые страницы до запуска анализа.</p>
+          </div>
+          <div class="orientation-toolbar" aria-label="Повернуть все страницы">
+            <button id="orientation-all-left" class="icon-button icon-button--field" type="button" aria-label="Повернуть все страницы влево"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-rotate-counterclockwise"></use></svg></button>
+            <button id="orientation-all-reset" class="icon-button icon-button--field" type="button" aria-label="Сбросить поворот всех страниц"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-refresh"></use></svg></button>
+            <button id="orientation-all-right" class="icon-button icon-button--field" type="button" aria-label="Повернуть все страницы вправо"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-rotate-clockwise"></use></svg></button>
+          </div>
+        </header>
+        <div id="orientation-pages" class="orientation-pages"></div>
+        <footer class="orientation-panel__footer">
+          <p class="note note--info note--compact">После запуска изменение ориентации потребует повторного распознавания документа.</p>
+          <button id="orientation-submit" class="button button--primary" type="button">Начать распознавание</button>
+        </footer>
+      </section>
     </main>
 
     <main id="studio-view" class="studio is-source-collapsed" hidden>
@@ -126,6 +148,7 @@
               <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
               <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
               <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
+              <button id="segment-type-labels-toggle" class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false" hidden><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye-off"></use></svg></button>
             </div>
           </div>
         </div>
@@ -442,6 +465,17 @@
           <strong>Вся текущая работа с переводами сегментов будет потеряна.</strong>
           <p>Пересегментация заново построит сегменты документа и заменит текущую сцену, включая переводы, инструкции, ручные правки, стили и расположение сегментов.</p>
           <p>Резервная версия на этом этапе не создаётся, поэтому восстановить текущую работу после подтверждения не получится.</p>
+        </div>
+        <div class="reanalyze-orientation">
+          <div class="reanalyze-orientation__heading">
+            <strong>Ориентация исходных страниц</strong>
+            <div class="orientation-toolbar" aria-label="Повернуть все исходные страницы">
+              <button id="reanalyze-orientation-all-left" class="icon-button icon-button--compact" type="button" aria-label="Повернуть все страницы влево"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-rotate-counterclockwise"></use></svg></button>
+              <button id="reanalyze-orientation-all-reset" class="icon-button icon-button--compact" type="button" aria-label="Сбросить поворот всех страниц"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-refresh"></use></svg></button>
+              <button id="reanalyze-orientation-all-right" class="icon-button icon-button--compact" type="button" aria-label="Повернуть все страницы вправо"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-rotate-clockwise"></use></svg></button>
+            </div>
+          </div>
+          <div id="reanalyze-orientation-pages" class="orientation-pages orientation-pages--compact"></div>
         </div>
         <div class="settings-dialog__actions">
           <button id="reanalyze-confirm-cancel" class="button" type="button">Отмена</button>

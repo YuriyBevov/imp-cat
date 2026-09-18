@@ -26,13 +26,15 @@ const agentsGuide = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
 
 test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
-    'file-input', 'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas', 'source-zoom-100', 'source-preview-open',
+    'file-input', 'orientation-view', 'orientation-pages', 'orientation-all-left', 'orientation-all-reset', 'orientation-all-right', 'orientation-submit',
+    'page-thumbnails', 'document-canvas', 'source-preview-scroll', 'source-preview-canvas', 'source-zoom-100', 'source-preview-open',
     'source-preview-lightbox', 'source-preview-lightbox-title', 'source-preview-lightbox-close', 'source-preview-lightbox-viewport', 'source-preview-lightbox-canvas',
     'source-preview-lightbox-previous', 'source-preview-lightbox-next', 'source-preview-lightbox-zoom-out', 'source-preview-lightbox-zoom-in',
     'source-preview-lightbox-zoom-output', 'source-preview-lightbox-zoom-100', 'source-preview-lightbox-fit',
     'appbar-menu', 'appbar-menu-button', 'appbar-actions-menu',
     'source-text', 'translation-text', 'object-type', 'segment-note', 'reanalyze-button', 'translate-button', 'loading-hint',
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
+    'reanalyze-orientation-pages', 'reanalyze-orientation-all-left', 'reanalyze-orientation-all-reset', 'reanalyze-orientation-all-right',
     'confirmation-modal', 'confirmation-title', 'confirmation-description', 'confirmation-close', 'confirmation-cancel', 'confirmation-submit',
     'translation-approval-modal', 'translation-approval-title', 'translation-approval-content', 'translation-approval-status',
     'translation-approval-close', 'translation-approval-cancel', 'translation-approval-continue', 'translation-approval-retranslate-all', 'translation-approval-submit',
@@ -55,7 +57,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'stretch-work-area-width-button', 'stretch-work-area-height-button', 'fit-min-content-width-button',
     'format-all-segments', 'typography-select-all',
     'toolbar-font-family', 'toolbar-text-color', 'toolbar-font-size-decrease', 'toolbar-font-size-value', 'toolbar-font-size-increase',
-    'line-height-decrease', 'line-height', 'line-height-increase', 'zoom-100',
+    'line-height-decrease', 'line-height', 'line-height-increase', 'zoom-100', 'segment-type-labels-toggle',
     'source-panel-toggle', 'workflow-stagebar', 'workflow-previous', 'workflow-approve',
     'inspector-panel', 'inspector-panel-body',
     'document-tabs', 'document-library-button', 'document-library-modal', 'document-library-list',
@@ -87,7 +89,14 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.knowledge-base-toolbar input, \.knowledge-base-toolbar select, \.knowledge-base-toolbar \.base-select\s*\{[^}]*height:\s*38px[^}]*min-height:\s*38px/)
   assert.match(uiKit, /\.icon-button--field\s*\{[^}]*width:\s*38px;[^}]*height:\s*38px/)
   assert.match(iconSprite, /<symbol id="icon-search"/)
+  assert.match(iconSprite, /<symbol id="icon-rotate-clockwise"/)
+  assert.match(iconSprite, /<symbol id="icon-rotate-counterclockwise"/)
+  assert.match(iconSprite, /<symbol id="icon-eye"/)
+  assert.match(iconSprite, /<symbol id="icon-eye-off"/)
   assert.match(uiComponentsHtml, /icon-search/)
+  assert.match(uiComponentsHtml, /PageOrientationControls/)
+  assert.match(uiComponentsHtml, /SegmentTypeLabelsToggle/)
+  assert.match(uiComponentsHtml, /icon-rotate-clockwise/)
   assert.equal(studioDocument.querySelector('#view-layout-button'), null)
   assert.equal(studioDocument.querySelector('#view-segments-button'), null)
   assert.equal(studioDocument.querySelector('#translation-units-card'), null)
@@ -230,6 +239,10 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(client, /window\.confirm\('Повторный анализ/)
   assert.doesNotMatch(client, /(?:window\.)?confirm\s*\(/)
   assert.match(client, /\/api\/studio\/jobs/)
+  assert.match(client, /\/api\/studio\/preparations/)
+  assert.match(client, /analysis-jobs/)
+  assert.match(client, /function renderOrientationPages/)
+  assert.match(styles, /\.orientation-pages\s*\{/)
   assert.doesNotMatch(client, /agent\/layout-review/)
   assert.match(client, /loadPendingJobs/)
   assert.match(client, /cancelActiveJob/)
@@ -336,6 +349,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   )
   assert.match(styles, /\.workflow-stagebar__steps\s*\{[^}]*grid-template-columns:\s*repeat\(4,/)
   assert.match(styles, /\.workbench-toolbar__layout-controls\s*\{[^}]*grid-column:\s*2[^}]*justify-self:\s*end/)
+  assert.match(styles, /\.document-canvas\.is-segment-type-labels-hidden \.scene-object__badge\s*\{[^}]*display:\s*none !important/)
   assert.equal(studioDocument.querySelector('.inspector-controls'), null)
   assert.doesNotMatch(styles, /\.workbench-toolbar__inner > \.toolbar-group:first-child\s*\{/)
   assert.match(styles, /\.appbar\s*\{[^}]*height:\s*44px/)
@@ -349,6 +363,63 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(html, /class="app-container appbar__inner"/)
   assert.match(html, /class="app-container document-tabs__inner"/)
   assert.match(html, /class="app-container workbench-toolbar__inner"/)
+})
+
+test('layout toolbar hides and restores segment type labels in both directions', async () => {
+  const id = 'b'.repeat(32)
+  const metadata = { id, revision: 1 }
+  const scene = {
+    title: 'Type labels', sourceLanguage: 'en', targetLanguage: 'ru', workflowStage: 3, workflowVersion: 2,
+    showSegmentTypeLabels: true,
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{
+      id: 'stamp-segment', pageIndex: 0, type: 'stamp', readingOrder: 1,
+      sourceText: 'STAMP', translation: '/Штамп: STAMP/', confidence: .98,
+      x: 40, y: 60, width: 180, height: 40, rotation: 0, excluded: false,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], originalBounds: { x: 40, y: 60, width: 180, height: 40 },
+    }],
+  }
+  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
+    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
+  })
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.Element.prototype.scrollIntoView = function scrollIntoView() {}
+  dom.window.fetch = async url => {
+    const value = String(url)
+    if (value.endsWith('/status') && !value.includes('knowledge-base')) return { ok: true, json: async () => ({ translationProviderConfigured: false }) }
+    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [] }) }
+    if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
+    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
+    if (value.endsWith(`/documents/${id}`)) return { ok: true, json: async () => ({ metadata, scene }) }
+    if (value.endsWith(`/documents/${id}/scene`)) return { ok: true, json: async () => ({ metadata }) }
+    if (value.endsWith('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'memory', connected: true, persistent: false }) }
+    if (value.endsWith('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [] }) }
+    return { ok: true, json: async () => ({}) }
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+
+  const toggle = dom.window.document.querySelector('#segment-type-labels-toggle')
+  const canvas = dom.window.document.querySelector('#document-canvas')
+  assert.equal(toggle.hidden, false)
+  assert.equal(toggle.getAttribute('aria-label'), 'Скрыть типы сегментов')
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false')
+  assert.ok(canvas.querySelector('.scene-object__badge'))
+
+  toggle.click()
+  assert.equal(canvas.classList.contains('is-segment-type-labels-hidden'), true)
+  assert.equal(toggle.getAttribute('aria-label'), 'Показать типы сегментов')
+  assert.equal(toggle.getAttribute('aria-pressed'), 'true')
+  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye')
+
+  toggle.click()
+  assert.equal(canvas.classList.contains('is-segment-type-labels-hidden'), false)
+  assert.equal(toggle.getAttribute('aria-label'), 'Скрыть типы сегментов')
+  assert.equal(toggle.getAttribute('aria-pressed'), 'false')
+  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye-off')
+  dom.window.close()
 })
 
 test('app bar actions open from a burger and close outside or with Escape', async () => {
@@ -496,7 +567,7 @@ test('user guide documents the complete interface and links from README', () => 
   for (const label of [
     'Документация', 'Руководство', 'Компоненты', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
     'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Готовим документ к работе', 'Переводим документ',
-    'Пересегментация макета', 'Перевести документ', 'Исправить наложения',
+    'Пересегментация макета', 'Перевести документ', 'Исправить наложения', 'Скрыть типы сегментов', 'Показать типы сегментов',
     'Тестирование перед выгрузкой', 'Сохранить инструкцию в список инструкций', 'Редактировать инструкцию',
     'Сохранить изменения',
     'Карточка ручного управления частями сегмента временно удалена',
@@ -1960,6 +2031,20 @@ test('layout initialization inserts continuation pages, preserves source links a
   assert.equal(bottom.layoutSourcePageIndex, 0)
   assert.equal(following.pageIndex, 1)
   assert.ok(following.y >= bottom.y + bottom.height)
+  const canvasScroll = dom.window.document.querySelector('#canvas-scroll')
+  canvasScroll.getBoundingClientRect = () => ({ top: 0, left: 0, right: 1200, bottom: 800, width: 1200, height: 800 })
+  for (const shell of dom.window.document.querySelectorAll('.studio-page-shell')) {
+    const pageIndex = Number(shell.dataset.pageIndex)
+    shell.getBoundingClientRect = () => ({
+      top: pageIndex === 1 ? 12 : pageIndex === 0 ? -1200 : 1200,
+      left: 0, right: 794, bottom: 1135, width: 794, height: 1123,
+    })
+  }
+  canvasScroll.dispatchEvent(new dom.window.Event('scroll'))
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const continuationSourcePreview = dom.window.document.querySelector('#source-preview-canvas .source-preview-page')
+  assert.equal(continuationSourcePreview.querySelector('img')?.getAttribute('src'), `/api/studio/documents/${id}/pages/0/image`)
+  assert.equal(continuationSourcePreview.querySelector('.source-preview-page__empty'), null)
   assert.equal(centered.x + centered.width / 2, 270)
   assert.ok(centered.width < 300)
   const before = savedScene.objects.map(({ x, y, width, height, pageIndex }) => ({ x, y, width, height, pageIndex }))

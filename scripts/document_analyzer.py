@@ -24,6 +24,7 @@ except ImportError:
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".heic", ".bmp"}
+PAGE_ROTATIONS = {0, 90, 180, 270}
 
 
 def env_float(name: str, fallback: float, minimum: float, maximum: float) -> float:
@@ -70,20 +71,44 @@ def normalize_raster(source: Path) -> Image.Image:
     return image
 
 
-def page_manifest(index: int, image: Image.Image, filename: str) -> dict[str, Any]:
+def normalize_rotation(value: Any) -> int:
+    try:
+        rotation = int(value) % 360
+    except (TypeError, ValueError):
+        rotation = 0
+    if rotation not in PAGE_ROTATIONS:
+        raise RuntimeError("Поворот страницы должен быть кратен 90°")
+    return rotation
+
+
+def rotate_page(image: Image.Image, rotation: int) -> Image.Image:
+    rotation = normalize_rotation(rotation)
+    if rotation == 90:
+        return image.transpose(Image.Transpose.ROTATE_270)
+    if rotation == 180:
+        return image.transpose(Image.Transpose.ROTATE_180)
+    if rotation == 270:
+        return image.transpose(Image.Transpose.ROTATE_90)
+    return image
+
+
+def page_manifest(index: int, image: Image.Image, filename: str, rotation: int = 0) -> dict[str, Any]:
     return {
         "index": index,
         "width": image.width,
         "height": image.height,
         "image": filename,
+        "rotation": normalize_rotation(rotation),
     }
 
 
-def render_document(source: Path, pages_directory: Path) -> dict[str, Any]:
+def render_document(source: Path, pages_directory: Path, rotations: Sequence[int] | None = None) -> dict[str, Any]:
     extension = source.suffix.lower()
     if extension != ".pdf" and extension not in IMAGE_EXTENSIONS:
         raise RuntimeError("Поддерживаются PDF, PNG, JPEG, WEBP, TIFF, HEIC и BMP")
     pages_directory.mkdir(parents=True, exist_ok=True)
+    for previous in pages_directory.glob("page-*.png"):
+        previous.unlink()
     pages: list[dict[str, Any]] = []
 
     if extension == ".pdf":
@@ -94,6 +119,8 @@ def render_document(source: Path, pages_directory: Path) -> dict[str, Any]:
         with document:
             if document.needs_pass:
                 raise RuntimeError("PDF защищён паролем")
+            if rotations is not None and len(rotations) != len(document):
+                raise RuntimeError("Количество поворотов не совпадает с количеством страниц")
             for index, page in enumerate(document):
                 scale = render_scale(page.rect.width, page.rect.height)
                 pixmap = page.get_pixmap(
@@ -102,14 +129,20 @@ def render_document(source: Path, pages_directory: Path) -> dict[str, Any]:
                     colorspace=pymupdf.csRGB,
                 )
                 image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+                rotation = normalize_rotation(rotations[index] if rotations is not None else 0)
+                image = rotate_page(image, rotation)
                 filename = f"page-{index + 1:03d}.png"
                 image.save(pages_directory / filename, format="PNG", optimize=True)
-                pages.append(page_manifest(index, image, filename))
+                pages.append(page_manifest(index, image, filename, rotation))
     else:
+        if rotations is not None and len(rotations) != 1:
+            raise RuntimeError("Для изображения должен быть указан один поворот")
         image = normalize_raster(source)
+        rotation = normalize_rotation(rotations[0] if rotations is not None else 0)
+        image = rotate_page(image, rotation)
         filename = "page-001.png"
         image.save(pages_directory / filename, format="PNG", optimize=True)
-        pages.append(page_manifest(0, image, filename))
+        pages.append(page_manifest(0, image, filename, rotation))
 
     return {
         "engine": "PyMuPDF/Pillow page renderer",
@@ -123,13 +156,20 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("input", type=Path)
     parser.add_argument("output_directory", type=Path)
     parser.add_argument("output_json", type=Path)
+    parser.add_argument("--rotations", default=None, help="JSON-массив поворотов страниц по часовой стрелке")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     try:
-        result = render_document(args.input, args.output_directory)
+        rotations = None
+        if args.rotations is not None:
+            parsed = json.loads(args.rotations)
+            if not isinstance(parsed, list):
+                raise RuntimeError("Повороты должны быть переданы JSON-массивом")
+            rotations = [normalize_rotation(value) for value in parsed]
+        result = render_document(args.input, args.output_directory, rotations)
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         temporary = args.output_json.with_suffix(args.output_json.suffix + ".tmp")
         temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")

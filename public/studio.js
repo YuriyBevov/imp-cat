@@ -89,7 +89,10 @@
   }
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
-    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), loadingHint: $('#loading-hint'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
+    loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), loadingHint: $('#loading-hint'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'),
+    orientationView: $('#orientation-view'), orientationPages: $('#orientation-pages'), orientationSubmit: $('#orientation-submit'),
+    orientationAllLeft: $('#orientation-all-left'), orientationAllReset: $('#orientation-all-reset'), orientationAllRight: $('#orientation-all-right'),
+    studioView: $('#studio-view'),
     documentTabs: $('#document-tabs'), documentTabsList: $('#document-tabs-list'),
     documentLibraryButton: $('#document-library-button'), documentLibraryModal: $('#document-library-modal'),
     documentLibraryClose: $('#document-library-close'), documentLibraryList: $('#document-library-list'),
@@ -100,7 +103,7 @@
     sourcePanelToggle: $('#source-panel-toggle'),
     workflowStagebar: $('#workflow-stagebar'), workflowPrevious: $('#workflow-previous'), workflowApprove: $('#workflow-approve'),
     inspectorPanel: $('#inspector-panel'), inspectorPanelBody: $('#inspector-panel-body'),
-    zoomControls: $('.workbench-toolbar__layout-controls'), zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'),
+    zoomControls: $('.workbench-toolbar__layout-controls'), zoomOut: $('#zoom-out'), zoomIn: $('#zoom-in'), zoomFit: $('#zoom-fit'), zoomActual: $('#zoom-100'), zoomOutput: $('#zoom-output'), segmentTypeLabelsToggle: $('#segment-type-labels-toggle'),
     sourcePreviewScroll: $('#source-preview-scroll'), sourcePreviewCanvas: $('#source-preview-canvas'),
     sourceZoomOut: $('#source-zoom-out'), sourceZoomIn: $('#source-zoom-in'), sourceZoomActual: $('#source-zoom-100'), sourceZoomFit: $('#source-zoom-fit'), sourceZoomOutput: $('#source-zoom-output'), sourcePreviewOpen: $('#source-preview-open'),
     sourceLightbox: $('#source-preview-lightbox'), sourceLightboxTitle: $('#source-preview-lightbox-title'), sourceLightboxClose: $('#source-preview-lightbox-close'),
@@ -151,6 +154,8 @@
     selectionBox: $('#selection-box'), toast: $('#toast'),
     reanalyzeConfirmModal: $('#reanalyze-confirm-modal'), reanalyzeConfirmClose: $('#reanalyze-confirm-close'),
     reanalyzeConfirmCancel: $('#reanalyze-confirm-cancel'), reanalyzeConfirmSubmit: $('#reanalyze-confirm-submit'),
+    reanalyzeOrientationPages: $('#reanalyze-orientation-pages'), reanalyzeOrientationAllLeft: $('#reanalyze-orientation-all-left'),
+    reanalyzeOrientationAllReset: $('#reanalyze-orientation-all-reset'), reanalyzeOrientationAllRight: $('#reanalyze-orientation-all-right'),
     confirmationModal: $('#confirmation-modal'), confirmationEyebrow: $('#confirmation-eyebrow'), confirmationTitle: $('#confirmation-title'),
     confirmationDescription: $('#confirmation-description'), confirmationClose: $('#confirmation-close'),
     confirmationCancel: $('#confirmation-cancel'), confirmationSubmit: $('#confirmation-submit'),
@@ -211,6 +216,7 @@
     instructionPresets: [],
     sceneEditRevision: 0,
     confirmationRequest: null,
+    reanalyzeOrientation: null,
   }
 
   function createInspectorPanel(id, key, title, nodes) {
@@ -305,6 +311,8 @@
     elements.inspectorPanel.hidden = stage === 1
     elements.sourcePanelToggle.hidden = stage === 1
     elements.zoomControls.hidden = stage === 1
+    elements.segmentTypeLabelsToggle.hidden = stage !== 3
+    refreshSegmentTypeLabelsState()
     const sourceIsCollapsed = stage === 1 || state.sourceCollapsed
     elements.studioView.classList.toggle('is-source-collapsed', sourceIsCollapsed)
     elements.sourcePanelToggle.classList.toggle('is-active', !sourceIsCollapsed)
@@ -315,6 +323,28 @@
     elements.exportDocx.disabled = stage !== 4
     elements.exportPdf.disabled = stage !== 4
     renderInspectorPanelState()
+  }
+
+  function segmentTypeLabelsVisible() {
+    return state.scene?.showSegmentTypeLabels !== false
+  }
+
+  function refreshSegmentTypeLabelsState() {
+    const hidden = !segmentTypeLabelsVisible()
+    elements.canvas.classList.toggle('is-segment-type-labels-hidden', hidden)
+    elements.segmentTypeLabelsToggle.classList.toggle('is-active', hidden)
+    elements.segmentTypeLabelsToggle.setAttribute('aria-pressed', String(hidden))
+    const label = hidden ? 'Показать типы сегментов' : 'Скрыть типы сегментов'
+    elements.segmentTypeLabelsToggle.setAttribute('aria-label', label)
+    elements.segmentTypeLabelsToggle.title = label
+    elements.segmentTypeLabelsToggle.innerHTML = iconMarkup(hidden ? 'eye' : 'eye-off')
+  }
+
+  function toggleSegmentTypeLabels() {
+    if (!state.scene || state.workflowStage !== 3) return
+    state.scene.showSegmentTypeLabels = !segmentTypeLabelsVisible()
+    refreshSegmentTypeLabelsState()
+    scheduleSave()
   }
 
   function setWorkflowStage(nextStage, options = {}) {
@@ -834,9 +864,123 @@
     } catch (error) { showToast(error.message, true) }
   }
 
+  function normalizePageRotation(value) {
+    const rotation = ((Math.trunc(Number(value) || 0) % 360) + 360) % 360
+    return [0, 90, 180, 270].includes(rotation) ? rotation : 0
+  }
+
+  function rotatePageValue(value, delta) {
+    return normalizePageRotation(normalizePageRotation(value) + delta)
+  }
+
+  function renderOrientationPages(container, preparation, rotations, baseRotations, onChange) {
+    container.replaceChildren()
+    for (const [index, page] of (preparation?.pages || []).entries()) {
+      const card = document.createElement('article')
+      card.className = 'orientation-page'
+      const preview = document.createElement('div')
+      preview.className = 'orientation-page__preview'
+      const image = document.createElement('img')
+      image.src = page.imageUrl
+      image.alt = `Страница ${index + 1}`
+      image.style.transform = `rotate(${rotatePageValue(rotations[index], -normalizePageRotation(baseRotations[index]))}deg)`
+      preview.append(image)
+
+      const footer = document.createElement('div')
+      footer.className = 'orientation-page__footer'
+      const label = document.createElement('strong')
+      label.textContent = `Страница ${index + 1} · ${normalizePageRotation(rotations[index])}°`
+      const actions = document.createElement('div')
+      actions.className = 'orientation-page__rotation'
+      const action = (labelText, icon, nextValue) => {
+        const button = document.createElement('button')
+        button.className = 'icon-button icon-button--compact'
+        button.type = 'button'
+        button.setAttribute('aria-label', labelText)
+        button.innerHTML = iconMarkup(icon)
+        button.addEventListener('click', () => onChange(index, nextValue()))
+        return button
+      }
+      actions.append(
+        action('Повернуть страницу влево', 'rotate-counterclockwise', () => rotatePageValue(rotations[index], -90)),
+        action('Сбросить поворот страницы', 'refresh', () => 0),
+        action('Повернуть страницу вправо', 'rotate-clockwise', () => rotatePageValue(rotations[index], 90)),
+      )
+      footer.append(label, actions)
+      card.append(preview, footer)
+      container.append(card)
+    }
+  }
+
+  function renderUploadOrientation(tab) {
+    if (!tab?.preparation) return
+    tab.pageRotations ||= [...tab.preparation.rotations]
+    renderOrientationPages(
+      elements.orientationPages,
+      tab.preparation,
+      tab.pageRotations,
+      tab.preparation.rotations,
+      (index, value) => {
+        tab.pageRotations[index] = value
+        renderUploadOrientation(tab)
+      },
+    )
+  }
+
+  async function showUploadOrientation(tab, forceReload = false) {
+    if (!tab) return
+    if (!tab.preparation || forceReload) {
+      const response = await api(`/api/studio/documents/${tab.documentId}/preparation`)
+      tab.preparation = await response.json()
+      tab.pageRotations = [...tab.preparation.rotations]
+    }
+    state.metadata = null
+    state.scene = null
+    elements.documentTitle.textContent = tab.preparation.title || tab.title
+    elements.documentStatus.textContent = `${tab.preparation.pages.length} стр. · ожидает проверки ориентации`
+    renderUploadOrientation(tab)
+    setView('orientation')
+    history.replaceState(null, '', `/?prepare=${tab.documentId}`)
+  }
+
+  function rotateUploadPages(delta = null) {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (!tab?.preparation) return
+    tab.pageRotations = tab.preparation.pages.map((page, index) => (
+      delta == null ? 0 : rotatePageValue(tab.pageRotations[index], delta)
+    ))
+    renderUploadOrientation(tab)
+  }
+
+  async function startPreparedAnalysis() {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (!tab?.preparation) return
+    elements.orientationSubmit.disabled = true
+    try {
+      const response = await api(`/api/studio/documents/${tab.documentId}/analysis-jobs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rotations: tab.pageRotations }),
+      })
+      const { job } = await response.json()
+      const key = tab.key
+      Object.assign(tab, job, { key, jobId: job.id, documentId: job.documentId, title: tab.title, error: null })
+      renderDocumentTabs()
+      updateLoadingFromTab(tab)
+      setView('loading')
+      history.replaceState(null, '', `/?job=${job.id}`)
+      scheduleJobsPoll(100)
+    } catch (error) {
+      showToast(error.message, true)
+    } finally {
+      elements.orientationSubmit.disabled = false
+    }
+  }
+
   function setView(name) {
     elements.uploadView.hidden = name !== 'upload'
     elements.loadingView.hidden = name !== 'loading'
+    elements.orientationView.hidden = name !== 'orientation'
     elements.studioView.hidden = name !== 'studio'
   }
 
@@ -861,6 +1005,8 @@
       title.className = 'document-tab__title'
       title.textContent = translating
         ? `${tab.title} · переводится`
+        : tab.status === 'awaiting-orientation'
+        ? `${tab.title} · проверьте страницы`
         : tab.status === 'running' || tab.status === 'queued'
         ? `${tab.title} · ${tab.progress || 0}%`
         : tab.title
@@ -964,6 +1110,20 @@
       setView('loading')
       updateLoadingFromTab(tab)
       elements.loadingProgressLabel.textContent = 'Ошибка'
+      return
+    }
+    if (tab.status === 'awaiting-orientation' || (tab.status === 'completed' && tab.kind === 'document-preparation')) {
+      tab.status = 'awaiting-orientation'
+      try {
+        await showUploadOrientation(tab, forceReload)
+        renderDocumentTabs()
+      } catch (error) {
+        tab.status = 'failed'
+        tab.error = error.message
+        renderDocumentTabs()
+        setView('loading')
+        updateLoadingFromTab(tab)
+      }
       return
     }
     if (tab.status !== 'completed') {
@@ -1102,8 +1262,14 @@
         if (tab.key === state.activeTabKey) {
           if (tab.status === 'completed') {
             tab.documentId = job.documentId
-            await activateTab(tab.key, true)
-            showToast(`Документ готов: ${job.message}`)
+            if (job.kind === 'document-preparation') {
+              tab.status = 'awaiting-orientation'
+              await showUploadOrientation(tab, true)
+              showToast('Страницы подготовлены. Проверьте их ориентацию')
+            } else {
+              await activateTab(tab.key, true)
+              showToast(`Документ готов: ${job.message}`)
+            }
           } else updateLoadingFromTab(tab)
         }
       } catch (error) {
@@ -1135,17 +1301,31 @@
 
   async function loadPendingJobs() {
     try {
+      const preparationsResponse = await api('/api/studio/preparations')
+      const { preparations } = await preparationsResponse.json()
+      for (const preparation of Array.isArray(preparations) ? preparations : []) {
+        if (!/^[a-f0-9]{32}$/.test(preparation?.documentId || '')) continue
+        const key = `preparation-${preparation.documentId}`
+        if (state.tabs.has(key)) continue
+        state.tabs.set(key, {
+          key, jobId: null, kind: 'document-preparation', documentId: preparation.documentId,
+          title: preparation.title || preparation.filename || 'Документ', status: 'awaiting-orientation', progress: 100,
+          preparation, pageRotations: [...preparation.rotations],
+        })
+      }
+    } catch {}
+    try {
       const response = await api('/api/studio/jobs')
       const { jobs } = await response.json()
       for (const job of Array.isArray(jobs) ? jobs : []) {
         if (!['queued', 'running'].includes(job?.status) || !/^[a-f0-9]{32}$/.test(job?.id || '')) continue
         if (job.kind === 'layout-review') continue
-        if (job.kind !== 'document-analysis') continue
+        if (!['document-preparation', 'document-analysis'].includes(job.kind)) continue
         state.tabs.set(job.id, { key: job.id, jobId: job.id, title: job.title || 'Документ', ...job })
       }
-      renderDocumentTabs()
-      scheduleJobsPoll(100)
     } catch {}
+    renderDocumentTabs()
+    scheduleJobsPoll(100)
   }
 
   function documentLibraryDetails(metadata) {
@@ -1947,10 +2127,38 @@
     return labels
   }
 
+  function sourcePageForWorkspacePage(workspacePage = state.scene?.pages?.[state.activePage]) {
+    if (!state.scene || !workspacePage || workspacePage.imageUrl) return workspacePage || state.scene?.pages?.[0]
+    const pageObjects = state.scene.objects.filter(object => object.pageIndex === workspacePage.index)
+    const primary = primarySelectedObject()
+    const selectedSourceIndex = primary?.pageIndex === workspacePage.index && Number.isInteger(primary.layoutSourcePageIndex)
+      ? primary.layoutSourcePageIndex
+      : null
+    const sourceCounts = new Map()
+    for (const object of pageObjects) {
+      if (!Number.isInteger(object.layoutSourcePageIndex)) continue
+      sourceCounts.set(object.layoutSourcePageIndex, (sourceCounts.get(object.layoutSourcePageIndex) || 0) + 1)
+    }
+    const dominantSourceIndex = selectedSourceIndex ?? [...sourceCounts]
+      .sort((left, right) => right[1] - left[1] || left[0] - right[0])[0]?.[0]
+    const sourcePage = dominantSourceIndex == null ? null : state.scene.pages.find(page => (
+      page.sourcePageIndex === dominantSourceIndex && page.imageUrl
+    ))
+    if (sourcePage) return sourcePage
+    if (workspacePage.layoutContinuation) {
+      for (let index = workspacePage.index - 1; index >= 0; index -= 1) {
+        const previous = state.scene.pages[index]
+        if (previous?.imageUrl) return previous
+      }
+    }
+    return workspacePage
+  }
+
   function renderSourcePreview() {
     if (!state.scene || !elements.sourcePreviewCanvas) return
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
-    const renderedPageKey = `${page.index}:${page.sourcePageIndex ?? 'blank'}`
+    const workspacePage = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const page = sourcePageForWorkspacePage(workspacePage)
+    const renderedPageKey = `${workspacePage.index}:${page.index}:${page.sourcePageIndex ?? 'blank'}`
     if (state.sourceRenderedPage === renderedPageKey && elements.sourcePreviewCanvas.firstElementChild) {
       applySourceZoom()
       return
@@ -1966,7 +2174,7 @@
     if (page.imageUrl) {
       const image = document.createElement('img')
       image.src = page.imageUrl
-      image.alt = `Оригинал страницы ${page.index + 1}`
+      image.alt = `Оригинал страницы ${(page.sourcePageIndex ?? page.index) + 1}`
       image.draggable = false
       const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
       Object.assign(image.style, {
@@ -1988,7 +2196,7 @@
 
   function applySourceZoom() {
     if (!state.scene || !elements.sourcePreviewCanvas) return
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const page = sourcePageForWorkspacePage()
     const shell = elements.sourcePreviewCanvas.querySelector('.source-preview-page-shell')
     const surface = shell?.querySelector('.source-preview-page')
     if (!shell || !surface) return
@@ -2010,13 +2218,14 @@
 
   function fitSourceWidth() {
     if (!state.scene || !elements.sourcePreviewScroll) return
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const page = sourcePageForWorkspacePage()
     setSourceZoom((elements.sourcePreviewScroll.clientWidth - 56) / page.widthPx)
   }
 
   function renderSourceLightbox() {
     if (!state.scene || elements.sourceLightbox.hidden) return
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const workspacePage = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const page = sourcePageForWorkspacePage(workspacePage)
     elements.sourceLightboxCanvas.replaceChildren()
     const shell = document.createElement('div')
     shell.className = 'source-preview-lightbox__page-shell'
@@ -2027,7 +2236,7 @@
     if (page.imageUrl) {
       const image = document.createElement('img')
       image.src = page.imageUrl
-      image.alt = `Оригинал страницы ${page.index + 1}`
+      image.alt = `Оригинал страницы ${(page.sourcePageIndex ?? page.index) + 1}`
       image.draggable = false
       const sourceFrame = page.sourceFrame || { x: 0, y: 0, width: page.widthPx, height: page.heightPx }
       Object.assign(image.style, {
@@ -2043,7 +2252,9 @@
     }
     shell.append(surface)
     elements.sourceLightboxCanvas.append(shell)
-    elements.sourceLightboxTitle.textContent = `${state.scene.title || 'Оригинал документа'} · страница ${page.index + 1} из ${state.scene.pages.length}`
+    elements.sourceLightboxTitle.textContent = workspacePage === page
+      ? `${state.scene.title || 'Оригинал документа'} · страница ${page.index + 1} из ${state.scene.pages.length}`
+      : `${state.scene.title || 'Оригинал документа'} · оригинал страницы ${(page.sourcePageIndex ?? page.index) + 1} · лист макета ${workspacePage.index + 1} из ${state.scene.pages.length}`
     elements.sourceLightboxPrevious.disabled = state.activePage <= 0
     elements.sourceLightboxNext.disabled = state.activePage >= state.scene.pages.length - 1
     applySourceLightboxZoom()
@@ -2051,7 +2262,7 @@
 
   function applySourceLightboxZoom() {
     if (!state.scene || elements.sourceLightbox.hidden) return
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const page = sourcePageForWorkspacePage()
     const shell = elements.sourceLightboxCanvas.querySelector('.source-preview-lightbox__page-shell')
     const surface = shell?.querySelector('.source-preview-lightbox__page')
     if (!shell || !surface) return
@@ -2068,7 +2279,7 @@
 
   function fitSourceLightbox() {
     if (!state.scene || elements.sourceLightbox.hidden) return
-    const page = state.scene.pages[state.activePage] || state.scene.pages[0]
+    const page = sourcePageForWorkspacePage()
     const viewportWidth = elements.sourceLightboxViewport.clientWidth || window.innerWidth || page.widthPx
     const viewportHeight = elements.sourceLightboxViewport.clientHeight || window.innerHeight || page.heightPx
     setSourceLightboxZoom(Math.min(2, (viewportWidth - 96) / page.widthPx, (viewportHeight - 96) / page.heightPx))
@@ -4051,6 +4262,7 @@
     const object = state.scene.objects.find(item => item.id === id)
     if (object) state.activePage = object.pageIndex
     refreshSelection()
+    renderSourcePreview()
   }
 
   function ensureObjectTranslationUnits(object) {
@@ -4966,24 +5178,70 @@
 
   function openReanalyzeConfirmation() {
     if (!state.scene || !state.metadata) return
+    const sourcePages = [...state.scene.pages]
+      .filter(page => page.sourcePageIndex != null && Number.isInteger(Number(page.sourcePageIndex)))
+      .sort((left, right) => Number(left.sourcePageIndex) - Number(right.sourcePageIndex))
+      .filter((page, index, pages) => index === 0 || Number(page.sourcePageIndex) !== Number(pages[index - 1].sourcePageIndex))
+    const currentRotations = sourcePages.map((page, index) => normalizePageRotation(state.metadata.pageRotations?.[index]))
+    state.reanalyzeOrientation = {
+      preparation: {
+        pages: sourcePages.map((page, index) => ({
+          index,
+          width: page.sourceWidth,
+          height: page.sourceHeight,
+          imageUrl: `/api/studio/documents/${state.metadata.id}/pages/${Number(page.sourcePageIndex)}/image`,
+        })),
+      },
+      baseRotations: [...currentRotations],
+      rotations: [...currentRotations],
+    }
+    renderReanalyzeOrientation()
     elements.reanalyzeConfirmModal.hidden = false
     requestAnimationFrame(() => elements.reanalyzeConfirmCancel.focus())
   }
 
+  function renderReanalyzeOrientation() {
+    const orientation = state.reanalyzeOrientation
+    if (!orientation) return elements.reanalyzeOrientationPages.replaceChildren()
+    renderOrientationPages(
+      elements.reanalyzeOrientationPages,
+      orientation.preparation,
+      orientation.rotations,
+      orientation.baseRotations,
+      (index, value) => {
+        orientation.rotations[index] = value
+        renderReanalyzeOrientation()
+      },
+    )
+  }
+
+  function rotateReanalyzePages(delta = null) {
+    const orientation = state.reanalyzeOrientation
+    if (!orientation) return
+    orientation.rotations = orientation.preparation.pages.map((page, index) => (
+      delta == null ? 0 : rotatePageValue(orientation.rotations[index], delta)
+    ))
+    renderReanalyzeOrientation()
+  }
+
   function closeReanalyzeConfirmation(restoreFocus = true) {
     elements.reanalyzeConfirmModal.hidden = true
+    state.reanalyzeOrientation = null
     if (restoreFocus) elements.reanalyze.focus()
   }
 
   async function reanalyzeSource() {
     if (!state.scene || !state.metadata) return
+    const rotations = [...(state.reanalyzeOrientation?.rotations || state.metadata.pageRotations || [])]
     closeReanalyzeConfirmation(false)
     elements.reanalyzeConfirmSubmit.disabled = true
     try {
       await saveScene(true)
       setView('loading')
       elements.loadingMessage.textContent = 'Пересегментируем макет по сохранённым страницам…'
-      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/reanalyze`, { method: 'POST' })
+      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/reanalyze`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rotations }),
+      })
       const documentData = await response.json()
       openDocument(documentData)
       showToast(`Пересегментация завершена: ${documentData.scene.objects.length} сегментов`)
@@ -6052,6 +6310,10 @@
     for (const eventName of ['dragenter', 'dragover']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.add('is-dragover') })
     for (const eventName of ['dragleave', 'drop']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.remove('is-dragover') })
     elements.uploadZone.addEventListener('drop', event => upload(event.dataTransfer.files))
+    elements.orientationAllLeft.addEventListener('click', () => rotateUploadPages(-90))
+    elements.orientationAllReset.addEventListener('click', () => rotateUploadPages(null))
+    elements.orientationAllRight.addEventListener('click', () => rotateUploadPages(90))
+    elements.orientationSubmit.addEventListener('click', startPreparedAnalysis)
     elements.newDocument.addEventListener('click', async () => {
       if (state.saveTimer) await saveScene()
       elements.fileInput.click()
@@ -6117,6 +6379,7 @@
     elements.zoomIn.addEventListener('click', () => setZoom(state.zoom + .1))
     elements.zoomFit.addEventListener('click', fitWidth)
     elements.zoomActual.addEventListener('click', () => setZoom(1))
+    elements.segmentTypeLabelsToggle.addEventListener('click', toggleSegmentTypeLabels)
     elements.workflowPrevious.addEventListener('click', returnToPreviousWorkflowStage)
     elements.workflowApprove.addEventListener('click', approveWorkflowStage)
     elements.translationApprovalClose.addEventListener('click', () => closeTranslationApprovalModal())
@@ -6190,6 +6453,9 @@
     elements.reanalyzeConfirmClose.addEventListener('click', closeReanalyzeConfirmation)
     elements.reanalyzeConfirmCancel.addEventListener('click', closeReanalyzeConfirmation)
     elements.reanalyzeConfirmSubmit.addEventListener('click', reanalyzeSource)
+    elements.reanalyzeOrientationAllLeft.addEventListener('click', () => rotateReanalyzePages(-90))
+    elements.reanalyzeOrientationAllReset.addEventListener('click', () => rotateReanalyzePages(null))
+    elements.reanalyzeOrientationAllRight.addEventListener('click', () => rotateReanalyzePages(90))
     elements.reanalyzeConfirmModal.addEventListener('pointerdown', event => {
       if (event.target === elements.reanalyzeConfirmModal) closeReanalyzeConfirmation()
     })
@@ -6727,6 +6993,7 @@
     const parameters = new URL(location.href).searchParams
     const id = parameters.get('document')
     const jobId = parameters.get('job')
+    const preparationId = parameters.get('prepare')
     if (/^[a-f0-9]{32}$/.test(jobId || '')) {
       setView('loading')
       try {
@@ -6742,6 +7009,23 @@
           updateLoadingFromTab(tab)
           scheduleJobsPoll(100)
         }
+        return
+      } catch (error) {
+        history.replaceState(null, '', '/')
+        showToast(error.message, true)
+      }
+    }
+    if (/^[a-f0-9]{32}$/.test(preparationId || '')) {
+      const key = `preparation-${preparationId}`
+      let tab = state.tabs.get(key)
+      if (!tab) {
+        tab = { key, jobId: null, kind: 'document-preparation', documentId: preparationId, title: 'Документ', status: 'awaiting-orientation', progress: 100 }
+        state.tabs.set(key, tab)
+      }
+      state.activeTabKey = key
+      renderDocumentTabs()
+      try {
+        await showUploadOrientation(tab, true)
         return
       } catch (error) {
         history.replaceState(null, '', '/')

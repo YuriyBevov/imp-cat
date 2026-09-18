@@ -118,6 +118,124 @@ test('documents can be archived, restored and permanently deleted with confirmat
   assert.equal(fs.existsSync(directory), false)
 })
 
+test('upload pauses for page orientation and analysis rerenders with confirmed rotations', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-orientation-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const processCalls = []
+  const runProcess = async (command, args) => {
+    processCalls.push({ command, args: [...args] })
+    if (String(args[0]).endsWith('document_analyzer.py')) {
+      const pagesDirectory = args[2]
+      const manifestPath = args[3]
+      const rotationsIndex = args.indexOf('--rotations')
+      const rotations = rotationsIndex >= 0 ? JSON.parse(args[rotationsIndex + 1]) : [0, 0]
+      await fs.promises.mkdir(pagesDirectory, { recursive: true })
+      await Promise.all([
+        fs.promises.writeFile(path.join(pagesDirectory, 'page-001.png'), Buffer.from('page one')),
+        fs.promises.writeFile(path.join(pagesDirectory, 'page-002.png'), Buffer.from('page two')),
+      ])
+      await fs.promises.writeFile(manifestPath, JSON.stringify({ pages: rotations.map((rotation, index) => ({
+        index, width: rotation % 180 ? 1400 : 1000, height: rotation % 180 ? 1000 : 1400,
+        image: `page-${String(index + 1).padStart(3, '0')}.png`, rotation,
+      })) }))
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 1, stdout: '', stderr: 'analysis intentionally stopped' }
+  }
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  let response = await fetch(`${base}/jobs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent('sideways.pdf') },
+    body: Buffer.from('%PDF-1.7\nsideways document\n%%EOF'),
+  })
+  assert.equal(response.status, 202)
+  const preparationJob = (await response.json()).job
+  assert.equal(preparationJob.kind, 'document-preparation')
+  await waitForJob(base, preparationJob.id, 'completed')
+
+  response = await fetch(`${base}/documents/${preparationJob.documentId}/preparation`)
+  assert.equal(response.status, 200)
+  const preparation = await response.json()
+  assert.deepEqual(preparation.rotations, [0, 0])
+  assert.equal(preparation.pages.length, 2)
+  response = await fetch(`${base}/preparations`)
+  assert.deepEqual((await response.json()).preparations.map(item => item.documentId), [preparationJob.documentId])
+  response = await fetch(`${base}/documents/${preparationJob.documentId}/preparation/pages/0/image`)
+  assert.equal(response.status, 200)
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from('page one'))
+
+  response = await fetch(`${base}/documents/${preparationJob.documentId}/analysis-jobs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rotations: [90, 270] }),
+  })
+  assert.equal(response.status, 202)
+  const analysisJob = (await response.json()).job
+  assert.equal(analysisJob.kind, 'document-analysis')
+  await waitForJob(base, analysisJob.id, 'failed')
+  const rerender = processCalls.find(call => call.args.includes('--rotations'))
+  assert.ok(rerender)
+  assert.deepEqual(JSON.parse(rerender.args[rerender.args.indexOf('--rotations') + 1]), [90, 270])
+  const storedPreparation = JSON.parse(await fs.promises.readFile(path.join(dataDir, preparationJob.documentId, 'preparation.json'), 'utf8'))
+  assert.equal(storedPreparation.status, 'awaiting-analysis')
+  assert.deepEqual(storedPreparation.rotations, [90, 270])
+})
+
+test('failed reanalysis restores the previous page images and orientation state', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-reanalysis-rotation-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = 'e'.repeat(32)
+  const directory = path.join(dataDir, id)
+  const pagesDirectory = path.join(directory, 'pages')
+  await fs.promises.mkdir(pagesDirectory, { recursive: true })
+  await fs.promises.writeFile(path.join(directory, 'source.pdf'), Buffer.from('%PDF-1.7\nsource\n%%EOF'))
+  await fs.promises.writeFile(path.join(pagesDirectory, 'page-001.png'), Buffer.from('previous upright page'))
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({
+    id, title: 'Rotation rollback', filename: 'source.pdf', extension: '.pdf', revision: 1,
+    pageCount: 1, objectCount: 1, sourcePageCount: 1, pageRotations: [0],
+    createdAt: '2026-09-18T00:00:00.000Z', updatedAt: '2026-09-18T00:00:00.000Z', archivedAt: null,
+  }))
+  await fs.promises.writeFile(path.join(directory, 'scene.json'), JSON.stringify({
+    documentId: id, title: 'Rotation rollback', sourceLanguage: 'en', targetLanguage: 'ru', workflowStage: 1,
+    pages: [{ index: 0, sourcePageIndex: 0, widthPx: 794, heightPx: 1123, sourceWidth: 1000, sourceHeight: 1400,
+      contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
+    objects: [{ id: 'source-text', pageIndex: 0, type: 'text', readingOrder: 1, sourceText: 'Text', translation: '',
+      confidence: .95, x: 40, y: 40, width: 180, height: 32, style: {} }],
+  }))
+  const previousPreparation = {
+    version: 1, documentId: id, filename: 'source.pdf', extension: '.pdf', title: 'Rotation rollback', status: 'completed',
+    createdAt: '2026-09-18T00:00:00.000Z', updatedAt: '2026-09-18T00:00:00.000Z', rotations: [0],
+    pages: [{ index: 0, width: 1000, height: 1400, image: 'page-001.png', rotation: 0 }],
+  }
+  await fs.promises.writeFile(path.join(directory, 'preparation.json'), JSON.stringify(previousPreparation))
+
+  const runProcess = async (command, args) => {
+    if (String(args[0]).endsWith('document_analyzer.py')) {
+      await fs.promises.mkdir(args[2], { recursive: true })
+      await fs.promises.writeFile(path.join(args[2], 'page-001.png'), Buffer.from('new sideways page'))
+      await fs.promises.writeFile(args[3], JSON.stringify({ pages: [
+        { index: 0, width: 1400, height: 1000, image: 'page-001.png', rotation: 90 },
+      ] }))
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 1, stdout: '', stderr: 'agent failed' }
+  }
+  const app = express()
+  app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+
+  const response = await fetch(`${base}/documents/${id}/agent/reanalyze`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rotations: [90] }),
+  })
+  assert.equal(response.status, 500)
+  assert.deepEqual(await fs.promises.readFile(path.join(pagesDirectory, 'page-001.png')), Buffer.from('previous upright page'))
+  assert.deepEqual(JSON.parse(await fs.promises.readFile(path.join(directory, 'preparation.json'), 'utf8')), previousPreparation)
+})
+
 test('provider key can be persisted server-side without exposing it through the API', async t => {
   const rootDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-provider-env-'))
   t.after(() => fs.promises.rm(rootDir, { recursive: true, force: true }))
