@@ -76,6 +76,9 @@
       knowledgeMatches: Array.isArray(value?.knowledgeMatches)
         ? value.knowledgeMatches.slice(0, 100).map((match, matchIndex) => normalizeKnowledgeMatch(match, sourceText, matchIndex)).filter(Boolean)
         : [],
+      translationKnowledgeMatches: Array.isArray(value?.translationKnowledgeMatches)
+        ? value.translationKnowledgeMatches.slice(0, 100).map((match, matchIndex) => normalizeKnowledgeMatch(match, translation, matchIndex)).filter(Boolean)
+        : [],
       aiTranslation: cleanText(value?.aiTranslation),
       activeTranslationSource: allowedSources.has(value?.activeTranslationSource)
         ? value.activeTranslationSource
@@ -145,6 +148,7 @@
         memorySuggestion: old?.memorySuggestion || null,
         memoryEntryId: old?.memoryEntryId || null,
         knowledgeMatches: old?.knowledgeMatches || [],
+        translationKnowledgeMatches: old?.translationKnowledgeMatches || [],
         aiTranslation: old?.aiTranslation || '',
         activeTranslationSource: old?.activeTranslationSource || null,
       }, object.id, units.length))
@@ -199,6 +203,7 @@
 
   return {
     canonicalText,
+    normalizeKnowledgeMatch,
     ensureTranslationUnits,
     mergeTranslationUnits,
     sentenceParts,

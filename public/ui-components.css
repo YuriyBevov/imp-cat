@@ -44,7 +44,7 @@
   .component-meta { align-items: flex-start; flex-direction: column; }
 }
 .component-stage-tools-demo { width: min(430px, 100%); min-height: 310px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
-.component-stage-tools-demo__body { display: grid; align-content: start; gap: 12px; padding: 18px; }
+.component-stage-tools-demo__body { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
 .component-stage-tools-demo__cards { display: grid; gap: 10px; }
 .component-note-demo { width: min(520px, 100%); display: grid; gap: 8px; }
 .component-ai-chat-demo { width: min(560px, 100%); }

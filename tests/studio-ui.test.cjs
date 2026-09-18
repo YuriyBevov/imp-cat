@@ -35,12 +35,12 @@ test('studio exposes the complete source-to-export workflow', () => {
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
     'confirmation-modal', 'confirmation-title', 'confirmation-description', 'confirmation-close', 'confirmation-cancel', 'confirmation-submit',
     'translation-approval-modal', 'translation-approval-title', 'translation-approval-content', 'translation-approval-status',
-    'translation-approval-close', 'translation-approval-cancel', 'translation-approval-continue', 'translation-approval-submit',
+    'translation-approval-close', 'translation-approval-cancel', 'translation-approval-continue', 'translation-approval-retranslate-all', 'translation-approval-submit',
     'translation-global-instruction',
     'instruction-preset-select', 'instruction-preset-apply', 'instruction-preset-save', 'instruction-preset-delete',
     'instruction-preset-edit', 'instruction-preset-editor', 'instruction-preset-text',
     'instruction-preset-edit-cancel', 'instruction-preset-edit-save',
-    'auto-layout-button', 'layout-review-button', 'layout-review-status', 'qa-button', 'qa-recheck-selection', 'export-docx-button', 'export-pdf-button',
+    'auto-layout-button', 'qa-button', 'qa-refresh', 'qa-select-all', 'export-docx-button', 'export-pdf-button',
     'memory-search-button', 'glossary-select', 'glossary-add-button', 'knowledge-base-status', 'knowledge-base-open-button', 'knowledge-base-open-context-button',
     'knowledge-base-modal', 'knowledge-base-query', 'knowledge-base-glossary-filter', 'knowledge-base-list',
     'knowledge-base-new-button', 'knowledge-base-entry-form', 'knowledge-base-entry-source', 'knowledge-base-entry-translation',
@@ -66,6 +66,28 @@ test('studio exposes the complete source-to-export workflow', () => {
   ]) assert.match(html, new RegExp(`id="${id}"`))
   const studioDocument = new JSDOM(html).window.document
   assert.equal(studioDocument.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
+  const knowledgeToolbarButtons = [...studioDocument.querySelectorAll('.knowledge-base-toolbar button')]
+  assert.equal(knowledgeToolbarButtons.length, 2)
+  assert.ok(knowledgeToolbarButtons.every(button => button.matches('.icon-button.icon-button--field') && !button.textContent.trim() && button.getAttribute('aria-label')))
+  assert.deepEqual(knowledgeToolbarButtons.map(button => button.getAttribute('aria-label')), ['Найти в Базе знаний', 'Создать запись'])
+  const knowledgeEntryForm = studioDocument.querySelector('#knowledge-base-entry-form')
+  assert.equal(knowledgeEntryForm.querySelector('#knowledge-base-entry-source-language').type, 'hidden')
+  assert.equal(knowledgeEntryForm.querySelector('#knowledge-base-entry-target-language').type, 'hidden')
+  assert.doesNotMatch(knowledgeEntryForm.textContent, /Язык оригинала|Язык перевода/)
+  const knowledgeEntryActions = [...knowledgeEntryForm.querySelectorAll('.knowledge-base-entry-form__meta > button')]
+  assert.ok(knowledgeEntryActions.every(button => button.matches('.icon-button.icon-button--field') && !button.textContent.trim() && button.getAttribute('aria-label')))
+  assert.deepEqual(knowledgeEntryActions.map(button => button.getAttribute('aria-label')), ['Отменить', 'Сохранить запись'])
+  const knowledgeEntryGlossary = knowledgeEntryActions[0].previousElementSibling
+  assert.equal(knowledgeEntryGlossary.id, 'knowledge-base-entry-glossary')
+  assert.equal(knowledgeEntryGlossary.getAttribute('aria-label'), 'Глоссарий')
+  assert.equal(knowledgeEntryGlossary.closest('label'), null)
+  assert.match(styles, /\.knowledge-base-entry-form__meta\s*\{[^}]*grid-template-columns:\s*minmax\(180px, 1fr\) 38px 38px/)
+  assert.match(styles, /\.knowledge-base-entry-form__meta > select\s*\{[^}]*height:\s*38px;[^}]*min-height:\s*38px/)
+  assert.match(styles, /\.knowledge-base-dialog\s*\{[^}]*height:\s*min\(760px, calc\(100vh - 40px\)\)[^}]*overflow:\s*hidden/)
+  assert.match(styles, /\.knowledge-base-toolbar input, \.knowledge-base-toolbar select, \.knowledge-base-toolbar \.base-select\s*\{[^}]*height:\s*38px[^}]*min-height:\s*38px/)
+  assert.match(uiKit, /\.icon-button--field\s*\{[^}]*width:\s*38px;[^}]*height:\s*38px/)
+  assert.match(iconSprite, /<symbol id="icon-search"/)
+  assert.match(uiComponentsHtml, /icon-search/)
   assert.equal(studioDocument.querySelector('#view-layout-button'), null)
   assert.equal(studioDocument.querySelector('#view-segments-button'), null)
   assert.equal(studioDocument.querySelector('#translation-units-card'), null)
@@ -76,8 +98,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.equal(reanalyzeButton.textContent, 'Пересегментация макета')
   assert.ok(reanalyzeButton.classList.contains('button--danger-filled'))
   assert.ok(reanalyzeButton.closest('#final-testing-tools'))
-  assert.ok(studioDocument.querySelector('#layout-review-button').closest('#final-testing-tools'))
-  assert.equal(studioDocument.querySelector('#qa-button').textContent, 'Финальная проверка макета')
+  assert.equal(studioDocument.querySelector('#layout-review-button'), null)
+  assert.equal(studioDocument.querySelector('#layout-review-status'), null)
+  assert.equal(studioDocument.querySelector('#qa-button').textContent, 'Тестирование перед выгрузкой')
   const translationInstructionCard = studioDocument.querySelector('.translation-instruction-card')
   const agentKnowledgeMode = studioDocument.querySelector('.agent-knowledge-mode')
   assert.equal(languageCard.nextElementSibling, agentKnowledgeMode)
@@ -120,7 +143,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(html, /id="selection-count"/)
   assert.doesNotMatch(html, /id="layout-review-cancel-button"/)
   assert.equal(studioDocument.querySelector('#analyze-button'), null)
-  assert.match(html, /id="layout-review-button"[^>]*>Проверить и исправить макет<\/button>/)
+  assert.doesNotMatch(html, /id="layout-review-button"/)
   assert.equal(studioDocument.querySelector('.selection-heading'), null)
   assert.equal(studioDocument.querySelector('#selection-title'), null)
   const segmentContentFields = studioDocument.querySelector('.segment-content-fields')
@@ -207,7 +230,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(client, /window\.confirm\('Повторный анализ/)
   assert.doesNotMatch(client, /(?:window\.)?confirm\s*\(/)
   assert.match(client, /\/api\/studio\/jobs/)
-  assert.match(client, /agent\/layout-review/)
+  assert.doesNotMatch(client, /agent\/layout-review/)
   assert.match(client, /loadPendingJobs/)
   assert.match(client, /cancelActiveJob/)
   assert.match(client, /rebuildClientTables/)
@@ -287,14 +310,15 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.doesNotMatch(styles, /is-inspector-collapsed|inspector-panel-toggle/)
   assert.equal(studioDocument.querySelector('#qa-panel')?.parentElement?.id, 'studio-view')
   assert.equal(studioDocument.querySelector('#qa-panel')?.getAttribute('aria-hidden'), 'true')
-  assert.ok(studioDocument.querySelector('#qa-recheck-selection.icon-button.icon-button--large use[href="/icons.svg#icon-refresh"]'))
+  assert.ok(studioDocument.querySelector('#qa-refresh.icon-button.icon-button--large use[href="/icons.svg#icon-refresh"]'))
+  assert.equal(studioDocument.querySelector('#qa-select-all + .base-checkbox__control + .base-checkbox__label').textContent, 'Выбрать все')
   assert.equal(studioDocument.querySelector('#qa-segment-status'), null)
   assert.match(styles, /\.qa-overview\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/)
   assert.match(styles, /\.qa-summary\s*\{[^}]*height:\s*44px/)
   assert.match(uiKit, /\.icon-button--large\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/)
   assert.match(styles, /\.qa-panel\s*\{[^}]*position:\s*absolute[^}]*top:\s*44px[^}]*right:\s*0[^}]*bottom:\s*0[^}]*width:\s*var\(--inspector-open-width\)[^}]*transform:\s*translateX\(100%\)[^}]*transition:\s*transform \.28s ease, opacity \.28s ease/)
   assert.match(styles, /\.qa-panel\.is-open\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)[^}]*pointer-events:\s*auto/)
-  assert.match(client, /function setQaPanelOpen\(open\)/)
+  assert.match(client, /function setQaPanelOpen\(open, options = \{\}\)/)
   assert.match(styles, /\.studio\.is-source-collapsed \.source-preview-panel\s*\{[^}]*transform:\s*translateX\(-100%\)/)
   assert.match(styles, /\.pages-panel\s*\{[^}]*position:\s*relative[^}]*z-index:\s*10/)
   assert.match(styles, /\.source-preview-panel\s*\{[^}]*z-index:\s*8/)
@@ -308,7 +332,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.workbench-toolbar__inner\s*\{[^}]*grid-column:\s*2[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto[^}]*padding:\s*5px var\(--app-gutter, 12px\)/)
   assert.deepEqual(
     [...studioDocument.querySelectorAll('[data-workflow-step]')].map(step => step.textContent.replace(/\s+/g, '').trim()),
-    ['1Документ', '2Сегменты', '3Макет', '4Проверка'],
+    ['1Документ', '2Сегменты', '3Макет', '4Выгрузка'],
   )
   assert.match(styles, /\.workflow-stagebar__steps\s*\{[^}]*grid-template-columns:\s*repeat\(4,/)
   assert.match(styles, /\.workbench-toolbar__layout-controls\s*\{[^}]*grid-column:\s*2[^}]*justify-self:\s*end/)
@@ -350,67 +374,11 @@ test('app bar actions open from a burger and close outside or with Escape', asyn
   dom.window.close()
 })
 
-test('layout review uses one stable button for starting and cancelling the job', async () => {
-  const id = 'b'.repeat(32)
-  const jobId = 'c'.repeat(32)
-  const metadata = { id, revision: 1 }
-  const scene = {
-    title: 'Layout review fixture', sourceLanguage: 'en', targetLanguage: 'ru',
-    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
-    objects: [],
-  }
-  const requests = []
-  const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
-    runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
-  })
-  dom.window.CSS = { escape: value => String(value) }
-  dom.window.fetch = async (url, options = {}) => {
-    const value = String(url)
-    requests.push({ url: value, method: options.method || 'GET' })
-    if (value.endsWith('/status') && !value.includes('knowledge-base')) return { ok: true, json: async () => ({ translationProviderConfigured: false }) }
-    if (value.endsWith('/translation-instructions')) return { ok: true, json: async () => ({ presets: [] }) }
-    if (value.endsWith('/jobs')) return { ok: true, json: async () => ({ jobs: [] }) }
-    if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
-    if (value.endsWith(`/documents/${id}`)) return { ok: true, json: async () => ({ metadata, scene }) }
-    if (value.endsWith(`/documents/${id}/scene`)) return { ok: true, json: async () => ({ metadata }) }
-    if (value.endsWith(`/documents/${id}/agent/layout-review`)) return {
-      ok: true,
-      json: async () => ({ job: { id: jobId, documentId: id, status: 'running', progress: 10, message: 'Сравниваем макет' } }),
-    }
-    if (value.endsWith(`/jobs/${jobId}/cancel`)) return {
-      ok: true,
-      json: async () => ({ job: { id: jobId, documentId: id, status: 'cancelled', progress: 10, message: 'Проверка отменена' } }),
-    }
-    if (value.endsWith('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'memory', connected: true, persistent: false }) }
-    if (value.endsWith('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [] }) }
-    return { ok: true, json: async () => ({}) }
-  }
-  dom.window.eval(translationUnits)
-  dom.window.eval(client)
-  await new Promise(resolve => setTimeout(resolve, 30))
-
-  const button = dom.window.document.querySelector('#layout-review-button')
-  assert.equal(button.textContent, 'Проверить и исправить макет')
-  assert.equal(button.dataset.action, 'start')
-  button.click()
-  await new Promise(resolve => setTimeout(resolve, 15))
-  assert.equal(button.textContent, 'Отменить проверку макета')
-  assert.equal(button.dataset.action, 'cancel')
-  assert.equal(button.classList.contains('button--danger'), true)
-  button.click()
-  await new Promise(resolve => setTimeout(resolve, 15))
-  assert.equal(requests.filter(request => request.url.endsWith(`/jobs/${jobId}/cancel`)).length, 1)
-  assert.equal(button.textContent, 'Проверить и исправить макет')
-  assert.equal(button.dataset.action, 'start')
-  assert.equal(button.classList.contains('button--danger'), false)
-  dom.window.close()
-})
-
 test('final QA opens as an animated overlay and hides only after the closing transition', async () => {
   const id = 'd'.repeat(32)
   const metadata = { id, revision: 1 }
   const scene = {
-    title: 'QA fixture', sourceLanguage: 'en', targetLanguage: 'ru',
+    title: 'QA fixture', sourceLanguage: 'en', targetLanguage: 'ru', workflowStage: 3, workflowVersion: 2,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
     objects: [{
       id: 'qa-segment', pageIndex: 0, type: 'text', readingOrder: 1,
@@ -441,7 +409,7 @@ test('final QA opens as an animated overlay and hides only after the closing tra
     if (value.endsWith(`/documents/${id}/scene`)) return { ok: true, json: async () => ({ metadata }) }
     if (value.endsWith(`/documents/${id}/qa`)) {
       qaRequestCount += 1
-      return { ok: true, json: async () => qaRequestCount === 1 ? initialReport : correctedReport }
+      return { ok: true, json: async () => qaRequestCount < 3 ? initialReport : correctedReport }
     }
     if (value.endsWith('/knowledge-base/status')) return { ok: true, json: async () => ({ mode: 'memory', connected: true, persistent: false }) }
     if (value.endsWith('/knowledge-base/glossaries')) return { ok: true, json: async () => ({ glossaries: [] }) }
@@ -457,14 +425,52 @@ test('final QA opens as an animated overlay and hides only after the closing tra
   assert.equal(panel.hidden, false)
   assert.equal(panel.classList.contains('is-open'), true)
   assert.equal(panel.getAttribute('aria-hidden'), 'false')
-  const recheck = dom.window.document.querySelector('#qa-recheck-selection')
-  assert.equal(recheck.disabled, true)
-  dom.window.document.querySelector('.qa-item').click()
-  assert.equal(recheck.disabled, false)
-  recheck.click()
+  assert.equal(dom.window.document.querySelector('#qa-title').textContent, 'Тестирование перед выгрузкой')
+  const refresh = dom.window.document.querySelector('#qa-refresh')
+  const selectAll = dom.window.document.querySelector('#qa-select-all')
+  assert.equal(refresh.disabled, false)
+  assert.equal(selectAll.disabled, false)
+  assert.equal(selectAll.checked, false)
+  assert.equal(selectAll.indeterminate, false)
+  let qaItem = dom.window.document.querySelector('.qa-item')
+  let accept = qaItem.querySelector('.qa-item__accept .base-checkbox__input')
+  assert.equal(qaItem.querySelector('.qa-item__accept .base-checkbox__label'), null)
+  assert.equal(accept.getAttribute('aria-label'), 'Принять замечание')
+  assert.equal(accept.checked, false)
+  selectAll.click()
+  assert.equal(qaItem.classList.contains('is-accepted'), true)
+  assert.equal(accept.checked, true)
+  assert.equal(selectAll.checked, true)
+  assert.equal(scene.acceptedQaWarnings.length, 1)
+  assert.equal(dom.window.document.querySelectorAll('.qa-summary strong')[1].textContent, '0')
+
+  dom.window.document.querySelector('#qa-button').click()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(qaRequestCount, 2)
-  assert.equal(recheck.querySelector('use').getAttribute('href'), '/icons.svg#icon-refresh')
+  qaItem = dom.window.document.querySelector('.qa-item')
+  accept = qaItem.querySelector('.qa-item__accept .base-checkbox__input')
+  assert.equal(accept.checked, true)
+  assert.equal(selectAll.checked, true)
+  assert.equal(refresh.disabled, false)
+  accept.click()
+  assert.equal(qaItem.classList.contains('is-accepted'), false)
+  assert.equal(accept.checked, false)
+  assert.equal(selectAll.checked, false)
+  assert.equal(scene.acceptedQaWarnings.length, 0)
+  accept.click()
+  assert.equal(accept.checked, true)
+  assert.equal(selectAll.checked, true)
+  qaItem.querySelector('.qa-item__message').click()
+  assert.equal(dom.window.document.querySelector('.qa-item').classList.contains('is-active'), true)
+  assert.equal(dom.window.document.querySelector('[data-id="qa-segment"]').classList.contains('is-selected'), true)
+  assert.match(styles, /\.studio:is\(\[data-workflow-stage="3"\], \[data-workflow-stage="4"\]\) \.scene-object\.is-selected\s*\{[^}]*outline:\s*3px solid var\(--blue\)[^}]*background:\s*rgba\(49,94,231,\.14\)/)
+  assert.equal(dom.window.document.querySelector('#studio-view').matches('.studio[data-workflow-stage="3"]'), true)
+  refresh.click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(qaRequestCount, 3)
+  assert.equal(refresh.querySelector('use').getAttribute('href'), '/icons.svg#icon-refresh')
+  assert.equal(refresh.disabled, false)
+  assert.equal(selectAll.disabled, true)
   assert.equal(dom.window.document.querySelector('.qa-list').textContent, 'Критичных проблем не найдено. Можно выгружать документ.')
 
   dom.window.document.querySelector('#qa-close').click()
@@ -472,6 +478,14 @@ test('final QA opens as an animated overlay and hides only after the closing tra
   assert.equal(panel.classList.contains('is-open'), false)
   assert.equal(panel.getAttribute('aria-hidden'), 'true')
   await new Promise(resolve => setTimeout(resolve, 320))
+  assert.equal(panel.hidden, true)
+
+  dom.window.document.querySelector('#qa-button').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  dom.window.document.querySelector('#workflow-approve').click()
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '4')
+  assert.equal(panel.classList.contains('is-open'), false)
+  assert.equal(panel.getAttribute('aria-hidden'), 'true')
   assert.equal(panel.hidden, true)
   dom.window.close()
 })
@@ -483,10 +497,10 @@ test('user guide documents the complete interface and links from README', () => 
     'Документация', 'Руководство', 'Компоненты', 'Документы', 'База знаний', 'AI-инструкции', 'AI-провайдер', 'Скачать DOCX', 'Скачать PDF',
     'Выбрать документы', 'Отменить обработку', 'Повторить обработку', 'Готовим документ к работе', 'Переводим документ',
     'Пересегментация макета', 'Перевести документ', 'Исправить наложения',
-    'Проверить и исправить макет', 'Отменить проверку макета', 'Финальная проверка макета', 'Сохранить инструкцию в список инструкций', 'Редактировать инструкцию',
+    'Тестирование перед выгрузкой', 'Сохранить инструкцию в список инструкций', 'Редактировать инструкцию',
     'Сохранить изменения',
     'Карточка ручного управления частями сегмента временно удалена',
-    'Направление, X', 'Направление, Y', 'Добавить переведённые единицы в БЗ', 'Объединить выбранные сегменты',
+    'Направление, X', 'Направление, Y', 'Добавить пару в БЗ', 'Объединить выбранные сегменты',
     'Исключить из сборки', 'Проверить подключение', 'Удалить ключ',
   ]) assert.match(userGuide, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   assert.doesNotMatch(html, />Проверить структуру</)
@@ -565,12 +579,12 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.doesNotMatch(uiComponentsHtml, /InspectorNavigation|inspector-panel__navigation/)
   assert.match(client, /function setupInspectorPanels/)
   assert.match(client, /function renderInspectorPanelState/)
-  assert.match(styles, /\.inspector-panel__body\s*\{[^}]*grid-auto-rows:\s*max-content/)
+  assert.match(styles, /\.inspector-panel__body\s*\{[^}]*grid-auto-rows:\s*minmax\(100%, max-content\)/)
   assert.match(styles, /\.object-inspector\s*\{[^}]*display:\s*contents/)
   assert.match(styles, /\.inspector-panel\s*\{[^}]*overflow:\s*hidden;[^}]*border-left:\s*1px solid var\(--line\)/)
   assert.match(styles, /\.studio\s*\{[^}]*--inspector-width:\s*clamp\(320px, 27vw, 430px\)/)
   assert.doesNotMatch(styles, /is-inspector-panel-open|inspector-panel__navigation/)
-  assert.match(styles, /\.inspector-section__content\s*\{[^}]*min-width:\s*0;[^}]*grid-auto-rows:\s*max-content/)
+  assert.match(styles, /\.inspector-section__content\s*\{[^}]*min-width:\s*0;[^}]*display:\s*flex;[^}]*flex-direction:\s*column/)
   assert.doesNotMatch(styles, /--minimum-checkbox-column-width/)
   assert.match(styles, /\.segment-translation-workspace\s*\{[^}]*background:\s*#fff/)
   assert.match(html, /id="format-all-segments"[\s\S]*?Применить ко всем выбранным/)
@@ -602,7 +616,8 @@ test('UI components catalog exposes an interactive SourcePreviewControls referen
   })
   dom.window.eval(uiComponentsClient)
   assert.ok(dom.window.document.querySelector('.component-stage-tools-demo'))
-  assert.equal(dom.window.document.querySelector('.component-stage-tools-demo .inspector-section__title').textContent, 'Типографика и расстановка')
+  assert.equal(dom.window.document.querySelector('.component-stage-tools-demo .inspector-section__title'), null)
+  assert.equal(dom.window.document.querySelector('.component-stage-tools-demo__body').getAttribute('aria-label'), 'Типографика и расстановка')
   const output = dom.window.document.querySelector('#component-source-zoom-output')
   assert.equal(output.value, '70%')
   dom.window.document.querySelector('#component-source-zoom-in').click()
@@ -712,7 +727,7 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.match(styles, /\.studio-page\.is-drag-source/)
   assert.match(styles, /\.studio-page-shell\.is-drag-source-shell/)
   assert.match(styles, /\.scene-object\.is-selected\s*\{\s*z-index:/)
-  assert.doesNotMatch(styles, /\.scene-object\.is-selected\s*\{[^}]*(?:outline|border):/)
+  assert.doesNotMatch(styles, /(?:^|\n)\.scene-object\.is-selected\s*\{[^}]*(?:outline|border):/)
   assert.match(styles, /\.scene-object\.is-selected:not\(\.is-primary-selected\) \.scene-object__handle\s*\{[^}]*background:\s*#98a2b3/)
   assert.match(styles, /\.scene-object\.is-primary-selected \.scene-object__handle\s*\{[^}]*background:\s*var\(--blue\)/)
   assert.doesNotMatch(styles, /has-inset-resize/)
@@ -1114,7 +1129,10 @@ test('workflow restores the segment interface without manual view switches', asy
   assert.match(client, /workflowUsesSegments|studio-page--segments|segment-translation-row/)
   assert.match(styles, /studio-page--segments|segment-translation-row/)
   assert.ok(studioDocument.querySelector('#workflow-stagebar'))
-  assert.equal(studioDocument.querySelector('#workflow-approve').textContent, 'Утвердить')
+  assert.equal(studioDocument.querySelector('#workflow-previous').getAttribute('aria-label'), 'Назад')
+  assert.equal(studioDocument.querySelector('#workflow-approve').getAttribute('aria-label'), 'Утвердить')
+  assert.match(studioDocument.querySelector('#workflow-previous use').getAttribute('href'), /icon-arrow-left$/)
+  assert.match(studioDocument.querySelector('#workflow-approve use').getAttribute('href'), /icon-arrow-right$/)
   studioDocument.defaultView.close()
   return
   const id = '2'.repeat(32)
@@ -1674,7 +1692,7 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-geometry-locked'), false)
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').hidden, false)
-  assert.equal(dom.window.document.querySelector('#inspector-layout-panel .inspector-section__title').textContent, 'Типографика и расстановка')
+  assert.equal(dom.window.document.querySelector('#inspector-layout-panel').getAttribute('aria-label'), 'Типографика и расстановка')
 
   approve.click()
   assert.equal(studio.dataset.workflowStage, '4')
@@ -1683,7 +1701,7 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, false)
   assert.equal(dom.window.document.querySelector('#export-pdf-button').disabled, false)
   assert.equal(approve.disabled, true)
-  assert.equal(approve.textContent, 'Финальный этап')
+  assert.equal(approve.getAttribute('aria-label'), 'Готово к выгрузке')
 
   dom.window.document.querySelector('#workflow-previous').click()
   assert.equal(studio.dataset.workflowStage, '3')
@@ -1698,7 +1716,18 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelector('#translation-approval-status').hidden, false)
   assert.match(dom.window.document.querySelector('#translation-approval-status').textContent, /уже переведён/)
   assert.equal(dom.window.document.querySelector('#translation-approval-continue').hidden, false)
-  assert.equal(dom.window.document.querySelector('#translation-approval-submit').textContent, 'Перевести заново')
+  assert.equal(dom.window.document.querySelector('#translation-approval-submit').hidden, true)
+  assert.equal(dom.window.document.querySelector('#translation-approval-retranslate-all').hidden, false)
+  const approvalInstruction = dom.window.document.querySelector('#translation-global-instruction')
+  approvalInstruction.value = 'Новая общая инструкция'
+  approvalInstruction.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('#translation-approval-continue').hidden, true)
+  assert.equal(dom.window.document.querySelector('#translation-approval-retranslate-all').hidden, true)
+  assert.equal(dom.window.document.querySelector('#translation-approval-submit').hidden, false)
+  assert.equal(dom.window.document.querySelector('#translation-approval-submit').textContent, 'Перевести заново весь документ')
+  approvalInstruction.value = ''
+  approvalInstruction.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('#translation-approval-continue').hidden, false)
   const translationsBeforeContinue = scene.objects.map(object => object.translation)
   dom.window.document.querySelector('#translation-approval-continue').click()
   assert.equal(studio.dataset.workflowStage, '2')
@@ -1706,13 +1735,28 @@ test('approval advances through isolated document stages and switches the worksp
   assert.deepEqual(scene.objects.map(object => object.translation), translationsBeforeContinue)
 
   dom.window.document.querySelector('#workflow-previous').click()
+  const changedSource = dom.window.document.querySelector('[data-object-id="workflow-object-2"] .scene-object__content')
+  for (const child of [...changedSource.childNodes]) {
+    if (!child.dataset?.editorChrome) child.remove()
+  }
+  changedSource.append(dom.window.document.createTextNode('Изменённый второй исходник'))
+  changedSource.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
   approve.click()
   delayTranslation = false
   dom.window.document.querySelector('#translation-approval-submit').click()
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(translationRequests.length, completedRequestCount + 1)
-  assert.equal(translationRequests.at(-1).forceRetranslate, true)
+  assert.deepEqual(translationRequests.at(-1).objectIds, ['workflow-object-2'])
+  assert.equal(translationRequests.at(-1).forceRetranslate, false)
   assert.equal(studio.dataset.workflowStage, '2')
+
+  dom.window.document.querySelector('#workflow-previous').click()
+  approve.click()
+  dom.window.document.querySelector('#translation-approval-retranslate-all').click()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(translationRequests.length, completedRequestCount + 2)
+  assert.deepEqual(translationRequests.at(-1).objectIds, ['workflow-object', 'workflow-object-2'])
+  assert.equal(translationRequests.at(-1).forceRetranslate, true)
   dom.window.close()
 })
 
@@ -1728,7 +1772,7 @@ test('segment stage keeps the source read-only and provides document and local A
   const scene = {
     title: 'Every segment', sourceLanguage: 'en', targetLanguage: 'ru', workflowVersion: 2, workflowStage: 2,
     pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', sourceFrame: { x: 0, y: 0, width: 794, height: 1123 }, contentBounds: { x: 40, y: 40, width: 714, height: 1043 } }],
-    objects: [makeObject('text-object', 'text', 'Text', 1), makeObject('logo-object', 'logo', 'Brand', 2)],
+    objects: [makeObject('text-object', 'text', 'Text', 1), { ...makeObject('logo-object', 'logo', 'Brand', 2), translation: '' }],
   }
   const dom = new JSDOM(html.replace('<script src="/studio.js"></script>', ''), {
     runScripts: 'dangerously', pretendToBeVisual: true, url: `http://127.0.0.1:3100/?document=${id}`,
@@ -1771,7 +1815,14 @@ test('segment stage keeps the source read-only and provides document and local A
   batchInstruction.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   assert.equal(batchApply.disabled, false)
   assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'false')
-  assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').contentEditable, 'true')
+  const translationEditors = [...dom.window.document.querySelectorAll('.scene-object--translation .scene-object__content')]
+  assert.ok(translationEditors.every(editor => editor.contentEditable === 'true'))
+  const emptyTranslationEditor = rows[1].querySelector('.scene-object--translation .scene-object__content')
+  assert.equal(emptyTranslationEditor.getAttribute('aria-disabled'), 'false')
+  emptyTranslationEditor.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }))
+  emptyTranslationEditor.append(dom.window.document.createTextNode('Любой ручной перевод'))
+  emptyTranslationEditor.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+  assert.equal(scene.objects.find(object => object.id === 'logo-object').translation, 'Любой ручной перевод')
   assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--type').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--confidence').length, 2)
   assert.equal(rows[0].querySelector('.segment-row-note').parentElement.className, 'segment-translation-row__meta')
@@ -1898,6 +1949,10 @@ test('layout initialization inserts continuation pages, preserves source links a
   assert.equal(savedScene.pages[1].layoutContinuation, true)
   assert.equal(savedScene.pages[1].imageUrl, null)
   assert.equal(savedScene.pages[2].sourcePageIndex, 1)
+  const thumbnails = [...dom.window.document.querySelectorAll('#page-thumbnails .page-thumbnail')]
+  assert.equal(thumbnails.length, 2)
+  assert.deepEqual(thumbnails.map(node => node.querySelector('span').textContent), ['1', '2'])
+  assert.equal(dom.window.document.querySelector('#page-thumbnails .page-thumbnail__blank'), null)
   const bottom = savedScene.objects.find(object => object.id === 'bottom')
   const following = savedScene.objects.find(object => object.id === 'following')
   const centered = savedScene.objects.find(object => object.id === 'center')
@@ -1968,18 +2023,26 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 1)
   assert.equal(dom.window.document.querySelector('.scene-object__content').textContent, 'Перевод')
   assert.equal(dom.window.document.querySelectorAll('.inspector-section').length, 4)
+  assert.equal(dom.window.document.querySelector('.inspector-section__title'), null)
   assert.deepEqual(
-    [...dom.window.document.querySelectorAll('.inspector-section__title')].map(node => node.textContent),
-    ['Перевод', 'Сегменты', 'Типографика и расстановка', 'Тестирование'],
+    [...dom.window.document.querySelectorAll('.inspector-section')].map(node => node.getAttribute('aria-label')),
+    ['Перевод', 'Сегменты', 'Типографика и расстановка', 'Выгрузка'],
   )
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel .global-translation-tools'))
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel .agent-card'), null)
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel #agent-status').classList.contains('visually-hidden'))
   assert.ok(dom.window.document.querySelector('#inspector-testing-panel #final-testing-tools'))
   assert.ok(dom.window.document.querySelector('#inspector-testing-panel #reanalyze-button'))
-  assert.ok(dom.window.document.querySelector('#inspector-testing-panel #layout-review-button'))
-  assert.ok(dom.window.document.querySelector('#inspector-testing-panel #qa-button'))
+  assert.equal(dom.window.document.querySelector('#layout-review-button'), null)
+  assert.equal(dom.window.document.querySelector('#inspector-testing-panel #qa-button'), null)
+  assert.ok(dom.window.document.querySelector('#inspector-layout-panel .layout-qa-actions #qa-button'))
+  assert.equal(dom.window.document.querySelector('#inspector-layout-panel [data-layout-selection-note]'), null)
+  assert.doesNotMatch(dom.window.document.querySelector('#inspector-layout-panel').textContent, /Выберите сегмент для работы с ним/)
+  assert.ok(dom.window.document.querySelector('#inspector-layout-panel .inspector-section__content').lastElementChild.classList.contains('layout-qa-actions'))
   assert.equal(dom.window.document.querySelector('#inspector-testing-panel .final-testing-actions').lastElementChild.id, 'reanalyze-button')
+  assert.match(styles, /\.final-testing-actions\s*\{[^}]*margin-top:\s*auto[^}]*border-top:\s*1px solid var\(--line\)/)
+  assert.match(styles, /#inspector-testing-panel\s*\{[^}]*height:\s*100%[^}]*grid-template-rows:\s*minmax\(0, 1fr\)/)
+  assert.match(styles, /\.final-testing-tools\s*\{[^}]*height:\s*100%[^}]*display:\s*flex[^}]*flex-direction:\s*column/)
   assert.equal(dom.window.document.querySelector('#object-inspector').hidden, false)
   assert.equal(dom.window.document.querySelector('#object-inspector').hasAttribute('inert'), false)
   assert.equal(dom.window.document.querySelector('#empty-inspector'), null)
@@ -1995,6 +2058,11 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#inspector-testing-panel').hidden, true)
+  const layoutSelectionTools = dom.window.document.querySelector('#inspector-layout-panel [data-layout-selection-content]')
+  assert.equal(layoutSelectionTools.hidden, false)
+  assert.equal(layoutSelectionTools.getAttribute('aria-disabled'), 'true')
+  assert.ok([...layoutSelectionTools.querySelectorAll('button, input, select, textarea')].every(control => control.disabled))
+  assert.equal(dom.window.document.querySelector('#qa-button').disabled, false)
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel #translate-button'))
   assert.equal(dom.window.document.querySelectorAll('[data-requires-selection]').length, 0)
   for (const panel of dom.window.document.querySelectorAll('[data-inspector-requires-selection]')) {
@@ -2211,6 +2279,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, objectOutsideSelection.dataset.id)
   const focusedObjectId = dom.window.document.querySelector('.scene-object.is-selected').dataset.id
   const typographySelectAll = dom.window.document.querySelector('#typography-select-all')
+  assert.equal(typographySelectAll.closest('.typography-selection-toolbar').nextElementSibling.classList.contains('layout-selection-tools'), true)
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-primary-selected').length, 1)
@@ -2221,8 +2290,10 @@ test('studio restores a saved scene and renders editable page objects', async ()
 
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 0)
+  assert.equal(typographySelectAll.disabled, false)
   assert.equal(typographySelectAll.getAttribute('aria-pressed'), 'false')
   assert.equal(typographySelectAll.textContent, 'Выбрать все сегменты')
+  dom.window.document.querySelector('.scene-object').dispatchEvent(pointer('pointerdown', 50, 50))
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
 
@@ -2774,6 +2845,11 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
           sourceText: 'noteri', translation: 'Нотариус', sourceLanguage: 'Turkish', targetLanguage: 'ru',
           start: 11, end: 17, score: 1, matchType: 'exact-fragment', fullSegment: false,
         }],
+        translationKnowledgeMatches: [{
+          id: 'entry-1:13:21:target', entryId: 'entry-1', glossaryId: glossary.id,
+          sourceText: 'Нотариус', translation: 'Noteri', sourceLanguage: 'ru', targetLanguage: 'Turkish',
+          start: 14, end: 22, score: 1, matchType: 'exact-fragment', fullSegment: false,
+        }],
       }],
     }, {
       id: 'fuzzy-object', pageIndex: 0, type: 'text', readingOrder: 2, sourceText: 'VEKALETNAMвE',
@@ -2820,8 +2896,8 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   const knowledgeHighlight = knowledgeHighlights[0]
   const layoutIndicator = dom.window.document.querySelector('.scene-object__knowledge-icon')
   assert.ok(knowledgeHighlight)
-  assert.equal(knowledgeHighlight.textContent, 'СРОК ДЕЙСТВИЯ')
-  assert.deepEqual(knowledgeHighlights.map(node => node.textContent), ['СРОК ДЕЙСТВИЯ', 'Нотариус'])
+  assert.equal(knowledgeHighlight.textContent, 'Нотариус')
+  assert.deepEqual(knowledgeHighlights.map(node => node.textContent), ['Нотариус'])
   assert.doesNotMatch(knowledgeHighlights.map(node => node.textContent).join(' '), /Сабахаттин/)
   assert.ok(layoutIndicator)
   assert.match(layoutIndicator.querySelector('use').getAttribute('href'), /icon-alert-circle$/)
@@ -2834,16 +2910,33 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   assert.equal(dom.window.document.querySelector('#knowledge-suggestion-title').textContent, 'Найденные записи в БЗ')
   const firstSuggestion = dom.window.document.querySelector('.knowledge-suggestion')
   const suggestionValues = [...firstSuggestion.querySelectorAll('.knowledge-suggestion__value')]
-  assert.deepEqual(suggestionValues.map(node => node.textContent), ['Имеет срок', 'SÜRELİDİR'])
+  assert.deepEqual(suggestionValues.map(node => node.textContent), ['Нотариус', 'Noteri'])
   assert.deepEqual(suggestionValues.map(node => node.dataset.language), ['Русский', 'Турецкий'])
   assert.equal(firstSuggestion.querySelector('.knowledge-suggestion__score'), null)
   const suggestionActions = [...firstSuggestion.querySelectorAll('.knowledge-suggestion__actions .icon-button')]
-  assert.deepEqual(suggestionActions.map(button => button.getAttribute('aria-label')), ['Открыть в БЗ', 'Использовать'])
+  assert.deepEqual(suggestionActions.map(button => button.getAttribute('aria-label')), ['Открыть в БЗ', 'Применение доступно на этапе «Сегменты»'])
+  assert.equal(suggestionActions[1].disabled, true)
   assert.match(suggestionActions[0].querySelector('use').getAttribute('href'), /icon-database$/)
   assert.match(suggestionActions[1].querySelector('use').getAttribute('href'), /icon-check$/)
   dom.window.document.querySelector('#knowledge-suggestion-close').click()
   dom.window.document.querySelector('#workflow-previous').click()
   assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '2')
+  const translationBadges = dom.window.document.querySelector('.scene-object--translation .segment-content-badges--translation')
+  assert.equal(translationBadges.contentEditable, 'false')
+  assert.equal(translationBadges.textContent, '')
+  assert.ok(translationBadges.classList.contains('segment-knowledge-actions'))
+  assert.ok(translationBadges.querySelector('[aria-label="Найденные записи в БЗ"]'))
+  const addPair = translationBadges.querySelector('[aria-label="Добавить пару в БЗ"]')
+  assert.ok(addPair.classList.contains('icon-button'))
+  assert.equal(dom.window.document.querySelector('.segment-translation-workspace .segment-knowledge-actions'), null)
+  addPair.click()
+  await new Promise(resolve => setTimeout(resolve, 30))
+  assert.equal(dom.window.document.querySelector('#knowledge-base-entry-form').hidden, false)
+  assert.equal(dom.window.document.querySelector('#knowledge-base-entry-source').value, sourceText)
+  assert.equal(dom.window.document.querySelector('#knowledge-base-entry-translation').value, 'СРОК ДЕЙСТВИЯ\nНотариус Сабахаттин')
+  assert.equal(dom.window.document.querySelector('#knowledge-base-entry-source-language').value, 'Turkish')
+  assert.equal(dom.window.document.querySelector('#knowledge-base-entry-id').value, '')
+  dom.window.document.querySelector('#knowledge-base-close').click()
   const editedSegment = dom.window.document.querySelector('.scene-object--translation .scene-object__content')
   editedSegment.focus()
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-knowledge-editing'), true)
@@ -2890,6 +2983,11 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
 })
 
 test('knowledge-base edits refresh matches in the active document', () => {
+  assert.match(client, /translationKnowledgeMatches/)
+  assert.doesNotMatch(client, /sourceLineIndex|nextSearchOffset/)
+  assert.match(uiComponentsHtml, /SegmentKnowledgeActions/)
+  assert.match(userGuide, /одновременно видны исходник и перевод/)
+  assert.match(technicalSpecification, /Точный поиск пары двунаправленный/)
   assert.match(client, /documents\/\$\{expectedDocumentId\}\/knowledge-matches\/refresh/)
   assert.match(client, /await saveScene\(true\)[\s\S]*await refreshCurrentKnowledgeBaseMatches\(editRevision, documentId\)/)
   assert.match(styles, /\.knowledge-highlight\s*\{[^}]*background:\s*#ffe96a/)

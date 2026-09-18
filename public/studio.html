@@ -113,11 +113,11 @@
                 <li class="workflow-stagebar__step" data-workflow-step="1"><span>1</span><strong>Документ</strong></li>
                 <li class="workflow-stagebar__step" data-workflow-step="2"><span>2</span><strong>Сегменты</strong></li>
                 <li class="workflow-stagebar__step" data-workflow-step="3"><span>3</span><strong>Макет</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="4"><span>4</span><strong>Проверка</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="4"><span>4</span><strong>Выгрузка</strong></li>
               </ol>
               <div class="workflow-stagebar__actions">
-                <button id="workflow-previous" class="compact-button" type="button" disabled>Назад</button>
-                <button id="workflow-approve" class="button button--primary" type="button">Утвердить</button>
+                <button id="workflow-previous" class="icon-button icon-button--compact" type="button" aria-label="Назад" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
+                <button id="workflow-approve" class="icon-button icon-button--compact icon-button--filled" type="button" aria-label="Утвердить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
               </div>
             </nav>
             <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб документа">
@@ -184,11 +184,9 @@
 
         <div id="final-testing-tools" class="final-testing-tools">
           <div class="final-testing-actions">
-            <button id="layout-review-button" class="button" type="button">Проверить и исправить макет</button>
-            <button id="qa-button" class="button" type="button">Финальная проверка макета</button>
+            <button id="qa-button" class="button" type="button">Тестирование перед выгрузкой</button>
             <button id="reanalyze-button" class="button button--danger button--danger-filled reanalyze-button" type="button">Пересегментация макета</button>
           </div>
-          <small id="layout-review-status" class="note note--muted note--compact layout-review-status">AI-расстановка макета ещё не запускалась.</small>
         </div>
 
         <section id="object-inspector" class="object-inspector" hidden>
@@ -219,6 +217,9 @@
             </label>
           </div>
           <p id="segment-note" class="note note--warning note--compact inspector-scope--segments" hidden></p>
+          <div class="typography-selection-toolbar inspector-scope--layout">
+            <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
+          </div>
           <div class="layout-card typography-card inspector-scope--layout">
             <div class="layout-card__heading">
               <strong>Типографика</strong>
@@ -274,7 +275,6 @@
               </label>
             </div>
             <div class="typography-card__scope">
-              <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
               <label class="control-scope-toggle"><input id="format-all-segments" type="checkbox" /> <span>Применить ко всем выбранным</span></label>
             </div>
           </div>
@@ -390,12 +390,19 @@
       </aside>
 
       <section id="qa-panel" class="qa-panel" role="complementary" aria-labelledby="qa-title" aria-hidden="true" hidden>
-        <div class="qa-panel__header"><strong id="qa-title">Проверка документа</strong><button id="qa-close" class="icon-button icon-button--small icon-button--ghost" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
+        <div class="qa-panel__header"><strong id="qa-title">Тестирование перед выгрузкой</strong><button id="qa-close" class="icon-button icon-button--small icon-button--ghost" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
         <div class="qa-overview">
           <div id="qa-summary" class="qa-summary"></div>
           <div class="qa-actions">
-            <button id="qa-recheck-selection" class="icon-button icon-button--large" type="button" title="Проверить сегмент после исправления" aria-label="Проверить сегмент после исправления" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-refresh"></use></svg></button>
+            <button id="qa-refresh" class="icon-button icon-button--large" type="button" aria-label="Обновить результаты тестирования"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-refresh"></use></svg></button>
           </div>
+        </div>
+        <div class="qa-list-toolbar">
+          <label class="base-checkbox qa-select-all">
+            <input id="qa-select-all" class="base-checkbox__input" type="checkbox" />
+            <span class="base-checkbox__control" aria-hidden="true"></span>
+            <span class="base-checkbox__label">Выбрать все</span>
+          </label>
         </div>
         <div id="qa-list" class="qa-list"></div>
       </section>
@@ -453,6 +460,7 @@
         <div class="settings-dialog__actions">
           <button id="translation-approval-cancel" class="button" type="button">Отмена</button>
           <button id="translation-approval-continue" class="button" type="button" hidden>Продолжить с текущим переводом</button>
+          <button id="translation-approval-retranslate-all" class="button" type="button" hidden>Перевести заново весь документ</button>
           <button id="translation-approval-submit" class="button button--primary" type="button">Отправить на перевод</button>
         </div>
       </section>
@@ -489,22 +497,20 @@
         <div class="knowledge-base-toolbar">
           <input id="knowledge-base-query" type="search" placeholder="Найти в оригиналах и переводах…" aria-label="Поиск по Базе знаний" />
           <select id="knowledge-base-glossary-filter" aria-label="Фильтр по глоссарию"><option value="">Все глоссарии</option></select>
-          <button id="knowledge-base-search-button" class="button" type="button">Найти</button>
-          <button id="knowledge-base-new-button" class="button button--primary button--with-icon" type="button"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg><span>Новая запись</span></button>
+          <button id="knowledge-base-search-button" class="icon-button icon-button--field" type="button" aria-label="Найти в Базе знаний"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-search"></use></svg></button>
+          <button id="knowledge-base-new-button" class="icon-button icon-button--field icon-button--filled" type="button" aria-label="Создать запись"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
         </div>
         <form id="knowledge-base-entry-form" class="knowledge-base-entry-form" hidden>
           <input id="knowledge-base-entry-id" type="hidden" />
+          <input id="knowledge-base-entry-source-language" type="hidden" value="auto" />
+          <input id="knowledge-base-entry-target-language" type="hidden" value="ru" />
           <label>Исходный текст<textarea id="knowledge-base-entry-source" rows="4" maxlength="100000" required></textarea></label>
           <label>Перевод<textarea id="knowledge-base-entry-translation" rows="4" maxlength="100000" required></textarea></label>
-          <small class="note note--muted note--compact knowledge-base-entry-form__note">Исходный текст и перевод сохраняются в нижнем регистре. При применении регистр перевода восстанавливается по написанию исходника в документе.</small>
+          <small class="note note--muted note--compact knowledge-base-entry-form__note">Можно сохранить весь сегмент или оставить в обоих полях только нужную пару слов, фраз или предложений. Текст сохраняется с заглавной буквы, остальные буквы — строчные; при применении регистр восстанавливается по документу.</small>
           <div class="knowledge-base-entry-form__meta">
-            <label>Глоссарий<select id="knowledge-base-entry-glossary" required></select></label>
-            <label>Язык оригинала<input id="knowledge-base-entry-source-language" maxlength="20" value="auto" required /></label>
-            <label>Язык перевода<input id="knowledge-base-entry-target-language" maxlength="20" value="ru" required /></label>
-          </div>
-          <div class="settings-dialog__actions">
-            <button id="knowledge-base-entry-cancel" class="button" type="button">Отмена</button>
-            <button class="button button--primary" type="submit">Сохранить запись</button>
+            <select id="knowledge-base-entry-glossary" aria-label="Глоссарий" required></select>
+            <button id="knowledge-base-entry-cancel" class="icon-button icon-button--field" type="button" aria-label="Отменить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+            <button class="icon-button icon-button--field icon-button--filled" type="submit" aria-label="Сохранить запись"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-save"></use></svg></button>
           </div>
         </form>
         <div id="knowledge-base-list" class="knowledge-base-list"><small>Загружаем записи…</small></div>
@@ -532,7 +538,6 @@
           <div class="settings-dialog__actions">
             <button id="instruction-library-form-cancel" class="button" type="button">Отмена</button>
             <button class="button button--primary" type="submit">Сохранить инструкцию</button>
-          </div>
         </form>
         <div id="instruction-library-list" class="instruction-library-list"><small>Загружаем инструкции…</small></div>
       </section>

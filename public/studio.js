@@ -49,6 +49,44 @@
     }
     return changed
   }
+
+  function currentTranslationSettings(scene = state.scene) {
+    return {
+      sourceLanguage: String(scene?.sourceLanguage || 'auto'),
+      targetLanguage: String(scene?.targetLanguage || 'ru'),
+      globalTranslationInstruction: String(scene?.globalTranslationInstruction || '').trim(),
+      knowledgeBaseMode: scene?.knowledgeBaseMode === 'priority' ? 'priority' : 'suggestions',
+      glossaryId: String(scene?.glossaryId || ''),
+    }
+  }
+
+  function translationSettingsChanged(scene = state.scene) {
+    if (!scene?.translationCompleted) return false
+    const snapshot = scene.translationSettingsSnapshot
+    if (!snapshot || typeof snapshot !== 'object') return false
+    return JSON.stringify(currentTranslationSettings(scene)) !== JSON.stringify(currentTranslationSettings(snapshot))
+  }
+
+  function changedTranslationCandidates(scene = state.scene) {
+    return translationCandidates(scene).filter(object => (
+      String(object.translatedSourceText ?? '') !== String(object.sourceText || '')
+      || String(object.translatedSourceType || '') !== String(object.type || '')
+    ))
+  }
+
+  function markTranslationBaseline(scene, objectIds, pending = []) {
+    const requested = new Set(objectIds || [])
+    const incomplete = new Set((pending || []).map(item => String(item?.objectId || '')))
+    for (const object of translationCandidates(scene)) {
+      if (!requested.has(object.id) || incomplete.has(object.id)) continue
+      object.translatedSourceText = String(object.sourceText || '')
+      object.translatedSourceType = String(object.type || '')
+    }
+    if (translationCandidates(scene).every(object => (
+      String(object.translatedSourceText ?? '') === String(object.sourceText || '')
+      && String(object.translatedSourceType || '') === String(object.type || '')
+    ))) scene.translationSettingsSnapshot = currentTranslationSettings(scene)
+  }
   const elements = {
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), loadingHint: $('#loading-hint'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'), studioView: $('#studio-view'),
@@ -72,7 +110,6 @@
     sourceLightboxZoomActual: $('#source-preview-lightbox-zoom-100'), sourceLightboxFit: $('#source-preview-lightbox-fit'), sourceLightboxZoomOutput: $('#source-preview-lightbox-zoom-output'),
     sourceLanguage: $('#source-language'), targetLanguage: $('#target-language'),
     agentStatus: $('#agent-status'), reanalyze: $('#reanalyze-button'), translate: $('#translate-button'), autoLayout: $('#auto-layout-button'), qa: $('#qa-button'),
-    layoutReview: $('#layout-review-button'), layoutReviewStatus: $('#layout-review-status'),
     globalTranslationInstruction: $('#translation-global-instruction'),
     batchRevisionInstruction: $('#segment-batch-ai-instruction'), batchRevisionMessages: $('#segment-batch-ai-messages'),
     batchRevisionApply: $('#segment-batch-ai-apply'),
@@ -110,7 +147,7 @@
     instructionLibraryFormCancel: $('#instruction-library-form-cancel'),
     merge: $('#merge-button'), split: $('#split-button'), resetPosition: $('#reset-position-button'), exclude: $('#exclude-button'),
     qaPanel: $('#qa-panel'), qaTitle: $('#qa-title'), qaClose: $('#qa-close'), qaSummary: $('#qa-summary'), qaList: $('#qa-list'),
-    qaRecheckSelection: $('#qa-recheck-selection'),
+    qaRefresh: $('#qa-refresh'), qaSelectAll: $('#qa-select-all'),
     selectionBox: $('#selection-box'), toast: $('#toast'),
     reanalyzeConfirmModal: $('#reanalyze-confirm-modal'), reanalyzeConfirmClose: $('#reanalyze-confirm-close'),
     reanalyzeConfirmCancel: $('#reanalyze-confirm-cancel'), reanalyzeConfirmSubmit: $('#reanalyze-confirm-submit'),
@@ -120,7 +157,7 @@
     translationApprovalModal: $('#translation-approval-modal'), translationApprovalContent: $('#translation-approval-content'),
     translationApprovalStatus: $('#translation-approval-status'), translationApprovalContinue: $('#translation-approval-continue'),
     translationApprovalClose: $('#translation-approval-close'), translationApprovalCancel: $('#translation-approval-cancel'),
-    translationApprovalSubmit: $('#translation-approval-submit'),
+    translationApprovalRetranslateAll: $('#translation-approval-retranslate-all'), translationApprovalSubmit: $('#translation-approval-submit'),
     aiSettingsButton: $('#ai-settings-button'), aiSettingsModal: $('#ai-settings-modal'), aiSettingsClose: $('#ai-settings-close'),
     aiProviderSelect: $('#ai-provider-select'), aitunnelSettings: $('#aitunnel-settings'), aitunnelModel: $('#aitunnel-model'),
     aitunnelApiKey: $('#aitunnel-api-key'), aitunnelPersistKey: $('#aitunnel-persist-key'), aitunnelModelNote: $('#aitunnel-model-note'), aiProviderStatus: $('#ai-provider-status'),
@@ -161,7 +198,6 @@
     tabActivationRevision: 0,
     translationRequestRevision: 0,
     jobsPollTimer: null,
-    layoutReviewJobs: new Map(),
     providerSettings: null,
     administrationSettings: null,
     aitunnelModels: [],
@@ -177,30 +213,16 @@
     confirmationRequest: null,
   }
 
-  function createInspectorPanel(id, key, title, nodes, requiresSelection = false) {
+  function createInspectorPanel(id, key, title, nodes) {
     const panel = document.createElement('section')
     panel.id = id
     panel.className = 'inspector-section'
     panel.dataset.inspectorPanelContent = key
-    panel.setAttribute('aria-labelledby', `inspector-${key}-panel-title`)
-    const heading = document.createElement('h2')
-    heading.id = `inspector-${key}-panel-title`
-    heading.className = 'inspector-section__title'
-    heading.textContent = title
+    panel.setAttribute('aria-label', title)
     const content = document.createElement('div')
     content.className = 'inspector-section__content'
     content.append(...nodes)
-    if (requiresSelection) {
-      panel.dataset.inspectorRequiresSelection = 'true'
-      const note = document.createElement('aside')
-      note.className = 'note note--info note--compact inspector-selection-note'
-      note.dataset.inspectorSelectionNote = 'true'
-      note.setAttribute('role', 'status')
-      note.textContent = 'Выберите сегмент для работы с ним'
-      panel.append(heading, note, content)
-    } else {
-      panel.append(heading, content)
-    }
+    panel.append(content)
     return panel
   }
 
@@ -213,13 +235,27 @@
   }
 
   function refreshInspectorSelectionState(hasSelection) {
-    for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-requires-selection]')) {
-      const note = panel.querySelector('[data-inspector-selection-note]')
-      const content = panel.querySelector('.inspector-section__content')
-      note.hidden = hasSelection
-      content.hidden = !hasSelection
+    for (const content of elements.inspectorPanel.querySelectorAll('[data-layout-selection-content]')) {
+      content.hidden = false
+      content.classList.toggle('is-disabled', !hasSelection)
+      content.setAttribute('aria-disabled', String(!hasSelection))
+      if (hasSelection) {
+        for (const control of content.querySelectorAll('[data-layout-selection-disabled]')) {
+          control.disabled = false
+          delete control.dataset.layoutSelectionDisabled
+        }
+      }
     }
     renderInspectorPanelState()
+  }
+
+  function disableUnselectedLayoutControls() {
+    for (const content of elements.inspectorPanel.querySelectorAll('[data-layout-selection-content]')) {
+      for (const control of content.querySelectorAll('button, input, select, textarea')) {
+        if (!control.disabled) control.dataset.layoutSelectionDisabled = 'true'
+        control.disabled = true
+      }
+    }
   }
 
   function workflowUsesSegments(stage = state.workflowStage) {
@@ -250,6 +286,7 @@
   function renderWorkflowStageState() {
     const stage = Math.max(1, Math.min(4, Number(state.workflowStage) || 1))
     const segmentsView = workflowUsesSegments(stage)
+    if (stage !== 3 && !elements.qaPanel.hidden) setQaPanelOpen(false, { immediate: true })
     elements.studioView.dataset.workflowStage = String(stage)
     elements.studioView.classList.toggle('is-segments-mode', segmentsView)
     elements.canvas.classList.toggle('is-segments-view', segmentsView)
@@ -262,7 +299,7 @@
     }
     elements.workflowPrevious.disabled = stage === 1
     elements.workflowApprove.disabled = stage === 4
-    elements.workflowApprove.textContent = stage === 4 ? 'Финальный этап' : 'Утвердить'
+    elements.workflowApprove.setAttribute('aria-label', stage === 4 ? 'Готово к выгрузке' : 'Утвердить')
     const allowedPanels = new Set(workflowPanels(stage))
     if (!allowedPanels.has(state.activeInspectorPanel)) state.activeInspectorPanel = [...allowedPanels][0] || ''
     elements.inspectorPanel.hidden = stage === 1
@@ -327,9 +364,25 @@
 
   function refreshTranslationApprovalState() {
     const translated = Boolean(state.scene?.translationCompleted)
+    const settingsChanged = translationSettingsChanged()
+    const changedCount = translated ? changedTranslationCandidates().length : 0
     elements.translationApprovalStatus.hidden = !translated
-    elements.translationApprovalContinue.hidden = !translated
-    elements.translationApprovalSubmit.textContent = translated ? 'Перевести заново' : 'Отправить на перевод'
+    elements.translationApprovalContinue.hidden = !translated || settingsChanged || changedCount > 0
+    elements.translationApprovalRetranslateAll.hidden = !translated || settingsChanged
+    elements.translationApprovalSubmit.hidden = translated && !settingsChanged && changedCount === 0
+    if (!translated) {
+      elements.translationApprovalStatus.textContent = ''
+      elements.translationApprovalSubmit.textContent = 'Отправить на перевод'
+    } else if (settingsChanged) {
+      elements.translationApprovalStatus.textContent = 'Изменены языки, инструкция или настройки Базы знаний. Необходимо заново перевести весь документ.'
+      elements.translationApprovalSubmit.textContent = 'Перевести заново весь документ'
+    } else if (changedCount > 0) {
+      elements.translationApprovalStatus.textContent = `Документ уже переведён. Изменено сегментов: ${changedCount}. Можно перевести только их или заново перевести весь документ.`
+      elements.translationApprovalSubmit.textContent = `Перевести изменённые сегменты (${changedCount})`
+    } else {
+      elements.translationApprovalStatus.textContent = 'Документ уже переведён, изменений исходника и настроек перевода нет.'
+      elements.translationApprovalSubmit.textContent = 'Перевести изменённые сегменты'
+    }
   }
 
   function continueWithCurrentTranslation() {
@@ -346,17 +399,22 @@
     if (restoreFocus) elements.workflowApprove.focus()
   }
 
-  async function submitTranslationApproval() {
+  async function submitTranslationApproval(options = {}) {
     if (!state.scene || state.workflowStage !== 1 || elements.translationApprovalModal.dataset.busy === 'true') return
-    const forceRetranslate = Boolean(state.scene.translationCompleted)
+    const translated = Boolean(state.scene.translationCompleted)
+    const settingsChanged = translationSettingsChanged()
+    const forceRetranslate = translated && (Boolean(options.forceAll) || settingsChanged)
     duplicateSourceTranslations(state.scene)
-    const objectCount = translationCandidates().length
+    const candidates = !translated || forceRetranslate ? translationCandidates() : changedTranslationCandidates()
+    const objectIds = candidates.map(object => object.id)
+    const objectCount = objectIds.length
     if (!objectCount) {
-      showToast('В документе нет сегментов для перевода', true)
+      showToast(translated ? 'Изменённых сегментов нет' : 'В документе нет сегментов для перевода', true)
       return
     }
     elements.translationApprovalModal.dataset.busy = 'true'
     elements.translationApprovalSubmit.disabled = true
+    elements.translationApprovalRetranslateAll.disabled = true
     elements.translationApprovalCancel.disabled = true
     elements.translationApprovalClose.disabled = true
     elements.translationApprovalSubmit.textContent = 'Отправляем…'
@@ -364,6 +422,7 @@
     elements.translationApprovalModal.dataset.busy = 'false'
     closeTranslationApprovalModal(false)
     elements.translationApprovalSubmit.disabled = false
+    elements.translationApprovalRetranslateAll.disabled = false
     elements.translationApprovalCancel.disabled = false
     elements.translationApprovalClose.disabled = false
     refreshTranslationApprovalState()
@@ -381,6 +440,7 @@
       tabKey,
       advanceToStage: 2,
       forceRetranslate,
+      objectIds,
       translationRequestId: tab?.translationState?.requestId,
     })
   }
@@ -407,16 +467,24 @@
     elements.exportDocx.removeAttribute('role')
     elements.exportPdf.removeAttribute('role')
     exportActions.append(elements.exportDocx, elements.exportPdf)
-    finalTestingTools.append(exportActions)
+    finalTestingTools.prepend(exportActions)
     const currentNodes = [...elements.objectInspector.children]
+    const typographySelectionToolbar = elements.objectInspector.querySelector('.typography-selection-toolbar')
     const typography = elements.objectInspector.querySelector('.typography-card')
     const segmentActions = elements.objectInspector.querySelector('.segment-actions-card')
     const placement = currentNodes.find(node => (
       node.classList.contains('layout-card') && node !== typography && node !== segmentActions
     ))
+    const layoutQaActions = document.createElement('div')
+    layoutQaActions.className = 'layout-qa-actions'
+    layoutQaActions.append(elements.qa)
+    const layoutSelectionTools = document.createElement('div')
+    layoutSelectionTools.className = 'layout-selection-tools'
+    layoutSelectionTools.dataset.layoutSelectionContent = 'true'
+    layoutSelectionTools.append(typography, segmentActions, placement)
     const batchRevisionCard = elements.objectInspector.querySelector('.segment-batch-ai-card')
     const memoryCard = elements.objectInspector.querySelector('.memory-card')
-    const correctionNodes = currentNodes.filter(node => ![typography, segmentActions, placement].includes(node))
+    const correctionNodes = currentNodes.filter(node => ![typographySelectionToolbar, typography, segmentActions, placement].includes(node))
     const segmentWorkspace = document.createElement('div')
     segmentWorkspace.id = 'inspector-segment-workspace'
     segmentWorkspace.className = 'inspector-segment-workspace'
@@ -436,12 +504,12 @@
     const finalTestingPanel = createInspectorPanel(
       'inspector-testing-panel',
       'testing',
-      'Тестирование',
+      'Выгрузка',
       [finalTestingTools],
     )
     const objectPanels = [
       createInspectorPanel('inspector-translation-panel', 'translation', 'Сегменты', [batchRevisionCard, memoryCard]),
-      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typography, segmentActions, placement], true),
+      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typographySelectionToolbar, layoutSelectionTools, layoutQaActions]),
     ]
     elements.objectInspector.replaceChildren(...objectPanels, legacySegmentTools)
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
@@ -1019,8 +1087,7 @@
     clearTimeout(state.jobsPollTimer)
     state.jobsPollTimer = null
     const pendingDocument = [...state.tabs.values()].some(tab => tab.status === 'queued' || tab.status === 'running')
-    const pendingLayout = [...state.layoutReviewJobs.values()].some(job => job.status === 'queued' || job.status === 'running')
-    if (!pendingDocument && !pendingLayout) return
+    if (!pendingDocument) return
     state.jobsPollTimer = setTimeout(pollJobs, delay)
   }
 
@@ -1042,25 +1109,6 @@
       } catch (error) {
         tab.status = 'failed'
         tab.error = error.message
-      }
-    }))
-    const pendingLayouts = [...state.layoutReviewJobs.entries()].filter(([, job]) => job.status === 'queued' || job.status === 'running')
-    await Promise.all(pendingLayouts.map(async ([documentId, previous]) => {
-      try {
-        const response = await api(`/api/studio/jobs/${previous.id}`)
-        const { job } = await response.json()
-        state.layoutReviewJobs.set(documentId, job)
-        if (job.status === 'completed' && state.metadata?.id === documentId) {
-          const documentResponse = await api(`/api/studio/documents/${documentId}`)
-          const documentData = await documentResponse.json()
-          const tab = state.tabs.get(state.activeTabKey)
-          if (tab) tab.documentData = documentData
-          openDocument(documentData)
-          showToast(job.message)
-        } else if (state.metadata?.id === documentId) renderLayoutReviewStatus()
-      } catch (error) {
-        state.layoutReviewJobs.set(documentId, { ...previous, status: 'failed', error: error.message })
-        if (state.metadata?.id === documentId) renderLayoutReviewStatus()
       }
     }))
     renderDocumentTabs()
@@ -1091,10 +1139,7 @@
       const { jobs } = await response.json()
       for (const job of Array.isArray(jobs) ? jobs : []) {
         if (!['queued', 'running'].includes(job?.status) || !/^[a-f0-9]{32}$/.test(job?.id || '')) continue
-        if (job.kind === 'layout-review' && job.documentId) {
-          state.layoutReviewJobs.set(job.documentId, job)
-          continue
-        }
+        if (job.kind === 'layout-review') continue
         if (job.kind !== 'document-analysis') continue
         state.tabs.set(job.id, { key: job.id, jobId: job.id, title: job.title || 'Документ', ...job })
       }
@@ -1291,7 +1336,6 @@
     elements.agentStatus.textContent = state.serviceStatus?.translationProviderConfigured
       ? `${recognitionSummary} Перевод будет выполнен моделью ${state.serviceStatus.translationModel}.`
       : `${recognitionSummary} API перевода пока не настроен: доступны ручной перевод и локальная БЗ.`
-    renderLayoutReviewStatus()
     elements.newDocument.hidden = false
     setView('studio')
     renderWorkflowStageState()
@@ -2106,7 +2150,8 @@
 
   function renderThumbnails() {
     elements.thumbnails.replaceChildren()
-    for (const page of state.scene.pages) {
+    const thumbnailPages = state.scene.pages.filter(page => !page.layoutContinuation)
+    for (const [thumbnailIndex, page] of thumbnailPages.entries()) {
       const button = document.createElement('button')
       button.className = `page-thumbnail${page.index === state.activePage ? ' is-active' : ''}`
       button.type = 'button'
@@ -2121,8 +2166,8 @@
         preview.style.aspectRatio = `${page.widthPx} / ${page.heightPx}`
       }
       const label = document.createElement('span')
-      label.textContent = String(page.index + 1)
-      button.setAttribute('aria-label', `Страница ${page.index + 1}`)
+      label.textContent = String(thumbnailIndex + 1)
+      button.setAttribute('aria-label', `Страница ${thumbnailIndex + 1}`)
       button.append(preview, label)
       button.addEventListener('click', () => focusPage(page.index))
       elements.thumbnails.append(button)
@@ -2257,27 +2302,33 @@
     return result
   }
 
-  function knowledgeMatchesForObject(object) {
+  function knowledgeMatchesForObject(object, field = 'sourceText') {
     const ranges = []
     let offset = 0
     for (const unit of ensureObjectTranslationUnits(object)) {
-      for (const match of unit.knowledgeMatches || []) {
-        if (match.matchType !== 'exact' && match.matchType !== 'exact-fragment') continue
+      for (const match of (field === 'translation' ? unit.translationKnowledgeMatches : unit.knowledgeMatches) || []) {
+        if (match.score !== 1 || (match.matchType !== 'exact' && match.matchType !== 'exact-fragment')) continue
         ranges.push({
           ...match,
+          ...(field === 'translation' ? {
+            sourceText: match.translation, translation: match.sourceText,
+            sourceLanguage: match.targetLanguage, targetLanguage: match.sourceLanguage,
+          } : {}),
           unitId: unit.id,
+          canApply: (unit.knowledgeMatches || []).some(sourceMatch => sourceMatch.entryId === match.entryId),
           start: offset + match.start,
           end: offset + match.end,
         })
       }
-      offset += unit.sourceText.length + String(unit.separatorAfter || '').length
+      offset += String(unit[field] || '').length + String(unit.separatorAfter || (field === 'translation' ? ' ' : '')).length
     }
-    return ranges.filter(match => match.end > match.start && match.start < object.sourceText.length)
+    return ranges.filter(match => match.end > match.start && match.start < String(object[field] || '').length)
   }
 
   function clearKnowledgeBaseStateForEditedObject(object) {
     for (const unit of ensureObjectTranslationUnits(object)) {
       unit.knowledgeMatches = []
+      unit.translationKnowledgeMatches = []
       unit.memorySuggestion = null
       unit.memoryEntryId = null
       if (unit.activeTranslationSource === 'memory' || unit.activeTranslationSource === 'memory-revised') {
@@ -2290,6 +2341,7 @@
   function clearKnowledgeBasePreviewForFocusedObject(object) {
     for (const unit of ensureObjectTranslationUnits(object)) {
       unit.knowledgeMatches = []
+      unit.translationKnowledgeMatches = []
       unit.memorySuggestion = null
     }
   }
@@ -2302,6 +2354,9 @@
         if (!editing && !knowledgeMatchesForObject(object).length) {
           node.querySelector('.scene-object__knowledge-icon')?.remove()
         }
+      }
+      for (const button of elements.canvas.querySelectorAll(`.segment-translation-row[data-object-id="${CSS.escape(object.id)}"] .segment-knowledge-suggestions`)) {
+        button.disabled = editing || (!knowledgeMatchesForObject(object).length && !knowledgeMatchesForObject(object, 'translation').length)
       }
     }
   }
@@ -2316,13 +2371,16 @@
     if (!state.metadata) return
     button.disabled = true
     button.setAttribute('aria-busy', 'true')
+    const documentId = state.metadata.id
     try {
       checkpoint()
-      const response = await api(`/api/studio/documents/${state.metadata.id}/translate/apply-memory`, {
+      await saveScene(true)
+      const response = await api(`/api/studio/documents/${documentId}/translate/apply-memory`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ objectId, unitId, entryId }),
       })
       const data = await response.json()
+      if (state.metadata?.id !== documentId) return
       state.scene = data.scene
       closeKnowledgeSuggestion()
       const object = state.scene.objects.find(item => item.id === objectId)
@@ -2343,7 +2401,8 @@
     const currentIsTranslation = currentField === 'translation'
     state.activeKnowledgeSuggestion = { objectId, matches: matches.map(match => ({ unitId: match.unitId, id: match.id })) }
     elements.knowledgeSuggestionList.replaceChildren()
-    for (const match of matches) {
+    const uniqueMatches = [...new Map(matches.map(match => [`${match.unitId}:${match.entryId}`, match])).values()]
+    for (const match of uniqueMatches) {
       const row = document.createElement('article')
       row.className = 'knowledge-suggestion'
       const pair = document.createElement('div')
@@ -2371,11 +2430,14 @@
         closeKnowledgeSuggestion()
         elements.knowledgeBaseQuery.value = match.sourceText
         await openKnowledgeBase()
+        const entry = state.knowledgeBaseEntries.find(entry => entry.id === match.entryId)
+        if (entry) showKnowledgeBaseEntryForm(entry)
       })
       const apply = document.createElement('button')
       apply.className = 'icon-button icon-button--compact icon-button--filled'
       apply.type = 'button'
-      apply.setAttribute('aria-label', 'Использовать')
+      apply.disabled = match.canApply === false || state.workflowStage !== 2
+      apply.setAttribute('aria-label', match.canApply === false ? 'Уже содержится в переводе' : state.workflowStage !== 2 ? 'Применение доступно на этапе «Сегменты»' : 'Использовать')
       apply.innerHTML = iconMarkup('check')
       apply.addEventListener('click', () => applyKnowledgeMatch(objectId, match.unitId, match.entryId, apply))
       actions.append(openEntry, apply)
@@ -2415,49 +2477,15 @@
     translationUnits.syncObjectTranslation(object)
     object.translationTextStyles = []
     object.status = 'machine-translated'
+    clearKnowledgeBasePreviewForFocusedObject(object)
     renderDocumentWithContentFit([object])
     scheduleSave()
     showToast('Использован первоначальный перевод ИИ')
+    refreshKnowledgeBaseAfterSegmentEdit()
   }
 
   function displayedKnowledgeMatches(object, field, text) {
-    const matches = knowledgeMatchesForObject(object)
-    if (!matches.length || !text.length) return []
-    if (field === 'sourceText') return matches
-    const loweredText = text.toLocaleLowerCase()
-    const nextSearchOffset = new Map()
-    return matches.map(match => {
-      const suggestion = String(match.translation || '').trim()
-      if (suggestion) {
-        const loweredSuggestion = suggestion.toLocaleLowerCase()
-        const from = nextSearchOffset.get(loweredSuggestion) || 0
-        const start = loweredText.indexOf(loweredSuggestion, from)
-        if (start >= 0) {
-          nextSearchOffset.set(loweredSuggestion, start + suggestion.length)
-          return { ...match, start, end: start + suggestion.length }
-        }
-      }
-      const sourceText = String(object.sourceText || '')
-      const sourceLineStart = sourceText.lastIndexOf('\n', Math.max(0, match.start - 1)) + 1
-      const sourceLineBreak = sourceText.indexOf('\n', match.end)
-      const sourceLineEnd = sourceLineBreak < 0 ? sourceText.length : sourceLineBreak
-      const sourceLine = sourceText.slice(sourceLineStart, sourceLineEnd)
-      const leadingWhitespace = sourceLine.length - sourceLine.trimStart().length
-      const trimmedStart = sourceLineStart + leadingWhitespace
-      const trimmedEnd = sourceLineEnd - (sourceLine.length - sourceLine.trimEnd().length)
-      if (match.start > trimmedStart || match.end < trimmedEnd) return null
-      const sourceLineIndex = sourceText.slice(0, sourceLineStart).split('\n').length - 1
-      const translatedLines = text.split('\n')
-      if (!translatedLines[sourceLineIndex]?.trim()) return null
-      const translatedStart = translatedLines.slice(0, sourceLineIndex).reduce((offset, line) => offset + line.length + 1, 0)
-      const translatedLine = translatedLines[sourceLineIndex]
-      const translatedLeading = translatedLine.length - translatedLine.trimStart().length
-      return {
-        ...match,
-        start: translatedStart + translatedLeading,
-        end: translatedStart + translatedLine.trimEnd().length,
-      }
-    }).filter(Boolean)
+    return text.length ? knowledgeMatchesForObject(object, field) : []
   }
 
   function renderTextContent(content, object, requestedField = null, showKnowledge = true) {
@@ -2512,6 +2540,10 @@
           openKnowledgeSuggestionPopover(event, object.id, activeMatches, field)
         }
         span.addEventListener('click', openMatches)
+        // Opening a hint must not focus the editor and clear the very hint clicked.
+        span.addEventListener('pointerdown', event => {
+          if (!content.closest('.scene-object')?.classList.contains('is-knowledge-editing')) event.preventDefault()
+        })
         span.addEventListener('keydown', event => {
           if (event.key === 'Enter' || event.key === ' ') openMatches(event)
         })
@@ -2992,6 +3024,67 @@
     content.prepend(badges)
   }
 
+  async function openKnowledgePairForm(objectId) {
+    const current = state.scene?.objects.find(item => item.id === objectId)
+    if (!current?.sourceText.trim() || !current.translation.trim()) return
+    const draft = {
+      sourceText: current.sourceText,
+      translation: current.translation,
+      sourceLanguage: state.scene.sourceLanguage,
+      targetLanguage: state.scene.targetLanguage,
+      glossaryId: state.scene.glossaryId,
+    }
+    await saveScene(true)
+    await openKnowledgeBase()
+    showKnowledgeBaseEntryForm(draft)
+  }
+
+  function appendTranslationKnowledgeBadges(content, object) {
+    const badges = document.createElement('div')
+    badges.className = 'segment-content-badges segment-content-badges--translation segment-knowledge-actions'
+    badges.contentEditable = 'false'
+    badges.dataset.editorChrome = 'true'
+    badges.setAttribute('aria-label', 'Действия Базы знаний для перевода')
+    const matches = [...knowledgeMatchesForObject(object), ...knowledgeMatchesForObject(object, 'translation')]
+    const actions = document.createElement('div')
+    actions.className = 'segment-content-badges__status'
+    const suggestions = document.createElement('button')
+    suggestions.type = 'button'
+    suggestions.className = 'icon-button icon-button--tiny icon-button--ghost segment-knowledge-suggestions'
+    suggestions.setAttribute('aria-label', 'Найденные записи в БЗ')
+    suggestions.innerHTML = iconMarkup('database')
+    suggestions.disabled = !matches.length
+    suggestions.addEventListener('pointerdown', event => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    suggestions.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      const current = state.scene?.objects.find(item => item.id === object.id)
+      if (current) openKnowledgeSuggestionPopover(event, object.id,
+        [...knowledgeMatchesForObject(current), ...knowledgeMatchesForObject(current, 'translation')], 'sourceText')
+    })
+    const add = document.createElement('button')
+    add.type = 'button'
+    add.className = 'icon-button icon-button--tiny icon-button--filled segment-knowledge-add'
+    add.setAttribute('aria-label', 'Добавить пару в БЗ')
+    add.innerHTML = iconMarkup('plus')
+    add.disabled = !object.sourceText.trim() || !object.translation.trim()
+    add.addEventListener('pointerdown', event => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    add.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      openKnowledgePairForm(object.id).catch(error => showToast(error.message, true))
+    })
+    actions.append(suggestions, add)
+    badges.append(actions)
+    content.prepend(badges)
+  }
+
   function createAiTranslationAlternativeControl(object) {
     const aiAlternative = aiAlternativeForObject(object)
     if (!aiAlternative || aiAlternative === object.translation) return null
@@ -3055,7 +3148,7 @@
     const badge = document.createElement('span')
     badge.className = 'scene-object__badge'
     badge.textContent = typeLabel(object.type)
-    const knowledgeMatches = state.workflowStage === 1 ? [] : knowledgeMatchesForObject(object)
+    const knowledgeMatches = state.workflowStage === 1 ? [] : [...knowledgeMatchesForObject(object), ...knowledgeMatchesForObject(object, 'translation')]
     const knowledgeIndicator = knowledgeMatches.length ? document.createElement('button') : null
     if (knowledgeIndicator) {
       knowledgeIndicator.className = 'icon-button icon-button--tiny icon-button--danger icon-button--shadow scene-object__knowledge-icon'
@@ -3086,12 +3179,31 @@
     content.contentEditable = String(canEditText)
     content.classList.toggle('is-readonly', !canEditText)
     if (!canEditText) content.setAttribute('aria-readonly', 'true')
+    else {
+      content.setAttribute('role', 'textbox')
+      content.setAttribute('aria-multiline', 'true')
+      content.setAttribute('aria-readonly', 'false')
+      content.setAttribute('aria-disabled', 'false')
+    }
     content.spellcheck = true
     content.dataset.editField = editField
     renderTextContent(content, object, displayField, state.workflowStage > 1)
     if (workflowUsesSegments() && requestedField === 'sourceText') {
       appendRecognitionBadges(content, object, options.documentReviewIndex)
+    } else if (state.workflowStage === 2 && requestedField === 'translation') {
+      appendTranslationKnowledgeBadges(content, object)
     }
+    if (canEditText && requestedField === 'translation') content.addEventListener('pointerdown', event => {
+      if (String(object.translation || '').length || event.target.closest('button')) return
+      event.preventDefault()
+      content.focus()
+      const range = document.createRange()
+      range.selectNodeContents(content)
+      range.collapse(false)
+      const selection = window.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(range)
+    })
     if (canEditText) content.addEventListener('focus', () => {
       if (!state.selected.has(object.id)) selectOnly(object.id)
       else if (primarySelectedObject()?.id !== object.id) {
@@ -3110,6 +3222,8 @@
       renderTextContent(content, object, displayField)
       if (workflowUsesSegments() && requestedField === 'sourceText') {
         appendRecognitionBadges(content, object, options.documentReviewIndex)
+      } else if (state.workflowStage === 2 && requestedField === 'translation') {
+        appendTranslationKnowledgeBadges(content, object)
       }
       setObjectsKnowledgeEditing([object], false)
       refreshKnowledgeBaseAfterSegmentEdit()
@@ -4003,7 +4117,7 @@
     refreshBatchRevisionControls()
     refreshSegmentGridCoordinates(selection)
     renderInspectorSegmentWorkspace(selection)
-    updateQaSegmentCheckAvailability()
+    updateQaRefreshAvailability()
     elements.studioView.classList.remove('is-inspector-empty')
     elements.objectInspector.hidden = false
     elements.merge.disabled = selection.length < 2 || new Set(selection.map(item => item.pageIndex)).size !== 1
@@ -4024,6 +4138,7 @@
       elements.sourceText.value = ''
       elements.translationText.value = ''
       elements.confidence.textContent = '—'
+      disableUnselectedLayoutControls()
       return
     }
     const first = selection[0]
@@ -4887,7 +5002,10 @@
     const metadata = tabKey === state.activeTabKey ? state.metadata : tab?.documentData?.metadata
     if (!scene || !metadata) return false
     if (tabKey === state.activeTabKey) refreshTranslationSelectionControls()
-    const objectIds = translationCandidates(scene).map(object => object.id)
+    const allowedIds = new Set(translationCandidates(scene).map(object => object.id))
+    const objectIds = Array.isArray(options.objectIds)
+      ? [...new Set(options.objectIds.map(String))].filter(id => allowedIds.has(id))
+      : [...allowedIds]
     if (!objectIds.length) {
       showToast('В документе нет сегментов для перевода', true)
       return false
@@ -4914,6 +5032,7 @@
       })
       const data = await response.json()
       const translatedScene = data.scene
+      markTranslationBaseline(translatedScene, objectIds, data.pending)
       if (options.advanceToStage) {
         translatedScene.workflowVersion = 2
         translatedScene.workflowStage = options.advanceToStage
@@ -5026,78 +5145,6 @@
     }
   }
 
-  function renderLayoutReviewStatus() {
-    if (!state.metadata) return
-    const job = state.layoutReviewJobs.get(state.metadata.id)
-    const pending = Boolean(job && ['queued', 'running'].includes(job.status))
-    const actionLabel = pending ? 'Отменить проверку макета' : 'Проверить и исправить макет'
-    elements.layoutReview.disabled = false
-    elements.layoutReview.textContent = actionLabel
-    elements.layoutReview.title = actionLabel
-    elements.layoutReview.setAttribute('aria-label', actionLabel)
-    elements.layoutReview.dataset.action = pending ? 'cancel' : 'start'
-    elements.layoutReview.classList.toggle('button--danger', pending)
-    setNoteVariant(elements.layoutReviewStatus, job?.status === 'failed' ? 'danger' : pending ? 'info' : state.scene?.layoutReview?.reviewedAt ? 'success' : 'muted')
-    if (job) {
-      const pageDetail = Number.isFinite(Number(job.details?.totalPages))
-        ? ` · страниц ${Number(job.details?.processedPages) || 0}/${Number(job.details.totalPages)}`
-        : ''
-      const iterationDetail = Number(job.details?.iteration) > 0
-        ? ` · проход ${Number(job.details.iteration)}/${Number(job.details.totalIterations) || 2}`
-        : ''
-      elements.layoutReviewStatus.textContent = job.error || `${job.message || 'AI-расстановка макета'} · ${job.progress || 0}%${pageDetail}${iterationDetail}`
-      return
-    }
-    const review = state.scene?.layoutReview
-    if (!review?.reviewedAt) {
-      elements.layoutReviewStatus.textContent = 'AI-расстановка макета ещё не запускалась.'
-      return
-    }
-    const similarities = review.pageSimilarities || []
-    const average = similarities.length ? Math.round(similarities.reduce((sum, item) => sum + Number(item.similarity || 0), 0) / similarities.length * 100) : null
-    elements.layoutReviewStatus.textContent = `Последняя AI-проверка: ${average == null ? 'готово' : `сходство ${average}%`} · проходов ${review.iterations || 1} · применено ${review.applied?.length || 0} · рекомендаций ${review.recommendations?.length || 0}`
-  }
-
-  async function startLayoutReview() {
-    if (!state.metadata || state.layoutReviewJobs.has(state.metadata.id) && ['queued', 'running'].includes(state.layoutReviewJobs.get(state.metadata.id).status)) return
-    elements.layoutReview.disabled = true
-    try {
-      await saveScene(true)
-      const response = await api(`/api/studio/documents/${state.metadata.id}/agent/layout-review`, { method: 'POST' })
-      const { job } = await response.json()
-      state.layoutReviewJobs.set(state.metadata.id, job)
-      renderLayoutReviewStatus()
-      scheduleJobsPoll(100)
-      showToast('AI-агент расстановки макета запущен')
-    } catch (error) {
-      elements.layoutReview.disabled = false
-      showToast(error.message, true)
-    }
-  }
-
-  async function cancelLayoutReview() {
-    const documentId = state.metadata?.id
-    const job = documentId ? state.layoutReviewJobs.get(documentId) : null
-    if (!job || !['queued', 'running'].includes(job.status)) return
-    elements.layoutReview.disabled = true
-    try {
-      const response = await api(`/api/studio/jobs/${job.id}/cancel`, { method: 'POST' })
-      const { job: updated } = await response.json()
-      state.layoutReviewJobs.set(documentId, updated)
-      renderLayoutReviewStatus()
-      scheduleJobsPoll(100)
-    } catch (error) {
-      elements.layoutReview.disabled = false
-      showToast(error.message, true)
-    }
-  }
-
-  function handleLayoutReviewAction() {
-    const job = state.metadata ? state.layoutReviewJobs.get(state.metadata.id) : null
-    if (job && ['queued', 'running'].includes(job.status)) return cancelLayoutReview()
-    return startLayoutReview()
-  }
-
   async function fetchQaReport() {
     await saveScene(true)
     const response = await api(`/api/studio/documents/${state.metadata.id}/qa`)
@@ -5110,36 +5157,28 @@
     catch (error) { showToast(error.message, true) }
   }
 
-  function updateQaSegmentCheckAvailability() {
-    if (!elements.qaRecheckSelection || elements.qaRecheckSelection.dataset.busy === 'true') return
-    const count = selectedObjects().filter(object => !object.excluded).length
-    elements.qaRecheckSelection.disabled = count === 0
-    elements.qaRecheckSelection.title = count
-      ? `Повторно проверить выбранные сегменты: ${count}`
-      : 'Сначала выберите исправленный сегмент'
+  function updateQaRefreshAvailability() {
+    if (!elements.qaRefresh || elements.qaRefresh.dataset.busy === 'true') return
+    elements.qaRefresh.disabled = !state.scene
   }
 
-  async function recheckQaSelection() {
-    const objectIds = selectedObjects().filter(object => !object.excluded).map(object => object.id)
-    if (!objectIds.length) {
-      showToast('Сначала выберите исправленный сегмент', true)
-      return
-    }
-    elements.qaRecheckSelection.dataset.busy = 'true'
-    elements.qaRecheckSelection.disabled = true
-    elements.qaRecheckSelection.setAttribute('aria-busy', 'true')
+  async function refreshQaReport() {
+    if (!state.scene) return
+    elements.qaRefresh.dataset.busy = 'true'
+    elements.qaRefresh.disabled = true
+    elements.qaRefresh.setAttribute('aria-busy', 'true')
     try {
-      showQa(await fetchQaReport(), { checkedObjectIds: objectIds })
+      showQa(await fetchQaReport())
     } catch (error) {
       showToast(error.message, true)
     } finally {
-      elements.qaRecheckSelection.dataset.busy = 'false'
-      elements.qaRecheckSelection.removeAttribute('aria-busy')
-      updateQaSegmentCheckAvailability()
+      elements.qaRefresh.dataset.busy = 'false'
+      elements.qaRefresh.removeAttribute('aria-busy')
+      updateQaRefreshAvailability()
     }
   }
 
-  function setQaPanelOpen(open) {
+  function setQaPanelOpen(open, options = {}) {
     if (!elements.qaPanel) return
     clearTimeout(state.qaPanelCloseTimer)
     state.qaPanelCloseTimer = null
@@ -5154,6 +5193,10 @@
     }
     elements.qaPanel.classList.remove('is-open')
     elements.qaPanel.setAttribute('aria-hidden', 'true')
+    if (options.immediate) {
+      elements.qaPanel.hidden = true
+      return
+    }
     if (elements.qaPanel.hidden) return
     state.qaPanelCloseTimer = setTimeout(() => {
       if (!elements.qaPanel.classList.contains('is-open')) elements.qaPanel.hidden = true
@@ -5161,42 +5204,140 @@
     }, 300)
   }
 
-  function showQa(report, options = {}) {
-    const checkedObjectIds = new Set(options.checkedObjectIds || [])
-    setQaPanelOpen(true)
-    elements.qaTitle.textContent = 'Проверка документа'
-    updateQaSegmentCheckAvailability()
+  function qaWarningKey(warning) {
+    const objectState = [...new Set(warning.objectIds || [])].sort().map(id => {
+      const object = state.scene?.objects.find(item => item.id === id)
+      if (!object) return [id, null]
+      return [
+        id, object.pageIndex, object.type, object.sourceText, object.translation,
+        object.x, object.y, object.width, object.height, object.confidence,
+        object.style?.fontFamily, object.style?.fontSizePx, object.style?.fontWeight,
+        object.style?.fontStyle, object.style?.textAlign, object.style?.lineHeight,
+      ]
+    })
+    const value = JSON.stringify([warning.code, warning.severity, objectState])
+    let hash = 2166136261
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index)
+      hash = Math.imul(hash, 16777619)
+    }
+    return `qa-${(hash >>> 0).toString(36)}`
+  }
+
+  function acceptedQaWarnings() {
+    if (!Array.isArray(state.scene.acceptedQaWarnings)) state.scene.acceptedQaWarnings = []
+    return state.scene.acceptedQaWarnings
+  }
+
+  function renderQaSummary(report, warnings) {
+    const accepted = new Set(acceptedQaWarnings())
+    const outstanding = warnings.filter(item => !accepted.has(item.key))
     elements.qaSummary.innerHTML = `
-      <div><strong>${report.counts.errors}</strong><span>ошибок</span></div>
-      <div><strong>${report.counts.warnings}</strong><span>предупреждений</span></div>
+      <div><strong>${outstanding.filter(item => item.severity === 'error').length}</strong><span>ошибок</span></div>
+      <div><strong>${outstanding.filter(item => item.severity === 'warning').length}</strong><span>предупреждений</span></div>
       <div><strong>${report.counts.translated}/${report.counts.objects}</strong><span>готово</span></div>`
+  }
+
+  function renderQaAcceptance(item, action, warning, report, warnings) {
+    const accepted = acceptedQaWarnings().includes(warning.key)
+    item.classList.toggle('is-accepted', accepted)
+    action.checked = accepted
+    action.setAttribute('aria-label', 'Принять замечание')
+    renderQaSummary(report, warnings)
+    syncQaSelectAll(warnings)
+  }
+
+  function syncQaSelectAll(warnings) {
+    if (!elements.qaSelectAll) return
+    const accepted = new Set(acceptedQaWarnings())
+    const acceptedCount = warnings.filter(warning => accepted.has(warning.key)).length
+    elements.qaSelectAll.disabled = warnings.length === 0
+    elements.qaSelectAll.checked = warnings.length > 0 && acceptedCount === warnings.length
+    elements.qaSelectAll.indeterminate = acceptedCount > 0 && acceptedCount < warnings.length
+  }
+
+  function showQa(report) {
+    const warnings = report.warnings.map(warning => ({ ...warning, key: qaWarningKey(warning) }))
+    const currentKeys = new Set(warnings.map(warning => warning.key))
+    const previousAccepted = acceptedQaWarnings()
+    const retainedAccepted = previousAccepted.filter(key => currentKeys.has(key))
+    if (retainedAccepted.length !== previousAccepted.length) {
+      state.scene.acceptedQaWarnings = retainedAccepted
+      scheduleSave()
+    }
+    setQaPanelOpen(true)
+    elements.qaTitle.textContent = 'Тестирование перед выгрузкой'
+    updateQaRefreshAvailability()
+    renderQaSummary(report, warnings)
     elements.qaList.replaceChildren()
-    if (!report.warnings.length) {
+    elements.qaSelectAll.onchange = null
+    syncQaSelectAll(warnings)
+    if (!warnings.length) {
       const item = document.createElement('div')
       item.className = 'qa-item'
       item.textContent = 'Критичных проблем не найдено. Можно выгружать документ.'
       elements.qaList.append(item)
       return
     }
-    const orderedWarnings = checkedObjectIds.size
-      ? [...report.warnings].sort((left, right) => Number(right.objectIds.some(id => checkedObjectIds.has(id))) - Number(left.objectIds.some(id => checkedObjectIds.has(id))))
-      : report.warnings
-    for (const warning of orderedWarnings) {
-      const item = document.createElement('button')
+    elements.qaSelectAll.onchange = () => {
+      const accepted = acceptedQaWarnings()
+      const warningKeys = new Set(warnings.map(warning => warning.key))
+      if (elements.qaSelectAll.checked) {
+        for (const warning of warnings) {
+          if (!accepted.includes(warning.key)) accepted.push(warning.key)
+        }
+      } else {
+        for (let index = accepted.length - 1; index >= 0; index -= 1) {
+          if (warningKeys.has(accepted[index])) accepted.splice(index, 1)
+        }
+      }
+      for (const item of elements.qaList.querySelectorAll('.qa-item[data-qa-warning-key]')) {
+        const action = item.querySelector('.qa-item__accept .base-checkbox__input')
+        const warning = warnings.find(candidate => candidate.key === item.dataset.qaWarningKey)
+        if (action && warning) renderQaAcceptance(item, action, warning, report, warnings)
+      }
+      scheduleSave()
+    }
+    for (const warning of warnings) {
+      const item = document.createElement('article')
       item.className = 'qa-item'
-      item.classList.toggle('is-rechecked', warning.objectIds.some(id => checkedObjectIds.has(id)))
+      item.dataset.qaWarningKey = warning.key
       item.dataset.severity = warning.severity
-      item.type = 'button'
-      item.textContent = warning.message
+      const message = document.createElement('button')
+      message.className = 'qa-item__message'
+      message.type = 'button'
+      const text = document.createElement('span')
+      text.textContent = warning.message
       const details = document.createElement('small')
       details.textContent = warning.objectIds.join(', ')
-      item.append(details)
-      item.addEventListener('click', () => {
+      message.append(text, details)
+      message.addEventListener('click', () => {
+        for (const sibling of elements.qaList.querySelectorAll('.qa-item.is-active')) sibling.classList.remove('is-active')
+        item.classList.add('is-active')
         state.selected = new Set(warning.objectIds)
         const object = selectedObjects()[0]
         if (object) focusPage(object.pageIndex, object.id)
         refreshSelection()
       })
+      const accept = document.createElement('label')
+      accept.className = 'base-checkbox qa-item__accept'
+      const acceptInput = document.createElement('input')
+      acceptInput.className = 'base-checkbox__input'
+      acceptInput.type = 'checkbox'
+      const acceptControl = document.createElement('span')
+      acceptControl.className = 'base-checkbox__control'
+      acceptControl.setAttribute('aria-hidden', 'true')
+      accept.append(acceptInput, acceptControl)
+      acceptInput.addEventListener('change', () => {
+        const accepted = acceptedQaWarnings()
+        const index = accepted.indexOf(warning.key)
+        if (acceptInput.checked && index < 0) accepted.push(warning.key)
+        else if (!acceptInput.checked && index >= 0) accepted.splice(index, 1)
+        renderQaAcceptance(item, acceptInput, warning, report, warnings)
+        scheduleSave()
+      })
+      item.append(message, accept)
+      renderQaAcceptance(item, acceptInput, warning, report, warnings)
       elements.qaList.append(item)
     }
   }
@@ -5236,8 +5377,10 @@
           activeUnit.activeTranslationSource = match.matchType === 'exact' ? 'memory' : 'manual'
           translationUnits.syncObjectTranslation(object)
           object.translationTextStyles = []
+          clearKnowledgeBasePreviewForFocusedObject(object)
           renderDocumentWithContentFit([object])
           scheduleSave()
+          refreshKnowledgeBaseAfterSegmentEdit()
         })
         elements.memoryResults.append(button)
       }
@@ -5489,7 +5632,7 @@
   function refreshFormattingSelectionToggle() {
     const objects = allFormattingObjects()
     const allSelected = objects.length > 0 && objects.every(object => state.selected.has(object.id))
-    elements.typographySelectAll.disabled = objects.length === 0
+    elements.typographySelectAll.disabled = false
     elements.typographySelectAll.classList.toggle('is-active', allSelected)
     elements.typographySelectAll.setAttribute('aria-pressed', String(allSelected))
     elements.typographySelectAll.textContent = allSelected ? 'Снять выбор со всех' : 'Выбрать все сегменты'
@@ -5980,6 +6123,7 @@
     elements.translationApprovalCancel.addEventListener('click', () => closeTranslationApprovalModal())
     elements.translationApprovalContinue.addEventListener('click', continueWithCurrentTranslation)
     elements.translationApprovalSubmit.addEventListener('click', submitTranslationApproval)
+    elements.translationApprovalRetranslateAll.addEventListener('click', () => submitTranslationApproval({ forceAll: true }))
     elements.translationApprovalModal.addEventListener('pointerdown', event => {
       if (event.target === elements.translationApprovalModal) closeTranslationApprovalModal()
     })
@@ -6033,11 +6177,13 @@
     elements.sourceLanguage.addEventListener('change', () => {
       state.scene.sourceLanguage = elements.sourceLanguage.value
       duplicateSourceTranslations(state.scene)
+      refreshTranslationApprovalState()
       scheduleSave()
     })
     elements.targetLanguage.addEventListener('change', () => {
       state.scene.targetLanguage = elements.targetLanguage.value
       duplicateSourceTranslations(state.scene)
+      refreshTranslationApprovalState()
       scheduleSave()
     })
     elements.reanalyze.addEventListener('click', openReanalyzeConfirmation)
@@ -6063,6 +6209,7 @@
       if (!state.scene) return
       state.scene.globalTranslationInstruction = elements.globalTranslationInstruction.value.slice(0, 10000)
       refreshTranslationSelectionControls()
+      refreshTranslationApprovalState()
       scheduleSave()
     })
     elements.batchRevisionInstruction.addEventListener('input', () => {
@@ -6098,21 +6245,27 @@
     elements.instructionPresetDelete.addEventListener('click', deleteSelectedInstructionPreset)
     elements.instructionPresetEditCancel.addEventListener('click', closeInstructionPresetEditor)
     elements.instructionPresetEditSave.addEventListener('click', updateSelectedInstructionPreset)
-    elements.layoutReview.addEventListener('click', handleLayoutReviewAction)
     elements.qa.addEventListener('click', runQa)
-    elements.qaRecheckSelection.addEventListener('click', recheckQaSelection)
+    elements.qaRefresh.addEventListener('click', refreshQaReport)
     elements.qaClose.addEventListener('click', () => setQaPanelOpen(false))
     elements.memorySearch.addEventListener('click', findMemory)
     elements.glossaryAdd.addEventListener('click', createGlossary)
     elements.glossarySelect.addEventListener('change', () => {
       if (!state.scene || !elements.glossarySelect.value) return
       state.scene.glossaryId = elements.glossarySelect.value
+      state.sceneEditRevision += 1
+      for (const object of state.scene.objects) clearKnowledgeBasePreviewForFocusedObject(object)
+      closeKnowledgeSuggestion()
+      renderDocument()
+      refreshTranslationApprovalState()
       scheduleSave()
       elements.memoryResults.innerHTML = '<small>Глоссарий изменён. Выполните новый поиск.</small>'
+      refreshKnowledgeBaseAfterSegmentEdit()
     })
     elements.knowledgeBaseMode.addEventListener('change', () => {
       if (!state.scene) return
       state.scene.knowledgeBaseMode = elements.knowledgeBaseMode.value === 'priority' ? 'priority' : 'suggestions'
+      refreshTranslationApprovalState()
       scheduleSave()
       showToast(state.scene.knowledgeBaseMode === 'priority'
         ? 'БЗ будет приоритетной при следующем переводе'
@@ -6400,7 +6553,9 @@
       for (const unit of object.translationUnits || []) {
         const matches = Array.isArray(unit.knowledgeMatches) ? unit.knowledgeMatches : []
         const retainedMatches = matches.filter(match => match.entryId !== entryId)
-        const removedMatch = retainedMatches.length !== matches.length
+        const translatedMatches = unit.translationKnowledgeMatches || []
+        unit.translationKnowledgeMatches = translatedMatches.filter(match => match.entryId !== entryId)
+        const removedMatch = retainedMatches.length !== matches.length || translatedMatches.length !== unit.translationKnowledgeMatches.length
         const removedSuggestion = unit.memorySuggestion?.entryId === entryId
         const removedAppliedEntry = unit.memoryEntryId === entryId
         const removedLegacyAppliedEntry = !unit.memoryEntryId

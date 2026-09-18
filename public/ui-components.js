@@ -14,7 +14,7 @@
       }
       previous.disabled = stage === 1
       approve.disabled = stage === 4
-      approve.textContent = stage === 4 ? 'Финальный этап' : 'Утвердить'
+      approve.setAttribute('aria-label', stage === 4 ? 'Готово к выгрузке' : 'Утвердить')
     }
     previous.addEventListener('click', () => render(Number(demo.dataset.componentWorkflowStage) - 1))
     approve.addEventListener('click', () => render(Number(demo.dataset.componentWorkflowStage) + 1))

@@ -165,6 +165,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   input.objects[0].width = 5_000
   input.objects[0].height = 5_000
   input.snapToGrid = false
+  input.acceptedQaWarnings = ['qa-valid', 'qa-valid', '', null, 'x'.repeat(200)]
   input.workflowStage = 99
   const normalized = normalizeScene(input, 'd'.repeat(32), 'Title')
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
@@ -187,6 +188,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.translationCompleted, true)
   assert.equal(normalized.layoutInitializationVersion, 0)
   assert.deepEqual(normalized.batchRevisionChat, [])
+  assert.deepEqual(normalized.acceptedQaWarnings, ['qa-valid', 'x'.repeat(120)])
   assert.ok(normalized.objects.every(object => Array.isArray(object.revisionChat)))
 })
 

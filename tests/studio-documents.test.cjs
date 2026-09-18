@@ -402,6 +402,7 @@ test('document loading discovers a newly added Turkish match without overwriting
   const refreshed = await response.json()
   const unit = refreshed.scene.objects[0].translationUnits[0]
   assert.equal(unit.translation, 'Ч')
+  assert.deepEqual(unit.translationKnowledgeMatches, [])
   assert.equal(unit.knowledgeMatches[0].matchType, 'exact')
   assert.equal(unit.knowledgeMatches[0].translation, 'ЧЕТВЕРТАЯ НОТАРИАЛЬНАЯ КОНТОРА Г. МЕРСИН')
   assert.equal(unit.memorySuggestion.entryId, unit.knowledgeMatches[0].entryId)
@@ -411,6 +412,42 @@ test('document loading discovers a newly added Turkish match without overwriting
   assert.equal(response.status, 200)
   const unchanged = await response.json()
   assert.equal(unchanged.metadata.revision, 2)
+
+  // A term can exist only in the translation: it must be found independently.
+  response = await fetch(`${base}/knowledge-base/entries`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceText: 'Letter', translation: 'Ч', sourceLanguage: 'tr', targetLanguage: 'ru' }),
+  })
+  const translatedEntryId = (await response.json()).results[0].entry.id
+  const withTarget = await (await fetch(`${base}/documents/${id}`)).json()
+  assert.equal(withTarget.scene.objects[0].translationUnits[0].translationKnowledgeMatches[0].entryId, translatedEntryId)
+  response = await fetch(`${base}/documents/${id}/scene`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(withTarget.scene),
+  })
+  assert.equal(response.status, 200)
+  const roundTrip = await (await fetch(`${base}/documents/${id}`)).json()
+  assert.equal(roundTrip.scene.objects[0].translationUnits[0].translationKnowledgeMatches[0].entryId, translatedEntryId)
+  await fetch(`${base}/knowledge-base/entries/${translatedEntryId}`, { method: 'DELETE' })
+  const removed = await (await fetch(`${base}/documents/${id}`)).json()
+  assert.deepEqual(removed.scene.objects[0].translationUnits[0].translationKnowledgeMatches, [])
+  assert.equal(removed.scene.objects[0].translation, 'Ч')
+
+  // Applying uses a fresh, correctly oriented lookup, even if the scene's hint is stale.
+  const originalId = unit.knowledgeMatches[0].entryId
+  response = await fetch(`${base}/documents/${id}/translate/apply-memory`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectId: 'notary-object', unitId: unit.id, entryId: originalId }),
+  })
+  assert.equal(response.status, 200)
+  const applied = await response.json()
+  assert.equal(applied.scene.objects[0].translation, 'ЧЕТВЕРТАЯ НОТАРИАЛЬНАЯ КОНТОРА Г. МЕРСИН')
+  assert.equal(applied.scene.objects[0].translationUnits[0].translationKnowledgeMatches[0].entryId, originalId)
+  await fetch(`${base}/knowledge-base/entries/${originalId}`, { method: 'DELETE' })
+  response = await fetch(`${base}/documents/${id}/translate/apply-memory`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectId: 'notary-object', unitId: unit.id, entryId: originalId }),
+  })
+  assert.equal(response.status, 409)
 })
 
 test('priority knowledge-base mode preserves the independent AI variant and revises a matched term in context', async t => {
@@ -610,12 +647,33 @@ test('multiple selected segments are translated, persisted, and leave unselected
   assert.equal(result.scene.objects[2].translation, '')
   assert.equal(result.scene.objects[0].translationUnits[0].translation, 'Перевод 1.')
   assert.equal(result.scene.objects[0].translationUnits[0].status, 'machine-translated')
+  assert.equal(result.scene.objects[0].translatedSourceText, 'A new source sentence.')
+  assert.equal(result.scene.objects[0].translatedSourceType, 'text')
 
   response = await fetch(`${base}/documents/${id}`)
   const persisted = await response.json()
   assert.equal(persisted.scene.objects[0].translation, 'Перевод 1.')
   assert.equal(persisted.scene.objects[1].translation, 'Перевод 2.')
   assert.equal(persisted.scene.objects[2].translation, '')
+
+  const editedScene = structuredClone(persisted.scene)
+  editedScene.objects[0].sourceText = 'An edited source sentence.'
+  editedScene.objects[0].translation = ''
+  editedScene.objects[0].translationUnits = []
+  response = await fetch(`${base}/documents/${id}/scene`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editedScene),
+  })
+  assert.equal(response.status, 200)
+  response = await fetch(`${base}/documents/${id}/translate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectIds: ['object-machine-1'] }),
+  })
+  assert.equal(response.status, 200)
+  const selective = await response.json()
+  assert.equal(selective.translated.length, 1)
+  assert.equal(selective.scene.objects[0].translation, 'Новый перевод 1.')
+  assert.equal(selective.scene.objects[0].translatedSourceText, 'An edited source sentence.')
+  assert.equal(selective.scene.objects[1].translation, 'Перевод 2.')
 
   response = await fetch(`${base}/documents/${id}/translate`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

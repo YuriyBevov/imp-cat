@@ -32,6 +32,19 @@
 
       <div class="components-list">
         <details class="component-section" open>
+          <summary class="component-section__summary"><span>Действия Базы знаний в сегменте</span><code>SegmentKnowledgeActions</code></summary>
+          <div class="component-section__body">
+            <div class="component-meta"><span class="component-status">Согласовано</span><p>На этапе «Сегменты» весь блок открывает точные совпадения и добавляет пару непосредственно из служебной строки поля перевода. Иконки используют общий компонент кнопки и адаптивные тултипы.</p></div>
+            <div class="segment-content-badges segment-content-badges--translation segment-knowledge-actions" contenteditable="false" aria-label="Действия Базы знаний для перевода">
+              <div class="segment-content-badges__status">
+                <button class="icon-button icon-button--tiny icon-button--ghost segment-knowledge-suggestions" type="button" aria-label="Найденные записи в БЗ"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-database"></use></svg></button>
+                <button class="icon-button icon-button--tiny icon-button--filled segment-knowledge-add" type="button" aria-label="Добавить пару в БЗ"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              </div>
+            </div>
+            <p><span class="knowledge-highlight" role="button" tabindex="0" title="Найдена запись в Базе знаний">Точное совпадение</span> — выделяется только фактическое вхождение записи в этой колонке.</p>
+          </div>
+        </details>
+        <details class="component-section" open>
           <summary class="component-section__summary">
             <span>Контейнер приложения</span>
             <code>AppContainer</code>
@@ -228,11 +241,11 @@
                   <li class="workflow-stagebar__step is-current" data-component-workflow-step="1" aria-current="step"><span>1</span><strong>Документ</strong></li>
                   <li class="workflow-stagebar__step" data-component-workflow-step="2"><span>2</span><strong>Сегменты</strong></li>
                   <li class="workflow-stagebar__step" data-component-workflow-step="3"><span>3</span><strong>Макет</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="4"><span>4</span><strong>Проверка</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="4"><span>4</span><strong>Выгрузка</strong></li>
                 </ol>
                 <div class="workflow-stagebar__actions">
-                  <button class="compact-button" type="button" data-component-workflow-previous disabled>Назад</button>
-                  <button class="button button--primary" type="button" data-component-workflow-approve>Утвердить</button>
+                  <button class="icon-button icon-button--compact" type="button" aria-label="Назад" data-component-workflow-previous disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
+                  <button class="icon-button icon-button--compact icon-button--filled" type="button" aria-label="Утвердить" data-component-workflow-approve><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
                 </div>
               </nav>
             </div>
@@ -267,15 +280,15 @@
           <div class="component-section__body">
             <div class="component-meta">
               <span class="component-status">Согласовано</span>
-              <p>Постоянная правая панель без отдельной рейки переключателей. Она всегда показывает инструменты текущего этапа; на этапе макета типографика и расстановка объединены в один раздел.</p>
+              <p>Постоянная правая панель без отдельной рейки переключателей. На этапе макета она объединяет типографику, расстановку и расположенное снизу тестирование перед выгрузкой; на этапе выгрузки показывает только экспорт и закреплённую снизу пересегментацию.</p>
             </div>
             <aside class="component-stage-tools-demo" aria-label="Инструменты этапа">
-              <section class="component-stage-tools-demo__body">
-                <h2 class="inspector-section__title">Типографика и расстановка</h2>
+              <section class="component-stage-tools-demo__body" aria-label="Типографика и расстановка">
                 <div class="component-stage-tools-demo__cards">
                   <div class="note note--muted note--compact">Типографика сегмента</div>
                   <div class="note note--muted note--compact">Размеры и положение</div>
                   <div class="note note--muted note--compact">Выравнивание и распределение</div>
+                  <button class="button" type="button">Тестирование перед выгрузкой</button>
                 </div>
               </section>
             </aside>
@@ -387,6 +400,7 @@
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Дополнительные действия"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-more-vertical"></use></svg></button><code>more-vertical</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button><code>minus</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button><code>plus</code></div>
+              <div class="icon-sample"><button class="icon-button icon-button--field" type="button" aria-label="Найти"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-search"></use></svg></button><code>search / field</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вписать"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button><code>maximize</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Полноэкранный просмотр"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fullscreen"></use></svg></button><code>fullscreen</code></div>
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Вписать по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button><code>fit-width</code></div>

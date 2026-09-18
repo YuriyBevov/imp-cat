@@ -140,3 +140,52 @@ test('knowledge-base records use sentence case independently of entered casing',
   assert.equal(sentenceCaseText('POWER OF ATTORNEY. LEGAL ADDRESS', 'en'), 'Power of attorney. Legal address')
   assert.equal(sentenceCaseText('доверенность. юРИДИЧЕСКИЙ АДРЕС', 'ru'), 'Доверенность. Юридический адрес')
 })
+
+test('one stored pair matches whole texts and repeated terms in either direction', async () => {
+  const kb = createKnowledgeBase()
+  const { results } = await kb.addMany([{ sourceText: 'VEKALETNAME', translation: 'Доверенность', sourceLanguage: 'tr', targetLanguage: 'ru' }])
+  const id = results[0].entry.id
+  const reverse = await kb.findExact('ДОВЕРЕННОСТЬ', 'Turkish', { sourceLanguage: 'Russian' })
+  assert.equal(reverse.id, id)
+  assert.equal(reverse.translation, 'VEKALETNAME')
+  const text = 'Доверенность, доверенность. Недоверенность — нет.'
+  const matches = await kb.findMatchesInText(text, 'tr', { sourceLanguage: 'ru', exactOnly: true })
+  assert.deepEqual(matches.map(match => text.slice(match.start, match.end)), ['Доверенность', 'доверенность'])
+  assert.ok(matches.every(match => match.entryId === id && match.score === 1 && match.matchType === 'exact-fragment'))
+  assert.deepEqual(await kb.findMatchesInText('VEKALETNAMвE', 'ru', { sourceLanguage: 'tr', exactOnly: true }), [])
+  assert.deepEqual(await kb.findMatchesInText('Доверенность', 'en', { sourceLanguage: 'ru', exactOnly: true }), [])
+  assert.deepEqual(await kb.findMatchesInText('Доверенность', 'tr', { sourceLanguage: 'ru', glossaryId: 'another', exactOnly: true }), [])
+  await kb.updateEntry(id, { translation: 'Полномочие' })
+  assert.deepEqual(await kb.findMatchesInText('Доверенность', 'tr', { sourceLanguage: 'ru', exactOnly: true }), [])
+  assert.equal((await kb.findMatchesInText('Полномочие', 'tr', { sourceLanguage: 'ru', exactOnly: true }))[0].entryId, id)
+  await kb.deleteEntry(id)
+  assert.deepEqual(await kb.findMatchesInText('Полномочие', 'tr', { sourceLanguage: 'ru', exactOnly: true }), [])
+})
+
+test('PostgreSQL exact matching checks both sides using language-aware boundaries, without a 200-row cutoff', async () => {
+  const rows = Array.from({ length: 220 }, (_, index) => ({
+    id: `entry-${index}`, glossary_id: DEFAULT_GLOSSARY_ID, source_text: `Term ${index}`,
+    source_canonical: `term ${index}`, translation: `Термин ${index}`, source_language: 'tr', target_language: 'ru',
+  }))
+  rows.push({ id: 'notary', glossary_id: DEFAULT_GLOSSARY_ID, source_text: 'Mersin 4. Noterliği',
+    source_canonical: 'mersin 4. noterliği', translation: 'Нотариальная контора', source_language: 'tr', target_language: 'ru' })
+  const queries = []
+  const pool = { async query(sql, params) {
+    queries.push({ sql, params })
+    if (sql.startsWith('SELECT * FROM icat_translation_memory')) return { rows }
+    return { rows: [] }
+  } }
+  const kb = createKnowledgeBase({ pool })
+  const cache = new Map()
+  const forward = await kb.findMatchesInText('MERSİN 4. NOTERLİĞİ', 'ru', { sourceLanguage: 'tr', exactOnly: true, candidateCache: cache })
+  assert.equal(forward[0].entryId, 'notary')
+  assert.equal(forward[0].fullSegment, true)
+  const before = queries.length
+  await kb.findMatchesInText('MERSİN 4. NOTERLİĞİ', 'ru', { sourceLanguage: 'tr', exactOnly: true, candidateCache: cache })
+  assert.equal(queries.length, before)
+  const reverse = await kb.findExact('НОТАРИАЛЬНАЯ КОНТОРА', 'tr', { sourceLanguage: 'ru' })
+  assert.equal(reverse.id, 'notary')
+  assert.equal(reverse.translation, 'Mersin 4. Noterliği')
+  assert.deepEqual(await kb.findMatchesInText('Нотариальная конторАА', 'tr', { sourceLanguage: 'ru', exactOnly: true }), [])
+  assert.ok(queries.some(({ sql }) => sql.includes('OR lower(target_language) = ANY($3::text[])')))
+})
