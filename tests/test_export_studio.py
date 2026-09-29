@@ -2,6 +2,9 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import copy
+import pymupdf
+from lxml import etree
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -66,7 +69,7 @@ class StudioExporterTests(unittest.TestCase):
                 self.assertNotIn("Не экспортировать", xml)
             self.assertTrue(pdf_path.read_bytes().startswith(b"%PDF"))
 
-    def test_wrap_keeps_long_words_indivisible(self):
+    def test_wrap_breaks_long_styled_words_without_losing_text(self):
         long_word = "неразрываемоедлинноеслово"
         self.assertEqual(MODULE.wrap_text(long_word, "Helvetica", 12, 20), [long_word])
 
@@ -80,8 +83,10 @@ class StudioExporterTests(unittest.TestCase):
             ],
         }
         lines = MODULE.wrap_styled_runs(segment, 20)
-        self.assertEqual(len(lines), 1)
-        self.assertEqual("".join(text for text, _ in lines[0]), long_word)
+        self.assertGreater(len(lines), 1)
+        self.assertEqual("".join(text for line in lines for text, _ in line), long_word)
+        for line in lines:
+            self.assertLessEqual(sum(MODULE.pdfmetrics.stringWidth(text, *MODULE.run_font(segment, run)) for text, run in line), 20.01)
 
     def test_exports_structural_cells_as_one_native_word_table(self):
         scene = self.scene()
@@ -106,6 +111,84 @@ class StudioExporterTests(unittest.TestCase):
                 xml = archive.read("word/document.xml").decode("utf-8")
                 self.assertEqual(xml.count("<w:tbl>"), 1)
                 self.assertIn("Ячейка 2:2", xml)
+                self.assertIn('style="mso-fit-shape-to-text:t"', xml)
+
+    def table_scene(self):
+        scene = self.scene()
+        scene["objects"] = []
+        for row in range(2):
+            for column in range(2):
+                scene["objects"].append({
+                    "id": f"cell-{row}-{column}", "pageIndex": 0, "type": "table_cell",
+                    "tableId": "table-1", "rowIndex": row + 13, "columnIndex": column,
+                    "rowSpan": 1, "columnSpan": 1,
+                    "sourceText": "", "translation": "Итог Ђорђе" if column == 0 else "",
+                    "x": 60 + column * 100, "y": 220 + row * 40, "width": 100 if column == 0 else 300, "height": 40,
+                    "style": {"fontFamily": "Courier New", "fontSizePx": 14},
+                })
+        return scene
+
+    def test_empty_cells_widths_and_continuation_rows_survive_both_exports(self):
+        payload = MODULE.prepare_export(MODULE.normalize_scene(self.table_scene()))
+        table = payload["tables"][0]
+        self.assertEqual(len(table["cells"]), 4)
+        self.assertEqual(table["rowCount"], 2)
+        self.assertEqual(table["sourceRowStart"], 13)
+        self.assertEqual(table["columnWidths"], [100, 300])
+        with tempfile.TemporaryDirectory() as directory:
+            docx = Path(directory) / "table.docx"
+            pdf = Path(directory) / "table.pdf"
+            MODULE.export_layout(payload, docx)
+            MODULE.export_pdf(payload, pdf)
+            with ZipFile(docx) as archive:
+                root = etree.fromstring(archive.read("word/document.xml"))
+                ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                self.assertEqual(len(root.findall(".//w:tr", ns)), 2)
+                self.assertEqual([node.get("{" + ns["w"] + "}w") for node in root.findall(".//w:gridCol", ns)], ["1500", "4500"])
+            with pymupdf.open(pdf) as doc:
+                self.assertEqual(len(doc[0].get_drawings()), 4)
+                self.assertIn("Ђорђе", doc[0].get_text())
+
+    def test_cyrillic_embedded_for_every_family_and_style(self):
+        for family in ("Arial", "Times New Roman", "Courier New", "Georgia", "Verdana", "Tahoma", "Cambria", "Calibri"):
+            for bold, italic in ((False, False), (True, False), (False, True), (True, True)):
+                scene = self.scene()
+                item = scene["objects"][0]
+                item["translation"] = "Перевод Ђорђе"
+                item["translationTextStyles"] = []
+                item["style"].update(fontFamily=family, fontWeight=700 if bold else 400, fontStyle="italic" if italic else "normal")
+                with tempfile.TemporaryDirectory() as directory:
+                    pdf = Path(directory) / "font.pdf"
+                    MODULE.export_pdf(MODULE.prepare_export(MODULE.normalize_scene(scene)), pdf)
+                    with pymupdf.open(pdf) as doc:
+                        self.assertIn("Перевод Ђорђе", doc[0].get_text())
+                        self.assertFalse(any("ZapfDingbats" in str(font) for font in doc[0].get_fonts()))
+
+    def test_duplicate_and_overlapping_cells_are_rejected(self):
+        scene = self.table_scene()
+        scene["objects"].append({**scene["objects"][0], "id": "duplicate"})
+        with self.assertRaisesRegex(ValueError, "пересекаются"):
+            MODULE.normalize_scene(scene)
+        scene["objects"].pop()
+        scene["objects"][0]["columnSpan"] = 2
+        with self.assertRaisesRegex(ValueError, "пересекаются"):
+            MODULE.normalize_scene(scene)
+
+    def test_table_growth_paginates_without_changing_scene_or_losing_cells(self):
+        scene = self.table_scene()
+        scene["pages"] = [{"widthPx": 794, "heightPx": 400}]
+        for cell in scene["objects"]:
+            cell["translation"] = "Очень длинный текст " * 18 if cell["columnIndex"] == 1 else "Итог"
+        original = copy.deepcopy(scene)
+        payload = MODULE.prepare_export(MODULE.normalize_scene(scene))
+        self.assertEqual(scene, original)
+        self.assertGreater(len(payload["pages"]), 1)
+        self.assertEqual(sum(len(table["cells"]) for table in payload["tables"]), 4)
+        for table in payload["tables"]:
+            self.assertEqual(min(cell["rowIndex"] for cell in table["cells"]), 0)
+            for cell in table["cells"]:
+                self.assertLessEqual(MODULE.measured_height(cell, True), cell["height"] + .01)
+                self.assertLessEqual(cell["y"] + cell["height"], 360.01)
 
 
 if __name__ == "__main__":

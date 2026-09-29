@@ -242,7 +242,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.objects[0].height, normalized.pages[0].contentBounds.height)
   assert.equal(normalized.snapToGrid, true)
   assert.equal(normalized.workflowVersion, 2)
-  assert.equal(normalized.workflowStage, 4)
+  assert.equal(normalized.workflowStage, 3)
   assert.equal(normalized.translationCompleted, true)
   assert.equal(normalized.layoutInitializationVersion, 0)
   assert.deepEqual(normalized.batchRevisionChat, [])
@@ -445,4 +445,21 @@ test('translation batches respect object and character limits', () => {
   const batches = createTranslationBatches(objects)
   assert.deepEqual(batches.map(batch => batch.length), [16, 9])
   assert.ok(batches.every(batch => batch.reduce((sum, item) => sum + item.sourceText.length, 0) <= 50_000))
+})
+
+test('splitting a source cell is rejected before creating duplicate table addresses', () => {
+  const scene = { objects: [{ id: 'cell', type: 'table_cell', tableId: 't', rowIndex: 0, columnIndex: 0, sourceText: 'A B', translation: 'А Б' }] }
+  const before = JSON.stringify(scene)
+  assert.throws(() => splitSourceObject(scene, 'cell', ['A', 'B']), /Ячейку нельзя разделить/)
+  assert.equal(JSON.stringify(scene), before)
+})
+
+
+test('QA identifies conflicting table addresses before export', () => {
+  const scene = buildScene(analysisFixture(), { documentId: 'f'.repeat(32) })
+  const first = scene.objects[0]
+  Object.assign(first, { type: 'table_cell', tableId: 'table', rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 1 })
+  scene.objects.push({ ...first, id: 'duplicate' })
+  const report = validateScene(scene)
+  assert.ok(report.warnings.some(warning => warning.code === 'table-structure' && warning.objectIds.includes('duplicate')))
 })

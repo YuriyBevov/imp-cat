@@ -204,6 +204,9 @@ def create_text_box_paragraph(segment: dict) -> etree._Element:
     word_attr(alignment, "val", normalize_alignment(segment.get("alignment")))
     paragraph_properties.append(alignment)
     paragraph_properties.append(element("w", "contextualSpacing"))
+    # Empty cells still have a paragraph mark. Without explicit properties Word
+    # gives that mark Normal's 11pt size and silently enlarges short table rows.
+    paragraph_properties.append(create_run_properties(segment, {}))
     paragraph.append(paragraph_properties)
 
     runs = segment.get("runs") or [{
@@ -302,7 +305,13 @@ def create_word_table(table: dict) -> etree._Element:
     row_count = max(1, int(table.get("rowCount", 1)))
     column_count = max(1, int(table.get("columnCount", 1)))
     table_width = px_to_twips(table.get("width", 120))
-    column_width = max(1, round(table_width / column_count))
+    widths = table.get("columnWidths") or [float(table.get("width", 120)) / column_count] * column_count
+    column_widths = [px_to_twips(value) for value in widths]
+    if len(column_widths) != column_count:
+        raise ValueError("Invalid table column widths")
+    addresses = [(int(cell["rowIndex"]), int(cell["columnIndex"])) for cell in table.get("cells", [])]
+    if len(addresses) != len(set(addresses)):
+        raise ValueError("Duplicate table cell address")
     cells = {(int(cell["rowIndex"]), int(cell["columnIndex"])): cell for cell in table.get("cells", [])}
 
     table_node = element("w", "tbl")
@@ -323,7 +332,7 @@ def create_word_table(table: dict) -> etree._Element:
     properties.append(borders)
     table_node.append(properties)
     grid = element("w", "tblGrid")
-    for _ in range(column_count):
+    for column_width in column_widths:
         column = element("w", "gridCol")
         word_attr(column, "w", column_width)
         grid.append(column)
@@ -333,10 +342,12 @@ def create_word_table(table: dict) -> etree._Element:
         row = element("w", "tr")
         row_cells = [cell for cell in table.get("cells", []) if int(cell["rowIndex"]) == row_index]
         row_height_px = max((float(cell.get("height", 24)) / max(1, int(cell.get("rowSpan", 1))) for cell in row_cells), default=float(table.get("height", 24)) / row_count)
+        if table.get("rowHeights"):
+            row_height_px = table["rowHeights"][row_index]
         row_properties = element("w", "trPr")
         height = element("w", "trHeight")
         word_attr(height, "val", px_to_twips(row_height_px))
-        word_attr(height, "hRule", "atLeast")
+        word_attr(height, "hRule", "exact" if table.get("rowHeights") else "atLeast")
         row_properties.append(height)
         row.append(row_properties)
         column_index = 0
@@ -353,7 +364,7 @@ def create_word_table(table: dict) -> etree._Element:
             cell_node = element("w", "tc")
             cell_properties = element("w", "tcPr")
             cell_width = element("w", "tcW")
-            word_attr(cell_width, "w", column_width * span)
+            word_attr(cell_width, "w", sum(column_widths[column_index:column_index + span]))
             word_attr(cell_width, "type", "dxa")
             cell_properties.append(cell_width)
             if span > 1:
@@ -367,7 +378,7 @@ def create_word_table(table: dict) -> etree._Element:
             margins = element("w", "tcMar")
             for side in ("top", "left", "bottom", "right"):
                 margin = element("w", side)
-                word_attr(margin, "w", 24)
+                word_attr(margin, "w", 30 if side in ("top", "bottom") else 60)
                 word_attr(margin, "type", "dxa")
                 margins.append(margin)
             cell_properties.append(margins)
@@ -375,7 +386,10 @@ def create_word_table(table: dict) -> etree._Element:
             if cell is not None:
                 cell_node.append(create_text_box_paragraph(cell))
             else:
-                cell_node.append(element("w", "p"))
+                cell_node.append(create_text_box_paragraph({
+                    "text": "", "fontFamily": "Arial", "fontSizePx": 1,
+                    "lineHeight": 1, "runs": [],
+                }))
             row.append(cell_node)
             column_index += span
         table_node.append(row)
@@ -407,9 +421,16 @@ def create_vml_table_box(table: dict, shape_id: int, include_shape_type: bool = 
     namespaced_attr(shape, "o", "allowoverlap", "t")
     namespaced_attr(shape, "o", "allowincell", "f")
     text_box = element("v", "textbox", {"inset": "0,0,0,0"})
+    # Word adds table borders and a mandatory trailing paragraph to the box's
+    # internal height. Let the container grow instead of clipping the last row.
+    text_box.set("style", "mso-fit-shape-to-text:t")
     content = element("w", "txbxContent")
     content.append(create_word_table(table))
-    content.append(element("w", "p"))
+    # Word requires a paragraph after a table; it must not consume a normal line.
+    content.append(create_text_box_paragraph({
+        "text": "", "fontFamily": "Arial", "fontSizePx": 1,
+        "lineHeight": 1, "runs": [],
+    }))
     text_box.append(content)
     shape.append(text_box)
     pict.append(shape)

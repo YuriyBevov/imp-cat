@@ -7,6 +7,7 @@ const { JSDOM, VirtualConsole } = require('jsdom')
 const root = path.resolve(__dirname, '..')
 const html = fs.readFileSync(path.join(root, 'public/studio.html'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'public/studio.js'), 'utf8')
+const tableModelClient = fs.readFileSync(path.join(root, 'public/table-model.js'), 'utf8')
 const layoutModelClient = fs.readFileSync(path.join(root, 'public/layout-model.js'), 'utf8')
 const translationUnits = fs.readFileSync(path.join(root, 'public/translation-units.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8')
@@ -110,7 +111,7 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.ok(reanalyzeButton.closest('#final-testing-tools'))
   assert.equal(studioDocument.querySelector('#layout-review-button'), null)
   assert.equal(studioDocument.querySelector('#layout-review-status'), null)
-  assert.equal(studioDocument.querySelector('#qa-button').textContent, 'Тестирование перед выгрузкой')
+  assert.equal(studioDocument.querySelector('#qa-button').textContent, 'Проверить макет')
   const translationInstructionCard = studioDocument.querySelector('.translation-instruction-card')
   const agentKnowledgeMode = studioDocument.querySelector('.agent-knowledge-mode')
   assert.equal(languageCard.nextElementSibling, agentKnowledgeMode)
@@ -346,9 +347,9 @@ test('studio exposes the complete source-to-export workflow', () => {
   assert.match(styles, /\.workbench-toolbar__inner\s*\{[^}]*grid-column:\s*2[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto[^}]*padding:\s*5px var\(--app-gutter, 12px\)/)
   assert.deepEqual(
     [...studioDocument.querySelectorAll('[data-workflow-step]')].map(step => step.textContent.replace(/\s+/g, '').trim()),
-    ['1Документ', '2Сегменты', '3Макет', '4Выгрузка'],
+    ['1Текстиперевод', '2Макетивыгрузка'],
   )
-  assert.match(styles, /\.workflow-stagebar__steps\s*\{[^}]*grid-template-columns:\s*repeat\(4,/)
+  assert.match(styles, /\.workflow-stagebar__steps\s*\{[^}]*grid-template-columns:\s*repeat\(2,/)
   assert.match(styles, /\.workbench-toolbar__layout-controls\s*\{[^}]*grid-column:\s*2[^}]*justify-self:\s*end/)
   assert.match(styles, /\.document-canvas\.is-segment-type-labels-hidden \.scene-object__badge\s*\{[^}]*display:\s*none !important/)
   assert.equal(studioDocument.querySelector('.inspector-controls'), null)
@@ -399,6 +400,7 @@ test('layout toolbar hides and restores segment type labels in both directions',
     return { ok: true, json: async () => ({}) }
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -429,6 +431,7 @@ test('app bar actions open from a burger and close outside or with Escape', asyn
   })
   dom.window.fetch = async () => ({ ok: true, json: async () => ({ translationProviderConfigured: false, translationModel: null }) })
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
 
@@ -488,6 +491,7 @@ test('final QA opens as an animated overlay and hides only after the closing tra
     return { ok: true, json: async () => ({}) }
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -554,8 +558,8 @@ test('final QA opens as an animated overlay and hides only after the closing tra
 
   dom.window.document.querySelector('#qa-button').click()
   await new Promise(resolve => setTimeout(resolve, 20))
-  dom.window.document.querySelector('#workflow-approve').click()
-  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '4')
+  dom.window.document.querySelector('#workflow-previous').click()
+  assert.equal(dom.window.document.querySelector('#studio-view').dataset.workflowStage, '2')
   assert.equal(panel.classList.contains('is-open'), false)
   assert.equal(panel.getAttribute('aria-hidden'), 'true')
   assert.equal(panel.hidden, true)
@@ -651,7 +655,7 @@ test('icon buttons use the shared local SVG sprite and accessible labels', () =>
   assert.doesNotMatch(uiComponentsHtml, /InspectorNavigation|inspector-panel__navigation/)
   assert.match(client, /function setupInspectorPanels/)
   assert.match(client, /function renderInspectorPanelState/)
-  assert.match(styles, /\.inspector-panel__body\s*\{[^}]*grid-auto-rows:\s*minmax\(100%, max-content\)/)
+  assert.match(styles, /\.inspector-panel__body\s*\{[^}]*grid-auto-rows:\s*max-content/)
   assert.match(styles, /\.object-inspector\s*\{[^}]*display:\s*contents/)
   assert.match(styles, /\.inspector-panel\s*\{[^}]*overflow:\s*hidden;[^}]*border-left:\s*1px solid var\(--line\)/)
   assert.match(styles, /\.studio\s*\{[^}]*--inspector-width:\s*clamp\(320px, 27vw, 430px\)/)
@@ -818,7 +822,7 @@ test('studio keeps an independently zoomable source beside editable page objects
   assert.match(styles, /\.studio-page--segments/)
   assert.match(styles, /\.scene-object__content[^}]*overflow:\s*hidden/)
   assert.match(styles, /\.scene-object__content[^}]*overflow-wrap:\s*normal;[^}]*word-break:\s*normal;[^}]*hyphens:\s*none;/)
-  assert.doesNotMatch(styles, /\.scene-object__content[^}]*overflow-wrap:\s*anywhere/)
+  assert.match(styles, /\.scene-object\[data-type="table_cell"\] \.scene-object__content[^}]*overflow-wrap:\s*anywhere/)
   assert.match(client, /overflowWrap:\s*'normal',\s*wordBreak:\s*'normal',\s*hyphens:\s*'none'/)
   assert.match(client, /function minimumObjectHeight/)
   assert.match(client, /function constrainObjectHeight/)
@@ -853,6 +857,7 @@ test('studio client boots on the upload screen without runtime errors', async ()
   })
   dom.window.eval(translationUnits)
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
   assert.equal(dom.window.document.querySelector('#upload-view').hidden, false)
@@ -879,6 +884,7 @@ test('AI settings load the live AITunnel catalog and disable text-only models', 
   }
   dom.window.eval(translationUnits)
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
   dom.window.document.querySelector('#ai-settings-button').click()
@@ -916,6 +922,7 @@ test('administration edits the persistent chat-agent prompt', async () => {
     return { ok: true, json: async () => ({ jobs: [] }) }
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 20))
 
@@ -958,6 +965,7 @@ test('failed document jobs stop polling and show a terminal error state', async 
   }
   dom.window.eval(translationUnits)
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 120))
   assert.equal(jobRequests, 1)
@@ -996,6 +1004,7 @@ test('failed document job can be restarted from the error screen', async () => {
   }
   dom.window.eval(translationUnits)
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#retry-job-button').click()
@@ -1023,6 +1032,7 @@ test('completed document history is restored from local server storage after rel
   }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 40))
   assert.equal(dom.window.document.querySelectorAll('.document-tab').length, 1)
@@ -1049,6 +1059,7 @@ test('document library shows active and archived projects with lifecycle actions
     throw new Error(`Unexpected fetch: ${url}`)
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 20))
   dom.window.document.querySelector('#document-library-button').click()
@@ -1086,6 +1097,7 @@ test('multiple dropped files create independent asynchronous document tabs', asy
     throw new Error(`Unexpected fetch: ${url}`)
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 10))
   const files = [
@@ -1158,6 +1170,7 @@ test('switching tabs preserves an in-progress translation and restores its finis
     throw new Error(`Unexpected fetch: ${url}`)
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 40))
 
@@ -1202,9 +1215,9 @@ test('workflow restores the segment interface without manual view switches', asy
   assert.match(styles, /studio-page--segments|segment-translation-row/)
   assert.ok(studioDocument.querySelector('#workflow-stagebar'))
   assert.equal(studioDocument.querySelector('#workflow-previous').getAttribute('aria-label'), 'Назад')
-  assert.equal(studioDocument.querySelector('#workflow-approve').getAttribute('aria-label'), 'Утвердить')
+  assert.equal(studioDocument.querySelector('#workflow-approve').getAttribute('aria-label'), 'Перевести')
   assert.match(studioDocument.querySelector('#workflow-previous use').getAttribute('href'), /icon-arrow-left$/)
-  assert.match(studioDocument.querySelector('#workflow-approve use').getAttribute('href'), /icon-arrow-right$/)
+  assert.equal(studioDocument.querySelector('#workflow-approve').textContent, 'Перевести')
   studioDocument.defaultView.close()
   return
   const id = '2'.repeat(32)
@@ -1262,6 +1275,7 @@ test('workflow restores the segment interface without manual view switches', asy
   }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   dom.window.document.querySelector('#view-segments-button').click()
@@ -1478,7 +1492,7 @@ test('workflow restores the segment interface without manual view switches', asy
   dom.window.close()
 })
 
-test('approval advances through isolated document stages and switches the workspace automatically', async () => {
+test('workflow keeps paired editors, preserves history and combines layout with export', async () => {
   const id = '7'.repeat(32)
   const scene = {
     title: 'Workflow', sourceLanguage: 'en', targetLanguage: 'ru', workflowStage: 1,
@@ -1526,6 +1540,7 @@ test('approval advances through isolated document stages and switches the worksp
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
   dom.window.eval(layoutModelClient)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -1534,9 +1549,9 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(studio.dataset.workflowStage, '1')
   assert.equal(studio.classList.contains('is-segments-mode'), true)
   assert.equal(dom.window.document.querySelectorAll('.segment-translation-row').length, 2)
-  assert.equal(dom.window.document.querySelectorAll('.segment-translation-row .scene-object').length, 2)
+  assert.equal(dom.window.document.querySelectorAll('.segment-translation-row .scene-object').length, 4)
   assert.ok([...dom.window.document.querySelectorAll('.scene-object__content')].every(node => node.contentEditable === 'true'))
-  assert.equal(dom.window.document.querySelector('.segments-column-headings'), null)
+  assert.ok(dom.window.document.querySelector('.segments-column-headings'))
   assert.equal(dom.window.document.querySelector('.segment-translation-selector'), null)
   assert.equal(dom.window.document.querySelector('.knowledge-highlight'), null)
   assert.equal(dom.window.document.querySelector('.scene-object__knowledge-icon'), null)
@@ -1621,8 +1636,8 @@ test('approval advances through isolated document stages and switches the worksp
   assert.match(styles, /\.document-review-pin\.is-review-highlighted[^}]*--review-marker-scale:\s*1\.35/)
   assert.match(styles, /\.document-review-pin::before\s*\{[^}]*border:\s*1px solid var\(--segment-review-color\)/)
   assert.match(styles, /\.document-review-pin\.is-review-highlighted::before[^}]*opacity:\s*1/)
-  assert.match(styles, /\.document-review-segments\s*\{[^}]*width:\s*min\(35%, 540px\)/)
-  assert.match(styles, /\.document-review-segments\s*\{[^}]*flex:\s*0 0 min\(35%, 540px\)/)
+  assert.match(styles, /\.document-review-segments\s*\{[^}]*width:\s*60%/)
+  assert.match(styles, /\.document-review-segments\s*\{[^}]*flex:\s*0 0 60%/)
   assert.match(styles, /\.document-review-layout\s*\{[^}]*max-width:\s*100%[^}]*gap:\s*var\(--app-gutter, 12px\)/)
   assert.doesNotMatch(styles, /\.document-review-layout\s*\{[^}]*overflow:\s*(?:hidden|auto|scroll)/)
   assert.match(styles, /\.document-review-preview\s*\{[^}]*height:\s*calc\(100vh - 130px\)/)
@@ -1747,15 +1762,15 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(studio.classList.contains('is-segments-mode'), true)
   assert.equal(dom.window.document.querySelector('.studio-page-shell').style.height, '640px')
   assert.equal(dom.window.document.querySelector('.scene-object--translation .scene-object__content').contentEditable, 'true')
-  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'false')
-  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').getAttribute('aria-readonly'), 'true')
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'true')
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').getAttribute('aria-readonly'), 'false')
   assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--type').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--confidence').length, 2)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel .memory-card') !== null, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel .segment-content-fields'), null)
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, false)
-  assert.equal(dom.window.document.querySelector('#undo-button').disabled, true)
+  assert.equal(dom.window.document.querySelector('#undo-button').disabled, false)
 
   const stageTwoTranslation = dom.window.document.querySelector('.scene-object--translation .scene-object__content')
   stageTwoTranslation.focus()
@@ -1765,9 +1780,7 @@ test('approval advances through isolated document stages and switches the worksp
 
   approve.click()
   assert.equal(studio.dataset.workflowStage, '3')
-  assert.equal(dom.window.document.querySelector('#undo-button').disabled, true)
-  dom.window.document.querySelector('#undo-button').click()
-  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }))
+  assert.equal(dom.window.document.querySelector('#undo-button').disabled, false)
   assert.equal(studio.dataset.workflowStage, '3')
   assert.equal(studio.classList.contains('is-segments-mode'), false)
   assert.equal(dom.window.document.querySelectorAll('.studio-page .scene-object').length, 2)
@@ -1775,20 +1788,17 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').getAttribute('aria-label'), 'Типографика и расстановка')
 
-  approve.click()
-  assert.equal(studio.dataset.workflowStage, '4')
-  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-geometry-locked'), true)
+  assert.equal(studio.dataset.workflowStage, '3')
+  assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-geometry-locked'), false)
   assert.equal(dom.window.document.querySelector('#inspector-testing-panel').hidden, false)
   assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, false)
   assert.equal(dom.window.document.querySelector('#export-pdf-button').disabled, false)
-  assert.equal(approve.disabled, true)
-  assert.equal(approve.getAttribute('aria-label'), 'Готово к выгрузке')
+  assert.equal(approve.disabled, false)
+  assert.equal(approve.getAttribute('aria-label'), 'Проверить макет')
 
   dom.window.document.querySelector('#workflow-previous').click()
-  assert.equal(studio.dataset.workflowStage, '3')
-  assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, true)
-  dom.window.document.querySelector('#workflow-previous').click()
   assert.equal(studio.dataset.workflowStage, '2')
+  assert.equal(dom.window.document.querySelector('#export-docx-button').disabled, true)
   dom.window.document.querySelector('#workflow-previous').click()
   assert.equal(studio.dataset.workflowStage, '1')
 
@@ -1821,7 +1831,10 @@ test('approval advances through isolated document stages and switches the worksp
     if (!child.dataset?.editorChrome) child.remove()
   }
   changedSource.append(dom.window.document.createTextNode('Изменённый второй исходник'))
+  const retainedTranslation = scene.objects.find(object => object.id === 'workflow-object-2').translation
   changedSource.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+  assert.equal(scene.objects.find(object => object.id === 'workflow-object-2').translation, retainedTranslation)
+  assert.ok(dom.window.document.querySelector('[data-object-id="workflow-object-2"] .translation-stale-note'))
   approve.click()
   delayTranslation = false
   dom.window.document.querySelector('#translation-approval-submit').click()
@@ -1841,7 +1854,7 @@ test('approval advances through isolated document stages and switches the worksp
   dom.window.close()
 })
 
-test('segment stage keeps the source read-only and provides document and local AI chats', async () => {
+test('text workspace keeps source editable and collapses local AI chats', async () => {
   const id = '6'.repeat(32)
   const makeObject = (objectId, type, sourceText, readingOrder) => ({
     id: objectId, pageIndex: 0, type, readingOrder, sourceText, translation: sourceText, confidence: .87,
@@ -1879,6 +1892,7 @@ test('segment stage keeps the source read-only and provides document and local A
   }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -1895,7 +1909,7 @@ test('segment stage keeps the source read-only and provides document and local A
   batchInstruction.value = 'Убрать маркировку списка'
   batchInstruction.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   assert.equal(batchApply.disabled, false)
-  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'false')
+  assert.equal(dom.window.document.querySelector('.scene-object--source .scene-object__content').contentEditable, 'true')
   const translationEditors = [...dom.window.document.querySelectorAll('.scene-object--translation .scene-object__content')]
   assert.ok(translationEditors.every(editor => editor.contentEditable === 'true'))
   const emptyTranslationEditor = rows[1].querySelector('.scene-object--translation .scene-object__content')
@@ -1925,7 +1939,7 @@ test('segment stage keeps the source read-only and provides document and local A
   assert.ok(localPresetSave.matches('.icon-button.icon-button--compact.icon-button--ghost'))
   assert.equal(localPresetSave.querySelector('use').getAttribute('href'), '/icons.svg#icon-save')
   assert.equal(localPresetSave.disabled, true)
-  const localChatInput = rows[1].querySelector('.ai-chat__composer textarea')
+  const localChatInput = rows[1].querySelector('.segment-translation-workspace .ai-chat__composer textarea')
   localChatInput.value = 'Сохранить название бренда'
   localChatInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   assert.equal(localPresetSave.disabled, false)
@@ -1979,6 +1993,7 @@ test('segment exclusion applies to the current scene after an editor refresh rac
   }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -2028,6 +2043,7 @@ test('layout initialization inserts continuation pages, preserves source links a
   }
   dom.window.eval(translationUnits)
   dom.window.eval(layoutModelClient)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 40))
   dom.window.document.querySelector('#workflow-approve').click()
@@ -2115,6 +2131,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
     if (this.__pointerId === pointerId) this.__pointerId = null
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve))
@@ -2128,7 +2145,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('.inspector-section__title'), null)
   assert.deepEqual(
     [...dom.window.document.querySelectorAll('.inspector-section')].map(node => node.getAttribute('aria-label')),
-    ['Перевод', 'Сегменты', 'Типографика и расстановка', 'Выгрузка'],
+    ['Перевод', 'Выгрузка', 'Сегменты', 'Типографика и расстановка'],
   )
   assert.ok(dom.window.document.querySelector('#inspector-global-translation-panel .global-translation-tools'))
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel .agent-card'), null)
@@ -2143,8 +2160,8 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.ok(dom.window.document.querySelector('#inspector-layout-panel .inspector-section__content').lastElementChild.classList.contains('layout-qa-actions'))
   assert.equal(dom.window.document.querySelector('#inspector-testing-panel .final-testing-actions').lastElementChild.id, 'reanalyze-button')
   assert.match(styles, /\.final-testing-actions\s*\{[^}]*margin-top:\s*auto[^}]*border-top:\s*1px solid var\(--line\)/)
-  assert.match(styles, /#inspector-testing-panel\s*\{[^}]*height:\s*100%[^}]*grid-template-rows:\s*minmax\(0, 1fr\)/)
-  assert.match(styles, /\.final-testing-tools\s*\{[^}]*height:\s*100%[^}]*display:\s*flex[^}]*flex-direction:\s*column/)
+  assert.match(styles, /#inspector-testing-panel\s*\{[^}]*height:\s*auto[^}]*grid-template-rows:\s*max-content/)
+  assert.match(styles, /\.final-testing-tools\s*\{[^}]*height:\s*auto[^}]*display:\s*flex[^}]*flex-direction:\s*column/)
   assert.equal(dom.window.document.querySelector('#object-inspector').hidden, false)
   assert.equal(dom.window.document.querySelector('#object-inspector').hasAttribute('inert'), false)
   assert.equal(dom.window.document.querySelector('#empty-inspector'), null)
@@ -2159,7 +2176,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('#inspector-global-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-translation-panel').hidden, true)
   assert.equal(dom.window.document.querySelector('#inspector-layout-panel').hidden, false)
-  assert.equal(dom.window.document.querySelector('#inspector-testing-panel').hidden, true)
+  assert.equal(dom.window.document.querySelector('#inspector-testing-panel').hidden, false)
   const layoutSelectionTools = dom.window.document.querySelector('#inspector-layout-panel [data-layout-selection-content]')
   assert.equal(layoutSelectionTools.hidden, false)
   assert.equal(layoutSelectionTools.getAttribute('aria-disabled'), 'true')
@@ -2381,7 +2398,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   assert.equal(dom.window.document.querySelector('.scene-object.is-primary-selected').dataset.id, objectOutsideSelection.dataset.id)
   const focusedObjectId = dom.window.document.querySelector('.scene-object.is-selected').dataset.id
   const typographySelectAll = dom.window.document.querySelector('#typography-select-all')
-  assert.equal(typographySelectAll.closest('.typography-selection-toolbar').nextElementSibling.classList.contains('layout-selection-tools'), true)
+  assert.equal(typographySelectAll.closest('.inspector-section__content').querySelector('.layout-selection-tools') !== null, true)
   typographySelectAll.click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.scene-object.is-primary-selected').length, 1)
@@ -2693,6 +2710,7 @@ test('blank pages can be inserted and removed while segments move reliably betwe
     if (this.__pointerId === pointerId) this.__pointerId = null
   }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   assert.equal(dom.window.document.querySelector('#studio-view').classList.contains('is-segments-mode'), false)
@@ -2782,6 +2800,7 @@ test('legacy internal units stay hidden and collapse into one unit when the full
   })
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
   const object = dom.window.document.querySelector('.scene-object--translation')
@@ -2824,6 +2843,7 @@ test('knowledge base manager lists, edits, and deletes stored entries', async ()
     if (pathname.endsWith('/status')) return { ok: true, json: async () => ({ aiProviderConfigured: true, documentAnalysisMode: 'aitunnel' }) }
     return { ok: true, json: async () => ({}) }
   }
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -2882,6 +2902,7 @@ test('AI instruction library lists, searches, creates, edits, and deletes preset
     if (value.endsWith('/documents')) return { ok: true, json: async () => ({ documents: [] }) }
     throw new Error(`Unexpected fetch: ${url}`)
   }
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 30))
 
@@ -2992,6 +3013,7 @@ test('layout shows knowledge matches and keeps the AI translation as an alternat
   }
   dom.window.CSS = { escape: value => String(value) }
   dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
   dom.window.eval(client)
   await new Promise(resolve => setTimeout(resolve, 40))
   const knowledgeHighlights = [...dom.window.document.querySelectorAll('.knowledge-highlight')]
@@ -3096,4 +3118,48 @@ test('knowledge-base edits refresh matches in the active document', () => {
   assert.match(styles, /\.scene-object\.is-knowledge-editing \.knowledge-highlight\s*\{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/)
   assert.match(styles, /\.scene-object\.is-knowledge-editing \.scene-object__knowledge-icon\s*\{[^}]*display:\s*none;/)
   assert.match(styles, /\.scene-object__knowledge-icon\s*\{[^}]*position:\s*absolute/)
+})
+
+test('table tools create, edit a column, insert and undo while export stays available', async () => {
+  const id = 'e'.repeat(32)
+  const scene = { title: 'Table editor', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru', objects: [],
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }] }
+  const errors = []
+  const console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  dom.window.CSS = { escape: String }
+  dom.window.Element.prototype.scrollIntoView = function () {}
+  dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => {
+    if (String(url).endsWith(`/documents/${id}`)) return { metadata: { id, revision: 1 }, scene }
+    if (String(url).endsWith('/scene')) return { metadata: { id, revision: 2 } }
+    return {}
+  } })
+  dom.window.eval(translationUnits)
+  dom.window.eval(tableModelClient)
+  dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  const $ = selector => dom.window.document.querySelector(selector)
+  $('#new-table-rows').value = '2'; $('#new-table-columns').value = '2'
+  $('#table-create').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 4)
+  assert.equal($('#table-tools').closest('[hidden]'), null)
+  assert.equal($('#export-pdf-button').disabled, false)
+  assert.match($('#table-selection-address').textContent, /строка 1, колонка 1/)
+  assert.equal($('#table-row').value, '1')
+  $('#table-column-width').value = '170'
+  $('#table-column-width').dispatchEvent(new dom.window.Event('change'))
+  assert.equal(dom.window.document.querySelector('.scene-object[data-type="table_cell"]').style.width, '170px')
+  $('#table-insert-row').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 6)
+  $('#undo-button').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 4)
+  $('#table-select').click()
+  $('#table-merge').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 1)
+  $('#table-split').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 4)
+  assert.deepEqual(errors, [])
+  dom.window.close()
 })

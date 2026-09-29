@@ -254,23 +254,27 @@
           <div class="component-section__body">
             <div class="component-meta">
               <span class="component-status">Согласовано</span>
-              <p>Навигация по четырём рабочим этапам документа. Перевод выполняется между первым и вторым этапами на отдельном экране состояния и не является самостоятельным этапом.</p>
+              <p>Два рабочих пространства с последовательными действиями: проверка исходника, перевод, проверка перевода, макет и выгрузка.</p>
             </div>
             <div class="component-workflow-demo" data-component-workflow-stage="1">
               <nav class="workflow-stagebar" aria-label="Демонстрация этапов работы">
                 <ol class="workflow-stagebar__steps">
-                  <li class="workflow-stagebar__step is-current" data-component-workflow-step="1" aria-current="step"><span>1</span><strong>Документ</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="2"><span>2</span><strong>Сегменты</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="3"><span>3</span><strong>Макет</strong></li>
-                  <li class="workflow-stagebar__step" data-component-workflow-step="4"><span>4</span><strong>Выгрузка</strong></li>
+                  <li class="workflow-stagebar__step is-current" data-component-workflow-step="1" aria-current="step"><span>1</span><strong>Текст и перевод</strong></li>
+                  <li class="workflow-stagebar__step" data-component-workflow-step="3"><span>2</span><strong>Макет и выгрузка</strong></li>
                 </ol>
                 <div class="workflow-stagebar__actions">
                   <button class="icon-button icon-button--compact" type="button" aria-label="Назад" data-component-workflow-previous disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
-                  <button class="icon-button icon-button--compact icon-button--filled" type="button" aria-label="Утвердить" data-component-workflow-approve><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
+                  <button class="button button--primary" type="button" aria-label="Перевести" data-component-workflow-approve>Перевести</button>
                 </div>
               </nav>
             </div>
           </div>
+        </details>
+
+        <details class="component-section"><summary class="component-section__summary"><span>Таблица</span><code>TableTools</code></summary>
+          <details class="layout-card table-tools" open><summary>Таблица</summary><p class="note note--info note--compact">Пустые ячейки сохраняются; ширина меняется для всей колонки.</p>
+          <div class="table-tools__grid"><label>Строк<input type="number" min="1" value="3" /></label><label>Колонок<input type="number" min="1" value="3" /></label></div>
+          <button class="button" type="button" disabled>Создать таблицу</button><details><summary>Адрес и объединение ячейки</summary><p>Строка 1, колонка 1</p></details></details>
         </details>
 
         <details class="component-section">
@@ -309,7 +313,7 @@
                   <div class="note note--muted note--compact">Типографика сегмента</div>
                   <div class="note note--muted note--compact">Размеры и положение</div>
                   <div class="note note--muted note--compact">Выравнивание и распределение</div>
-                  <button class="button" type="button">Тестирование перед выгрузкой</button>
+                  <button class="button" type="button">Проверить макет</button>
                 </div>
               </section>
             </aside>

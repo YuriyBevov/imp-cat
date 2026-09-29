@@ -132,14 +132,13 @@
           <div class="app-container workbench-toolbar__inner">
             <nav id="workflow-stagebar" class="workflow-stagebar" aria-label="Этапы работы с документом">
               <ol class="workflow-stagebar__steps">
-                <li class="workflow-stagebar__step" data-workflow-step="1"><span>1</span><strong>Документ</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="2"><span>2</span><strong>Сегменты</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="3"><span>3</span><strong>Макет</strong></li>
-                <li class="workflow-stagebar__step" data-workflow-step="4"><span>4</span><strong>Выгрузка</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="1"><span>1</span><strong>Текст и перевод</strong></li>
+                <li class="workflow-stagebar__step" data-workflow-step="3"><span>2</span><strong>Макет и выгрузка</strong></li>
               </ol>
               <div class="workflow-stagebar__actions">
+                <button id="workflow-translate" class="button" type="button" hidden>Обновить перевод</button>
                 <button id="workflow-previous" class="icon-button icon-button--compact" type="button" aria-label="Назад" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
-                <button id="workflow-approve" class="icon-button icon-button--compact icon-button--filled" type="button" aria-label="Утвердить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
+                <button id="workflow-approve" class="button button--primary" type="button" aria-label="Перевести">Перевести</button>
               </div>
             </nav>
             <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб документа">
@@ -206,10 +205,12 @@
         </div>
 
         <div id="final-testing-tools" class="final-testing-tools">
-          <div class="final-testing-actions">
-            <button id="qa-button" class="button" type="button">Тестирование перед выгрузкой</button>
+          <p class="note note--info note--compact">При выгрузке строки таблиц расширяются по тексту и при необходимости переносятся на новые страницы. Проверьте итоговый PDF.</p>
+          <button id="preview-pdf-button" class="button" type="button">Предпросмотр PDF</button>
+          <details class="final-testing-actions"><summary>Повторное распознавание</summary>
+            <button id="qa-button" class="button" type="button">Проверить макет</button>
             <button id="reanalyze-button" class="button button--danger button--danger-filled reanalyze-button" type="button">Пересегментация макета</button>
-          </div>
+          </details>
         </div>
 
         <section id="object-inspector" class="object-inspector" hidden>
@@ -226,8 +227,8 @@
           <p id="segment-grid-coordinates" class="note note--info note--compact segment-grid-coordinates inspector-scope--segments" hidden>Координаты: —</p>
           <section id="table-cell-fields" class="table-cell-fields inspector-scope--segments" hidden>
             <label>ID таблицы<input id="table-id" type="text" maxlength="120" /></label>
-            <label>Строка<input id="table-row" type="number" min="0" max="999" step="1" /></label>
-            <label>Колонка<input id="table-column" type="number" min="0" max="999" step="1" /></label>
+            <label>Строка (с 1)<input id="table-row" type="number" min="1" max="999" step="1" /></label>
+            <label>Колонка (с 1)<input id="table-column" type="number" min="1" max="999" step="1" /></label>
             <label>Строк занимает<input id="table-row-span" type="number" min="1" max="100" step="1" /></label>
             <label>Колонок занимает<input id="table-column-span" type="number" min="1" max="100" step="1" /></label>
           </section>
@@ -240,6 +241,26 @@
             </label>
           </div>
           <p id="segment-note" class="note note--warning note--compact inspector-scope--segments" hidden></p>
+          <details id="table-tools" class="layout-card table-tools">
+            <summary>Таблица</summary>
+            <p class="note note--info note--compact">Ячейка имеет таблицу, строку и колонку. Пустые ячейки сохраняются. Выделите ячейку, чтобы изменить всю строку или колонку.</p>
+            <div class="table-tools__grid">
+              <label>Строк<input id="new-table-rows" type="number" min="1" max="50" value="3" /></label>
+              <label>Колонок<input id="new-table-columns" type="number" min="1" max="20" value="3" /></label>
+            </div>
+            <button id="table-create" class="button" type="button">Создать таблицу</button>
+            <button id="table-from-selection" class="button" type="button">Выделенные сегменты → таблица</button>
+            <p id="table-selection-address" class="note note--compact">Ячейка не выбрана</p>
+            <div class="table-tools__grid">
+              <button id="table-select" class="button" type="button">Выделить таблицу</button>
+              <button id="table-insert-row" class="button" type="button">Строка ниже</button>
+              <button id="table-insert-column" class="button" type="button">Колонка справа</button>
+              <button id="table-merge" class="button" type="button">Объединить ячейки</button>
+              <button id="table-split" class="button" type="button">Разделить ячейку</button>
+              <label>Ширина колонки, px<input id="table-column-width" type="number" min="17" step="17" /></label>
+            </div>
+            <details id="table-address-editor"><summary>Адрес и объединение ячейки</summary></details>
+          </details>
           <div class="typography-selection-toolbar inspector-scope--layout">
             <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
           </div>
@@ -413,7 +434,7 @@
       </aside>
 
       <section id="qa-panel" class="qa-panel" role="complementary" aria-labelledby="qa-title" aria-hidden="true" hidden>
-        <div class="qa-panel__header"><strong id="qa-title">Тестирование перед выгрузкой</strong><button id="qa-close" class="icon-button icon-button--small icon-button--ghost" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
+        <div class="qa-panel__header"><strong id="qa-title">Проверить макет</strong><button id="qa-close" class="icon-button icon-button--small icon-button--ghost" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
         <div class="qa-overview">
           <div id="qa-summary" class="qa-summary"></div>
           <div class="qa-actions">
@@ -644,6 +665,7 @@
     <script src="/layout-model.js"></script>
     <script src="/custom-select.js"></script>
     <script src="/tooltip.js"></script>
-    <script src="/studio.js"></script>
+    <script src="/table-model.js"></script>
+  <script src="/studio.js"></script>
   </body>
 </html>

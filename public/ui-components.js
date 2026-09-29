@@ -3,18 +3,19 @@
     const previous = demo.querySelector('[data-component-workflow-previous]')
     const approve = demo.querySelector('[data-component-workflow-approve]')
     const render = nextStage => {
-      const stage = Math.max(1, Math.min(4, nextStage))
+      const stage = Math.max(1, Math.min(3, nextStage))
       demo.dataset.componentWorkflowStage = String(stage)
       for (const step of demo.querySelectorAll('[data-component-workflow-step]')) {
         const number = Number(step.dataset.componentWorkflowStep)
-        step.classList.toggle('is-current', number === stage)
-        step.classList.toggle('is-complete', number < stage)
-        if (number === stage) step.setAttribute('aria-current', 'step')
+        step.classList.toggle('is-current', number === (stage < 3 ? 1 : 3))
+        step.classList.toggle('is-complete', number < (stage < 3 ? 1 : 3))
+        if (number === (stage < 3 ? 1 : 3)) step.setAttribute('aria-current', 'step')
         else step.removeAttribute('aria-current')
       }
       previous.disabled = stage === 1
-      approve.disabled = stage === 4
-      approve.setAttribute('aria-label', stage === 4 ? 'Готово к выгрузке' : 'Утвердить')
+      approve.disabled = stage === 3
+      approve.textContent = stage === 1 ? 'Перевести' : stage === 2 ? 'К макету' : 'Проверить макет'
+      approve.setAttribute('aria-label', approve.textContent)
     }
     previous.addEventListener('click', () => render(Number(demo.dataset.componentWorkflowStage) - 1))
     approve.addEventListener('click', () => render(Number(demo.dataset.componentWorkflowStage) + 1))

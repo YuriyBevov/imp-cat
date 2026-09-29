@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import copy
+from statistics import median
 from pathlib import Path
 
 from reportlab.pdfbase import pdfmetrics
@@ -16,24 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from export_docx import export_layout
 
 
-FONT_FILES = {
-    (False, False): "/System/Library/Fonts/Supplemental/Arial.ttf",
-    (True, False): "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-    (False, True): "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
-    (True, True): "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
-}
-FONT_NAMES = {
-    (False, False): "ICATArial",
-    (True, False): "ICATArialBold",
-    (False, True): "ICATArialItalic",
-    (True, True): "ICATArialBoldItalic",
-}
+from export_fonts import font_name, glyph_font
 
 
 def register_fonts() -> None:
-    for key, filename in FONT_FILES.items():
-        if Path(filename).exists():
-            pdfmetrics.registerFont(TTFont(FONT_NAMES[key], filename))
+    for family in ("Arial", "Times New Roman", "Courier New"):
+        for bold, italic in ((False, False), (True, False), (False, True), (True, True)):
+            font_name(family, bold, italic)
 
 
 def output_text(item: dict) -> str:
@@ -88,7 +79,7 @@ def normalize_scene(scene: dict) -> dict:
         }
         for index, page in enumerate(scene.get("pages", []))
     ]
-    objects = [item for item in scene.get("objects", []) if not item.get("excluded") and output_text(item).strip()]
+    objects = [item for item in scene.get("objects", []) if not item.get("excluded") and (item.get("type") == "table_cell" or output_text(item).strip())]
 
     def normalize_segment(item: dict, index: int) -> dict:
         text = output_text(item)
@@ -115,10 +106,10 @@ def normalize_scene(scene: dict) -> dict:
 
     table_groups: dict[tuple[int, str], list[tuple[int, dict]]] = {}
     for index, item in enumerate(objects):
-        if item.get("type") != "table_cell" or not item.get("tableId"):
+        if item.get("type") != "table_cell":
             continue
-        if not isinstance(item.get("rowIndex"), int) or not isinstance(item.get("columnIndex"), int):
-            continue
+        if not item.get("tableId") or not isinstance(item.get("rowIndex"), int) or not isinstance(item.get("columnIndex"), int):
+            raise ValueError(f"Ячейка {item.get('id')}: укажите ID таблицы, строку и колонку.")
         key = (int(item.get("pageIndex", 0)), str(item["tableId"]))
         table_groups.setdefault(key, []).append((index, item))
 
@@ -136,6 +127,15 @@ def normalize_scene(scene: dict) -> dict:
                 "columnSpan": max(1, int(item.get("columnSpan", 1))),
             })
             cells.append(cell)
+        first_row = min(cell["rowIndex"] for cell in cells)
+        occupied = set()
+        for cell in cells:
+            cell["rowIndex"] -= first_row
+            for row in range(cell["rowIndex"], cell["rowIndex"] + cell["rowSpan"]):
+                for column in range(cell["columnIndex"], cell["columnIndex"] + cell["columnSpan"]):
+                    if (row, column) in occupied:
+                        raise ValueError(f"Таблица {table_id}, страница {page_index + 1}: пересекаются ячейки в строке {row + first_row + 1}, колонке {column + 1}.")
+                    occupied.add((row, column))
         left = min(cell["x"] for cell in cells)
         top = min(cell["y"] for cell in cells)
         right = max(cell["x"] + cell["width"] for cell in cells)
@@ -143,6 +143,7 @@ def normalize_scene(scene: dict) -> dict:
         tables.append({
             "id": table_id,
             "pageIndex": page_index,
+            "sourceRowStart": first_row,
             "x": left,
             "y": top,
             "width": right - left,
@@ -151,6 +152,26 @@ def normalize_scene(scene: dict) -> dict:
             "columnCount": max(cell["columnIndex"] + cell["columnSpan"] for cell in cells),
             "cells": sorted(cells, key=lambda cell: (cell["rowIndex"], cell["columnIndex"])),
         })
+    for table in tables:
+        count = table["columnCount"]
+        candidates = [[] for _ in range(count + 1)]
+        for cell in table["cells"]:
+            candidates[cell["columnIndex"]].append(cell["x"])
+            candidates[cell["columnIndex"] + cell["columnSpan"]].append(cell["x"] + cell["width"])
+        boundaries = [median(values) if values else None for values in candidates]
+        boundaries[0], boundaries[-1] = table["x"], table["x"] + table["width"]
+        known = [i for i, value in enumerate(boundaries) if value is not None]
+        for start, end in zip(known, known[1:]):
+            for i in range(start + 1, end):
+                boundaries[i] = boundaries[start] + (boundaries[end] - boundaries[start]) * (i - start) / (end - start)
+        widths = [boundaries[i + 1] - boundaries[i] for i in range(count)]
+        if any(width <= 0 for width in widths):
+            raise ValueError(f"Таблица {table['id']}: нарушен порядок колонок. Исправьте адреса ячеек.")
+        table["columnWidths"] = widths
+        for cell in table["cells"]:
+            start = cell["columnIndex"]
+            cell["x"] = boundaries[start]
+            cell["width"] = boundaries[start + cell["columnSpan"]] - boundaries[start]
     return {
         "title": str(scene.get("title") or "Translated document"),
         "gridSize": 1,
@@ -189,15 +210,23 @@ def run_font(segment: dict, run: dict) -> tuple[str, float]:
     bold = float(run.get("fontWeight", segment["fontWeight"])) >= 600
     italic = run.get("fontStyle", segment["fontStyle"]) == "italic"
     family = str(run.get("fontFamily", segment.get("fontFamily", "Arial")))
-    if family in {"Times New Roman", "Cambria", "Georgia"}:
-        name = "Times-BoldItalic" if bold and italic else "Times-Bold" if bold else "Times-Italic" if italic else "Times-Roman"
-    elif family == "Courier New":
-        name = "Courier-BoldOblique" if bold and italic else "Courier-Bold" if bold else "Courier-Oblique" if italic else "Courier"
-    else:
-        name = FONT_NAMES[(bold, italic)] if FONT_NAMES[(bold, italic)] in pdfmetrics.getRegisteredFontNames() else (
-            "Helvetica-BoldOblique" if bold and italic else "Helvetica-Bold" if bold else "Helvetica-Oblique" if italic else "Helvetica"
-        )
+    name = run.get("_font") or font_name(family, bold, italic)
     return name, max(4.5, float(run.get("fontSizePx", segment["fontSizePx"])) * 0.75)
+
+
+def unicode_runs(segment):
+    result = []
+    for run in segment.get("runs") or [{"text": segment["text"]}]:
+        name, _ = run_font(segment, run)
+        for character in str(run.get("text", "")):
+            resolved = glyph_font(name, character)
+            style = {**run, "_font": resolved}
+            style.pop("text", None)
+            if result and result[-1][1] == style:
+                result[-1] = (result[-1][0] + character, style)
+            else:
+                result.append((character, style))
+    return [{**style, "text": text} for text, style in result]
 
 
 def wrap_styled_runs(segment: dict, available_width: float) -> list[list[tuple[str, dict]]]:
@@ -221,12 +250,26 @@ def wrap_styled_runs(segment: dict, available_width: float) -> list[list[tuple[s
             line_width = 0.0
             candidate = pending_word
             candidate_width = parts_width(candidate)
-        lines[-1].extend(candidate)
-        line_width += candidate_width
+        if candidate_width > available_width:
+            for text, run in candidate:
+                for character in text:
+                    width = parts_width([(character, run)])
+                    if lines[-1] and line_width + width > available_width:
+                        lines.append([])
+                        line_width = 0.0
+                    if lines[-1] and lines[-1][-1][1] == run:
+                        old, _ = lines[-1][-1]
+                        lines[-1][-1] = (old + character, run)
+                    else:
+                        lines[-1].append((character, run))
+                    line_width += width
+        else:
+            lines[-1].extend(candidate)
+            line_width += candidate_width
         pending_word = []
         pending_space = []
 
-    for run in segment.get("runs") or [{"text": segment["text"]}]:
+    for run in unicode_runs(segment):
         for token in re.split(r"(\n|[^\S\n]+)", str(run.get("text", ""))):
             if not token:
                 continue
@@ -244,6 +287,104 @@ def wrap_styled_runs(segment: dict, available_width: float) -> list[list[tuple[s
             pending_word.append((token, run))
     append_word()
     return lines
+
+
+def measured_height(segment: dict, table_cell=False) -> float:
+    width = segment["width"] * .75 - (6 if table_cell else 0)
+    if width <= 0:
+        raise ValueError(f"Сегмент {segment['id']}: недостаточная ширина ячейки.")
+    lines = wrap_styled_runs(segment, width)
+    height = 0
+    for line in lines:
+        sizes = [run_font(segment, run)[1] for _, run in line]
+        if sum(pdfmetrics.stringWidth(text, *run_font(segment, run)) for text, run in line) > width + .1:
+            raise ValueError(f"Сегмент {segment['id']}: колонка уже одного символа. Увеличьте ширину.")
+        height += max(sizes, default=segment["fontSizePx"] * .75) * max(.9, segment["lineHeight"])
+    return height / .75 + (4 if table_cell else 0)
+
+
+def prepare_export(payload: dict) -> dict:
+    """Fit table rows, keep merged cells together, paginate identically for both formats.
+
+    Only the export copy changes. Existing page boundaries remain boundaries;
+    growth of a table moves the following content down by the same amount.
+    """
+    payload = copy.deepcopy(payload)
+    original_pages = payload["pages"]
+    result_pages, result_tables, result_segments = [], [], []
+    for source_page in original_pages:
+        page = copy.deepcopy(source_page)
+        page["index"] = len(result_pages)
+        result_pages.append(page)
+        area = page["contentBounds"]
+        bottom = min(page["heightPx"], area["y"] + area["height"])
+        blocks = [(table["y"], 0, table) for table in payload["tables"] if table["pageIndex"] == source_page["index"]]
+        blocks += [(item["y"], 1, item) for item in payload["segments"] if item["pageIndex"] == source_page["index"]]
+        displacement = 0
+        page_shift = 0
+
+        def place(y, height):
+            nonlocal page, page_shift
+            target = max(area["y"] if page_shift else 0, y - page_shift)
+            if height > bottom - area["y"] + .1:
+                raise ValueError("Строка таблицы или сегмент выше страницы. Уменьшите шрифт или разделите содержимое.")
+            if target + height > bottom + .1:
+                page = copy.deepcopy(source_page)
+                page["index"] = len(result_pages)
+                result_pages.append(page)
+                page_shift = y - area["y"]
+                target = area["y"]
+            return target
+
+        for original_y, kind, block in sorted(blocks, key=lambda entry: (entry[0], entry[1], entry[2]["x"])):
+            if kind:
+                block["height"] = max(block["height"], measured_height(block))
+                block["y"] = place(original_y + displacement, block["height"])
+                block["pageIndex"] = page["index"]
+                result_segments.append(block)
+                continue
+            table = block
+            heights = [0.0] * table["rowCount"]
+            for cell in table["cells"]:
+                start, span = cell["rowIndex"], cell["rowSpan"]
+                for row in range(start, start + span):
+                    heights[row] = max(heights[row], cell["height"] / span)
+            for cell in sorted(table["cells"], key=lambda cell: cell["rowSpan"]):
+                start, span = cell["rowIndex"], cell["rowSpan"]
+                missing = measured_height(cell, True) - sum(heights[start:start + span])
+                if missing > 0:
+                    heights[start + span - 1] += missing
+            # A page break cannot pass through a vertically merged cell.
+            groups = []
+            start = 0
+            while start < len(heights):
+                end = start + 1
+                while True:
+                    expanded = max([end] + [cell["rowIndex"] + cell["rowSpan"] for cell in table["cells"] if start <= cell["rowIndex"] < end])
+                    if expanded == end: break
+                    end = expanded
+                groups.append((start, end))
+                start = end
+            fragment = None
+            for start, end in groups:
+                height = sum(heights[start:end])
+                y = place(original_y + displacement + sum(heights[:start]), height)
+                if fragment is None or fragment["pageIndex"] != page["index"]:
+                    fragment = {**table, "pageIndex": page["index"], "y": y, "height": 0, "rowCount": 0,
+                                "sourceRowStart": table["sourceRowStart"] + start, "rowHeights": [], "cells": []}
+                    result_tables.append(fragment)
+                for cell in table["cells"]:
+                    if not start <= cell["rowIndex"] < end: continue
+                    row = cell["rowIndex"]
+                    fragment["cells"].append({**cell, "pageIndex": page["index"],
+                        "rowIndex": row - (fragment["sourceRowStart"] - table["sourceRowStart"]),
+                        "y": y + sum(heights[start:row]), "height": sum(heights[row:row + cell["rowSpan"]])})
+                fragment["height"] += height
+                fragment["rowCount"] += end - start
+                fragment["rowHeights"].extend(heights[start:end])
+            displacement += sum(heights) - table["height"]
+    payload.update(pages=result_pages, tables=result_tables, segments=result_segments)
+    return payload
 
 
 def export_pdf(payload: dict, output_path: Path) -> None:
@@ -268,7 +409,8 @@ def export_pdf(payload: dict, output_path: Path) -> None:
             page_segments,
             key=lambda item: (item["zIndex"], item["y"], item["x"]),
         ):
-            available_width = max(8, segment["width"] * 0.75)
+            padding_x = 3 if segment.get("_tableCell") else 0
+            available_width = max(1, segment["width"] * 0.75 - 2 * padding_x)
             lines = wrap_styled_runs(segment, available_width)
             canvas.saveState()
             origin_x = segment["x"] * 0.75
@@ -277,6 +419,8 @@ def export_pdf(payload: dict, output_path: Path) -> None:
                 canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
                 canvas.setLineWidth(0.5)
                 canvas.rect(origin_x, y - segment["height"] * 0.75, segment["width"] * 0.75, segment["height"] * 0.75, stroke=1, fill=0)
+            origin_x += padding_x
+            if segment.get("_tableCell"): y -= 1.5
             for line in lines:
                 metrics = [run_font(segment, run) for _, run in line]
                 maximum_size = max((size for _, size in metrics), default=max(4.5, segment["fontSizePx"] * 0.75))
@@ -311,7 +455,7 @@ def main() -> None:
     output_path = Path(sys.argv[2])
     requested_format = sys.argv[3].lower()
     scene = json.loads(input_path.read_text(encoding="utf-8"))
-    payload = normalize_scene(scene)
+    payload = prepare_export(normalize_scene(scene))
     if not payload["pages"]:
         raise ValueError("Scene has no pages")
     if requested_format == "docx":

@@ -238,7 +238,7 @@
     elements.inspectorPanelBody.setAttribute('aria-hidden', 'false')
     elements.inspectorPanelBody.removeAttribute('inert')
     for (const panel of elements.inspectorPanel.querySelectorAll('[data-inspector-panel-content]')) {
-      panel.hidden = panel.dataset.inspectorPanelContent !== state.activeInspectorPanel
+      panel.hidden = panel.dataset.inspectorPanelContent !== state.activeInspectorPanel && !(state.workflowStage === 3 && panel.dataset.inspectorPanelContent === 'testing')
     }
   }
 
@@ -280,11 +280,15 @@
   function normalizeWorkflowStage(scene) {
     const storedStage = Math.max(1, Math.min(5, Math.trunc(Number(scene?.workflowStage) || 1)))
     const stage = Number(scene?.workflowVersion) >= 2
-      ? Math.max(1, Math.min(4, storedStage))
-      : ({ 1: 1, 2: 1, 3: 2, 4: 3, 5: 4 }[storedStage] || 1)
+      ? Math.max(1, Math.min(3, storedStage))
+      : ({ 1: 1, 2: 1, 3: 2, 4: 3, 5: 3 }[storedStage] || 1)
     scene.workflowVersion = 2
     scene.workflowStage = stage
     scene.translationCompleted = Boolean(scene.translationCompleted || stage > 1)
+    if (scene.translationCompleted) for (const object of scene.objects || []) {
+      if (object.translatedSourceText == null) object.translatedSourceText = object.translation ? String(object.sourceText || '') : ''
+      if (object.translatedSourceType == null) object.translatedSourceType = object.translation ? object.type : ''
+    }
     if (scene.layoutInitializationVersion == null) {
       scene.layoutInitializationVersion = stage >= 3 ? 1 : 0
     }
@@ -292,7 +296,7 @@
   }
 
   function renderWorkflowStageState() {
-    const stage = Math.max(1, Math.min(4, Number(state.workflowStage) || 1))
+    const stage = Math.max(1, Math.min(3, Number(state.workflowStage) || 1))
     const segmentsView = workflowUsesSegments(stage)
     if (stage !== 3 && !elements.qaPanel.hidden) setQaPanelOpen(false, { immediate: true })
     elements.studioView.dataset.workflowStage = String(stage)
@@ -300,30 +304,33 @@
     elements.canvas.classList.toggle('is-segments-view', segmentsView)
     for (const step of elements.workflowStagebar.querySelectorAll('[data-workflow-step]')) {
       const number = Number(step.dataset.workflowStep)
-      step.classList.toggle('is-current', number === stage)
-      step.classList.toggle('is-complete', number < stage)
-      if (number === stage) step.setAttribute('aria-current', 'step')
+      step.classList.toggle('is-current', number === (segmentsView ? 1 : 3))
+      step.classList.toggle('is-complete', number < (segmentsView ? 1 : 3))
+      if (number === (segmentsView ? 1 : 3)) step.setAttribute('aria-current', 'step')
       else step.removeAttribute('aria-current')
     }
     elements.workflowPrevious.disabled = stage === 1
-    elements.workflowApprove.disabled = stage === 4
-    elements.workflowApprove.setAttribute('aria-label', stage === 4 ? 'Готово к выгрузке' : 'Утвердить')
+    elements.workflowApprove.disabled = false
+    const nextLabel = stage === 1 ? 'Перевести' : stage === 2 ? 'К макету' : 'Проверить макет'
+    elements.workflowApprove.textContent = nextLabel
+    elements.workflowApprove.setAttribute('aria-label', nextLabel)
+    $('#workflow-translate').hidden = stage !== 2
     const allowedPanels = new Set(workflowPanels(stage))
     if (!allowedPanels.has(state.activeInspectorPanel)) state.activeInspectorPanel = [...allowedPanels][0] || ''
     elements.inspectorPanel.hidden = stage === 1
-    elements.sourcePanelToggle.hidden = stage === 1
-    elements.zoomControls.hidden = stage === 1
+    elements.sourcePanelToggle.hidden = segmentsView
+    elements.zoomControls.hidden = segmentsView
     elements.segmentTypeLabelsToggle.hidden = stage !== 3
     refreshSegmentTypeLabelsState()
-    const sourceIsCollapsed = stage === 1 || state.sourceCollapsed
+    const sourceIsCollapsed = segmentsView || state.sourceCollapsed
     elements.studioView.classList.toggle('is-source-collapsed', sourceIsCollapsed)
     elements.sourcePanelToggle.classList.toggle('is-active', !sourceIsCollapsed)
     elements.sourcePanelToggle.setAttribute('aria-expanded', String(!sourceIsCollapsed))
     const sourcePanelLabel = sourceIsCollapsed ? 'Показать оригинал' : 'Скрыть оригинал'
     elements.sourcePanelToggle.title = sourcePanelLabel
     elements.sourcePanelToggle.setAttribute('aria-label', sourcePanelLabel)
-    elements.exportDocx.disabled = stage !== 4
-    elements.exportPdf.disabled = stage !== 4
+    elements.exportDocx.disabled = stage !== 3
+    elements.exportPdf.disabled = stage !== 3
     renderInspectorPanelState()
   }
 
@@ -351,11 +358,9 @@
 
   function setWorkflowStage(nextStage, options = {}) {
     if (!state.scene) return
-    const stage = Math.max(1, Math.min(4, Math.trunc(Number(nextStage) || 1)))
+    const stage = Math.max(1, Math.min(3, Math.trunc(Number(nextStage) || 1)))
     const changed = stage !== state.workflowStage
     if (changed) {
-      state.history = []
-      state.future = []
       state.textCheckpoint = false
       refreshUndoButtons()
     }
@@ -387,7 +392,7 @@
   }
 
   function openTranslationApprovalModal() {
-    if (!state.scene || state.workflowStage !== 1) return
+    if (!state.scene || !workflowUsesSegments()) return
     refreshTranslationApprovalState()
     elements.translationApprovalContent.append(elements.globalTranslationTools)
     elements.translationApprovalModal.hidden = false
@@ -418,7 +423,7 @@
   }
 
   function continueWithCurrentTranslation() {
-    if (!state.scene?.translationCompleted || state.workflowStage !== 1) return
+    if (!state.scene?.translationCompleted || !workflowUsesSegments()) return
     closeTranslationApprovalModal(false)
     setWorkflowStage(2)
     showToast('Текущий перевод сохранён')
@@ -432,7 +437,7 @@
   }
 
   async function submitTranslationApproval(options = {}) {
-    if (!state.scene || state.workflowStage !== 1 || elements.translationApprovalModal.dataset.busy === 'true') return
+    if (!state.scene || !workflowUsesSegments() || elements.translationApprovalModal.dataset.busy === 'true') return
     const translated = Boolean(state.scene.translationCompleted)
     const settingsChanged = translationSettingsChanged()
     const forceRetranslate = translated && (Boolean(options.forceAll) || settingsChanged)
@@ -478,10 +483,10 @@
   }
 
   function approveWorkflowStage() {
-    if (state.workflowStage >= 4) return
-    if (state.workflowStage === 1) return openTranslationApprovalModal()
+    if (state.workflowStage === 3) return elements.qa.click()
+    if (state.workflowStage === 1 || changedTranslationCandidates().length || translationSettingsChanged()) return openTranslationApprovalModal()
     setWorkflowStage(state.workflowStage + 1)
-    showToast(`Этап ${state.workflowStage - 1} утвержден`)
+    showToast('Проверьте расстановку и итоговый файл')
   }
 
   function returnToPreviousWorkflowStage() {
@@ -500,7 +505,9 @@
     elements.exportPdf.removeAttribute('role')
     exportActions.append(elements.exportDocx, elements.exportPdf)
     finalTestingTools.prepend(exportActions)
-    const currentNodes = [...elements.objectInspector.children]
+    const tableTools = $('#table-tools')
+    $('#table-address-editor').append(elements.tableCellFields)
+    const currentNodes = [...elements.objectInspector.children].filter(node => node !== tableTools)
     const typographySelectionToolbar = elements.objectInspector.querySelector('.typography-selection-toolbar')
     const typography = elements.objectInspector.querySelector('.typography-card')
     const segmentActions = elements.objectInspector.querySelector('.segment-actions-card')
@@ -541,11 +548,11 @@
     )
     const objectPanels = [
       createInspectorPanel('inspector-translation-panel', 'translation', 'Сегменты', [batchRevisionCard, memoryCard]),
-      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typographySelectionToolbar, layoutSelectionTools, layoutQaActions]),
+      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typographySelectionToolbar, tableTools, layoutSelectionTools, layoutQaActions]),
     ]
     elements.objectInspector.replaceChildren(...objectPanels, legacySegmentTools)
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
-    elements.objectInspector.after(finalTestingPanel)
+    inspectorBody.insertBefore(finalTestingPanel, elements.objectInspector)
     elements.inspectorSegmentWorkspace = segmentWorkspace
     elements.globalTranslationTools = globalTranslationTools
     elements.globalTranslationToolsHome = globalTranslationPanel.querySelector('.inspector-section__content')
@@ -1613,11 +1620,11 @@
     renderThumbnails()
     renderWorkflowStageState()
     elements.canvas.replaceChildren()
-    const renderedPages = state.workflowStage === 1
+    const renderedPages = segmentsView
       ? [...state.scene.pages].filter(page => !page.layoutContinuation).sort((left, right) => Number(left.index) - Number(right.index))
       : state.scene.pages
     const documentReviewIndexes = new Map()
-    if (state.workflowStage === 1) {
+    if (segmentsView) {
       let documentReviewIndex = 0
       for (const page of renderedPages) {
         const pageObjects = state.scene.objects.filter(item => objectBelongsToReviewPage(item, page))
@@ -1643,20 +1650,20 @@
       }
 
       const pageObjects = state.scene.objects.filter(item => (
-        (state.workflowStage === 1 ? objectBelongsToReviewPage(item, page) : item.pageIndex === page.index && !item.excluded)
+        (segmentsView ? objectBelongsToReviewPage(item, page) : item.pageIndex === page.index && !item.excluded)
       ))
       if (segmentsView) {
         const heading = document.createElement('div')
         heading.className = 'segments-page-heading'
         const title = document.createElement('span')
-        title.textContent = `Страница ${(state.workflowStage === 1 ? page.sourcePageIndex ?? page.index : page.index) + 1}`
+        title.textContent = `Страница ${(segmentsView ? page.sourcePageIndex ?? page.index : page.index) + 1}`
         const count = document.createElement('small')
         const excludedCount = pageObjects.filter(object => object.excluded).length
         count.textContent = excludedCount
           ? `${pageObjects.length - excludedCount} активн. · ${excludedCount} исключ.`
           : `${pageObjects.length} сегм.`
         heading.append(title, count)
-        const columnHeadings = state.workflowStage === 2 ? document.createElement('div') : null
+        const columnHeadings = document.createElement('div')
         if (columnHeadings) {
           columnHeadings.className = 'segments-column-headings'
           const sourceHeading = document.createElement('span')
@@ -1667,36 +1674,38 @@
         }
         const list = document.createElement('div')
         list.className = 'segments-list'
-        const orderedObjects = state.workflowStage === 1 ? documentSourceOrder(pageObjects) : visualReadingOrder(pageObjects)
+        const orderedObjects = segmentsView ? documentSourceOrder(pageObjects) : visualReadingOrder(pageObjects)
         for (const [reviewIndex, object] of orderedObjects.entries()) {
           const row = document.createElement('article')
           row.className = 'segment-translation-row'
           row.dataset.objectId = object.id
           const documentReviewIndex = documentReviewIndexes.get(object.id) ?? reviewIndex
-          if (state.workflowStage === 1) {
+          if (segmentsView) {
             decorateDocumentReviewSegment(row, object, documentReviewIndex)
           }
           row.append(createSegmentRowMeta(object))
+          row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
+          row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
+          row.append(createObjectElement(object, 'sourceText', { documentReviewIndex }), createObjectElement(object, 'translation'))
+          const tools = document.createElement('details')
+          tools.className = 'segment-assistant-tools'
+          const summary = document.createElement('summary')
+          summary.textContent = 'Помощь AI с сегментом'
+          tools.append(summary)
+          if (!object.excluded) tools.append(createSourceSegmentInstructionControl(object))
           if (state.workflowStage === 2) {
-            row.classList.toggle('is-translation-selected', state.translationSelected.has(object.id))
-            row.classList.toggle('is-primary-selected', primarySelectedObject()?.id === object.id)
-            row.append(createObjectElement(object, 'sourceText'), createObjectElement(object, 'translation'))
             const workspace = createSegmentWorkspace(object)
-            if (workspace) row.append(workspace)
-          } else {
-            row.append(createObjectElement(object, 'sourceText', {
-              documentReviewIndex: state.workflowStage === 1 ? documentReviewIndex : null,
-            }))
-            if (state.workflowStage === 1 && !object.excluded) row.append(createSourceSegmentInstructionControl(object))
+            if (workspace) tools.append(workspace)
           }
+          row.append(tools)
           list.append(row)
         }
-        if (state.workflowStage === 1) {
+        if (segmentsView) {
           const reviewLayout = document.createElement('div')
           reviewLayout.className = 'document-review-layout'
           const segments = document.createElement('div')
           segments.className = 'document-review-segments'
-          segments.append(heading, list)
+          segments.append(heading, columnHeadings, list)
           reviewLayout.append(createDocumentReviewPreview(page, orderedObjects, documentReviewIndexes), segments)
           surface.append(reviewLayout)
         } else {
@@ -1746,6 +1755,7 @@
       elements.canvas.append(shell)
       if (state.workflowStage === 3) elements.canvas.append(createPageActions(page))
     }
+    refreshTranslationStaleMarkers()
     if (segmentsView) refreshSegmentsViewHeights()
     applyZoom()
     renderSourcePreview()
@@ -1753,6 +1763,18 @@
     refreshTranslationSelectionControls()
     if (!segmentsView) requestAnimationFrame(expandClippedObjects)
     if (gridBoundsChanged || gridGeometryChanged) scheduleSave()
+  }
+
+  function refreshTranslationStaleMarkers() {
+    const changed = new Set(state.scene?.translationCompleted ? changedTranslationCandidates().map(object => object.id) : [])
+    for (const row of elements.canvas.querySelectorAll('.segment-translation-row')) {
+      row.querySelector('.translation-stale-note')?.remove()
+      if (!changed.has(row.dataset.objectId)) continue
+      const note = document.createElement('p')
+      note.className = 'note note--warning note--compact translation-stale-note'
+      note.textContent = 'Исходник изменён. Перевод сохранён; обновите его перед переходом к макету.'
+      row.prepend(note)
+    }
   }
 
   function visualReadingOrder(objects) {
@@ -1901,7 +1923,7 @@
   }
 
   function fitVisibleDocumentReviewPreviews() {
-    if (state.workflowStage !== 1 || !state.scene) return
+    if (!workflowUsesSegments() || !state.scene) return
     for (const preview of elements.canvas.querySelectorAll('.document-review-preview[data-page-index]')) {
       if (preview.dataset.reviewZoomMode !== 'fit') continue
       const pageIndex = Number(preview.dataset.pageIndex)
@@ -3203,6 +3225,7 @@
   function openSegmentSplitModal(objectId) {
     const object = state.scene?.objects.find(candidate => candidate.id === objectId)
     if (!object || object.excluded || !String(object.sourceText || '').trim()) return
+    if (object.type === 'table_cell') return showToast('Используйте команды структуры таблицы.', true)
     state.segmentSplitObjectId = object.id
     elements.segmentSplitText.value = object.sourceText
     refreshSegmentSplitSubmit()
@@ -3375,7 +3398,7 @@
         split.innerHTML = iconMarkup('split')
         split.setAttribute('aria-label', 'Разделить сегмент')
         split.dataset.editorChrome = 'true'
-        split.disabled = object.excluded || !String(object.sourceText || '').trim()
+        split.disabled = object.excluded || object.type === 'table_cell' || !String(object.sourceText || '').trim()
         split.addEventListener('pointerdown', event => event.stopPropagation())
         split.addEventListener('click', event => {
           event.preventDefault()
@@ -3549,13 +3572,13 @@
     handle.className = 'icon-button icon-button--tiny icon-button--filled scene-object__handle'
     handle.type = 'button'
     handle.innerHTML = iconMarkup('grip-vertical')
-    handle.title = 'Переместить'
+    handle.title = object.type === 'table_cell' ? 'Переместить таблицу' : 'Переместить'
     if (state.workflowStage === 3) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
     const canEditText = !object.excluded && (
-      (state.workflowStage === 1 && requestedField === 'sourceText')
-      || (state.workflowStage === 2 && requestedField === 'translation')
+      (workflowUsesSegments() && ['sourceText', 'translation'].includes(requestedField))
+      || (state.workflowStage === 3 && editField === 'translation')
     )
     content.tabIndex = canEditText ? 0 : -1
     content.contentEditable = String(canEditText)
@@ -3609,8 +3632,6 @@
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
       object[stylesField] = extractInlineStyles(content, object[editField])
       if (editField === 'sourceText') {
-        object.translation = servicePlaceholder(object.type, object.sourceText)
-        object.translationTextStyles = []
         object.translationUnits = []
         ensureObjectTranslationUnits(object)
       } else {
@@ -3629,6 +3650,7 @@
       }
       clearKnowledgeBaseStateForEditedObject(object)
       object.status = 'edited'
+      refreshTranslationStaleMarkers()
       node.classList.toggle('is-untranslated', !object.translation && isTranslatableType(object.type))
       if (state.selected.size === 1) {
         if (editField === 'translation') elements.translationText.value = object.translation
@@ -4095,7 +4117,7 @@
       minWidth: '12px', minHeight: '12px', maxWidth: 'none', boxSizing: 'border-box',
       padding: '1px 3px', border: '1px solid transparent', transform: 'none', visibility: 'hidden',
       pointerEvents: 'none', overflow: 'visible', zIndex: '-1',
-      whiteSpace: width == null ? 'pre' : 'pre-wrap', overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none',
+      whiteSpace: width == null ? 'pre' : 'pre-wrap', overflowWrap: object.type === 'table_cell' ? 'anywhere' : 'normal', wordBreak: 'normal', hyphens: 'none',
       fontFamily: object.style?.fontFamily || 'Arial', fontSize: `${object.style?.fontSizePx || 14}px`,
       fontWeight: object.style?.fontWeight || 400, fontStyle: object.style?.fontStyle || 'normal',
       lineHeight: object.style?.lineHeight || 1.2, textAlign: object.style?.textAlign || 'left',
@@ -4318,7 +4340,7 @@
       const naturalHeight = workflowUsesSegments()
         ? Number(shell.dataset.naturalHeight || surface.scrollHeight || 120)
         : page.heightPx
-      if (state.workflowStage === 1) {
+      if (workflowUsesSegments()) {
         shell.style.width = '100%'
         shell.style.height = `${naturalHeight}px`
         surface.style.setProperty('--review-marker-scale', '1')
@@ -4330,7 +4352,7 @@
         surface.style.transform = `scale(${state.zoom})`
       }
     }
-    elements.zoomOutput.value = state.workflowStage === 1 ? '100%' : `${Math.round(state.zoom * 100)}%`
+    elements.zoomOutput.value = workflowUsesSegments() ? '100%' : `${Math.round(state.zoom * 100)}%`
   }
 
   function refreshSegmentsViewHeights(target = null) {
@@ -4531,6 +4553,7 @@
     document.querySelectorAll('[data-flex-layout]').forEach(button => { button.disabled = !onePage || selection.length < 2 })
     refreshFormattingToolbar()
     refreshFormattingSelectionToggle()
+    refreshTableTools()
     elements.segmentNote.hidden = true
     elements.tableCellFields.hidden = !selection.length || selection.some(item => item.type !== 'table_cell')
     if (!selection.length) {
@@ -4545,8 +4568,8 @@
     setMixedControl(elements.objectType, selection.map(item => item.type))
     if (!elements.tableCellFields.hidden) {
       setMixedControl(elements.tableId, selection.map(item => item.tableId || ''))
-      setMixedControl(elements.tableRow, selection.map(item => item.rowIndex ?? 0))
-      setMixedControl(elements.tableColumn, selection.map(item => item.columnIndex ?? 0))
+      setMixedControl(elements.tableRow, selection.map(item => (item.rowIndex ?? 0) + 1))
+      setMixedControl(elements.tableColumn, selection.map(item => (item.columnIndex ?? 0) + 1))
       setMixedControl(elements.tableRowSpan, selection.map(item => item.rowSpan || 1))
       setMixedControl(elements.tableColumnSpan, selection.map(item => item.columnSpan || 1))
     }
@@ -4984,6 +5007,10 @@
       state.selected.delete(id)
       state.selected.add(id)
     }
+    for (const selected of selectedObjects()) {
+      if (selected.type !== 'table_cell') continue
+      for (const cell of state.scene.objects) if (!cell.excluded && cell.type === 'table_cell' && cell.tableId === selected.tableId && cell.pageIndex === selected.pageIndex) state.selected.add(cell.id)
+    }
     const historyLength = state.history.length
     checkpoint()
     refreshSelection()
@@ -5133,6 +5160,7 @@
     event.stopPropagation()
     const object = state.scene.objects.find(item => item.id === id)
     if (!object) return
+    if (object.type === 'table_cell') return showToast('Ширина всей колонки меняется в панели «Таблица».', true)
     state.selected.delete(id)
     state.selected.add(id)
     refreshSelection()
@@ -5258,6 +5286,7 @@
   function restoreHistorySnapshot(snapshot) {
     const normalized = typeof snapshot === 'string' ? { scene: snapshot } : snapshot
     state.scene = JSON.parse(normalized.scene)
+    state.scene.workflowStage = state.workflowStage
     state.workflowStage = normalizeWorkflowStage(state.scene)
     const objectIds = new Set(state.scene.objects.map(object => object.id))
     const selectedIds = Array.isArray(normalized.selectedIds) ? normalized.selectedIds : [...state.selected]
@@ -5339,6 +5368,13 @@
   }
 
   function scheduleSave() {
+    if (state.qaFingerprint && state.qaFingerprint !== qaSceneFingerprint()) {
+      state.qaFingerprint = null
+      elements.qaTitle.textContent = 'Макет изменён — повторите проверку'
+      elements.qaSummary.replaceChildren()
+      elements.qaList.replaceChildren()
+      elements.qaSelectAll.disabled = true
+    }
     clearTimeout(state.saveTimer)
     state.saveTimer = setTimeout(saveScene, 650)
   }
@@ -5659,6 +5695,8 @@
         object.x, object.y, object.width, object.height, object.confidence,
         object.style?.fontFamily, object.style?.fontSizePx, object.style?.fontWeight,
         object.style?.fontStyle, object.style?.textAlign, object.style?.lineHeight,
+        object.tableId, object.rowIndex, object.columnIndex, object.rowSpan, object.columnSpan,
+        object.sourceTextStyles, object.translationTextStyles, object.excluded,
       ]
     })
     const value = JSON.stringify([warning.code, warning.severity, objectState])
@@ -5702,7 +5740,12 @@
     elements.qaSelectAll.indeterminate = acceptedCount > 0 && acceptedCount < warnings.length
   }
 
+  function qaSceneFingerprint() {
+    return JSON.stringify([state.metadata?.id, state.scene?.pages, state.scene?.objects.map(object => [object.id, object.pageIndex, object.type, object.sourceText, object.translation, object.x, object.y, object.width, object.height, object.style, object.translationTextStyles, object.sourceTextStyles, object.excluded, object.tableId, object.rowIndex, object.columnIndex, object.rowSpan, object.columnSpan])])
+  }
+
   function showQa(report) {
+    state.qaFingerprint = qaSceneFingerprint()
     const warnings = report.warnings.map(warning => ({ ...warning, key: qaWarningKey(warning) }))
     const currentKeys = new Set(warnings.map(warning => warning.key))
     const previousAccepted = acceptedQaWarnings()
@@ -5866,6 +5909,7 @@
   }
 
   function mergeSelected() {
+    if (selectedObjects().some(object => object.type === 'table_cell')) return showToast('Для ячеек используйте «Объединить ячейки» в панели «Таблица».', true)
     const objects = selectedObjects().sort((left, right) => left.y - right.y || left.x - right.x)
     if (objects.length < 2 || new Set(objects.map(item => item.pageIndex)).size !== 1) return
     checkpoint()
@@ -6008,6 +6052,7 @@
     const objects = selectedObjects()
     if (objects.length !== 1) return showToast('Для разделения выберите один сегмент', true)
     const object = objects[0]
+    if (object.type === 'table_cell') return showToast('Используйте разделение объединённой ячейки в панели «Таблица».', true)
     const selection = state.lastTextSelection
     if (!selection || selection.objectId !== object.id) return showToast('Поставьте курсор или выделите текст внутри сегмента', true)
     const field = selection.field || objectOutputField(object)
@@ -6367,26 +6412,45 @@
     object.translationTextStyles = withoutInlineStyleProperties(object.translationTextStyles, properties)
   }
 
-  async function exportDocument(format) {
+  async function exportDocument(format, preview = false) {
+    if (state.exportBusy) return
+    state.exportBusy = true
+    const documentId = state.metadata.id, title = state.scene.title
     try {
       await saveScene(true)
       showToast(`Собираем ${format.toUpperCase()}…`)
-      const response = await api(`/api/studio/documents/${state.metadata.id}/export`, {
+      const response = await api(`/api/studio/documents/${documentId}/export`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format }),
       })
       const blob = await response.blob()
       const disposition = response.headers.get('Content-Disposition') || ''
       const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-      const fallback = `${state.scene.title}.${format}`
+      const fallback = `${title}.${format}`
       const filename = encoded ? decodeURIComponent(encoded) : fallback
       const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 5_000)
-      showToast(`${format.toUpperCase()} собран и проверен`)
-    } catch (error) { showToast(error.message, true) }
+      if (preview) {
+        const dialog = document.createElement('dialog')
+        dialog.className = 'export-preview-dialog'
+        const close = document.createElement('button')
+        close.className = 'button'
+        close.textContent = 'Закрыть предпросмотр'
+        const frame = document.createElement('iframe')
+        frame.title = 'Сформированный PDF'
+        frame.src = url
+        dialog.append(close, frame)
+        document.body.append(dialog)
+        close.onclick = () => dialog.close()
+        dialog.addEventListener('close', () => { URL.revokeObjectURL(url); dialog.remove() }, { once: true })
+        dialog.showModal()
+      } else {
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 5_000)
+      }
+      showToast(`${format.toUpperCase()} готов. Проверьте расположение текста в файле.`)
+    } catch (error) { showToast(error.message, true) } finally { state.exportBusy = false }
   }
 
   function focusPage(pageIndex, objectId) {
@@ -6404,20 +6468,105 @@
     return node.innerHTML
   }
 
+  let tableObjectSequence = 0
+  const tableObjectId = () => `table-cell-${Date.now().toString(36)}-${++tableObjectSequence}`
+  function selectedTableCells() {
+    const anchor = primarySelectedObject()
+    return anchor?.type === 'table_cell' ? state.scene.objects.filter(object => !object.excluded && object.type === 'table_cell' && object.tableId === anchor.tableId && object.pageIndex === anchor.pageIndex) : []
+  }
+
+  function refreshTableTools() {
+    const cells = selectedTableCells(), anchor = primarySelectedObject()
+    if (cells.length) $('#table-tools').open = true
+    for (const id of ['table-select', 'table-insert-row', 'table-insert-column', 'table-merge', 'table-split', 'table-column-width']) $( `#${id}`).disabled = !cells.length
+    $('#table-from-selection').disabled = !selectedObjects().length
+    $('#table-selection-address').textContent = cells.length ? `${anchor.tableId} · строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1} · ${anchor.rowSpan || 1} × ${anchor.columnSpan || 1}` : 'Ячейка не выбрана'
+    try { $('#table-column-width').value = cells.length ? Math.round(window.IcatTableModel.geometry(cells).widths[anchor.columnIndex]) : '' } catch { $('#table-column-width').value = '' }
+  }
+
+  function commitTableCells(previous, next) {
+    window.IcatTableModel.validate(next)
+    const page = state.scene.pages[next[0].pageIndex]
+    if (next.some(cell => cell.x + cell.width > page.contentBounds.x + page.contentBounds.width + 1 || cell.y + cell.height > page.contentBounds.y + page.contentBounds.height + 1)) throw new Error('Таблица не помещается в рабочую область. Уменьшите размеры или перенесите её на свободную страницу.')
+    checkpoint()
+    const ids = new Set(previous.map(cell => cell.id))
+    state.scene.objects = state.scene.objects.filter(object => !ids.has(object.id)).concat(next)
+    const kept = new Set(next.map(cell => cell.id))
+    state.selected = new Set([...state.selected].filter(id => kept.has(id)))
+    if (!state.selected.size) state.selected.add(next[0].id)
+    synchronizeReadingOrder()
+    renderDocument()
+    scheduleSave()
+  }
+
+  function changeTableAddress(field, value) {
+    const chosen = selectedObjects()
+    if (chosen.length !== 1 || chosen[0].type !== 'table_cell') return showToast('Для изменения адреса выберите одну ячейку.', true)
+    try {
+      const changed = { ...chosen[0], [field]: value }
+      window.IcatTableModel.validate(state.scene.objects.filter(object => !object.excluded && object.type === 'table_cell').map(cell => cell.id === changed.id ? changed : cell))
+      checkpoint()
+      Object.assign(chosen[0], changed)
+      renderDocument(); scheduleSave()
+    } catch (error) { showToast(error.message, true); refreshSelection() }
+  }
+
+  function createTable(fromSelection = false) {
+    const model = window.IcatTableModel
+    const previous = fromSelection ? selectedObjects() : []
+    const rows = Math.max(1, Math.min(50, Math.trunc(Number($('#new-table-rows').value) || 3)))
+    const columns = Math.max(1, Math.min(20, Math.trunc(Number($('#new-table-columns').value) || 3)))
+    if (fromSelection && (previous.length !== rows * columns || new Set(previous.map(cell => cell.pageIndex)).size !== 1)) throw new Error('Количество выделенных сегментов должно равняться числу строк × колонок. Выберите сегменты одной страницы.')
+    if (previous.some(cell => cell.type === 'table_cell')) throw new Error('Для существующих ячеек используйте команды таблицы.')
+    const page = state.scene.pages[previous[0]?.pageIndex ?? state.activePage] || state.scene.pages[0]
+    const area = page.contentBounds
+    const tableId = `table-${Date.now().toString(36)}-${++tableObjectSequence}`
+    const width = Math.floor(area.width / columns / 17) * 17
+    if (width < 17) throw new Error('Слишком много колонок для этой страницы.')
+    const existing = state.scene.objects.filter(object => !object.excluded && object.pageIndex === page.index && !previous.includes(object))
+    const y = fromSelection ? Math.min(...previous.map(cell => cell.y)) : Math.max(area.y, ...existing.map(cell => cell.y + cell.height + 17))
+    const template = { pageIndex: page.index, type: 'table_cell', tableId, readingOrder: state.scene.objects.length + 1, confidence: 1, rotation: 0, x: area.x, y, width, height: 34,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' } }
+    const sorted = visualReadingOrder(previous)
+    const cells = Array.from({ length: rows * columns }, (_, index) => ({ ...model.blank(template, Math.floor(index / columns), index % columns, tableObjectId()), ...(sorted[index] || {}),
+      type: 'table_cell', tableId, rowIndex: Math.floor(index / columns), columnIndex: index % columns, rowSpan: 1, columnSpan: 1 }))
+    const arranged = model.arrange(cells, { x: area.x, y, firstRow: 0, widths: Array(columns).fill(width), heights: Array(rows).fill(34) })
+    commitTableCells(previous, arranged)
+  }
+
+  function bindTableTools() {
+    const safely = callback => () => { try { callback() } catch (error) { showToast(error.message, true) } }
+    $('#table-create').addEventListener('click', safely(() => createTable()))
+    $('#table-from-selection').addEventListener('click', safely(() => createTable(true)))
+    $('#table-select').addEventListener('click', () => { state.selected = new Set(selectedTableCells().map(cell => cell.id)); refreshSelection() })
+    for (const axis of ['row', 'column']) $(`#table-insert-${axis}`).addEventListener('click', safely(() => {
+      const cells = selectedTableCells()
+      commitTableCells(cells, window.IcatTableModel.insert(cells, primarySelectedObject()?.id, axis, tableObjectId))
+    }))
+    $('#table-merge').addEventListener('click', safely(() => {
+      const cells = selectedTableCells()
+      if (selectedObjects().some(cell => !cells.includes(cell))) throw new Error('Выберите ячейки одной таблицы на одной странице.')
+      commitTableCells(cells, window.IcatTableModel.merge(cells, [...state.selected]))
+    }))
+    $('#table-split').addEventListener('click', safely(() => {
+      const cells = selectedTableCells()
+      commitTableCells(cells, window.IcatTableModel.split(cells, primarySelectedObject()?.id, tableObjectId))
+    }))
+    $('#table-column-width').addEventListener('change', safely(() => {
+      const cells = selectedTableCells(), grid = window.IcatTableModel.geometry(cells)
+      grid.widths[primarySelectedObject().columnIndex] = Math.max(17, Math.round(Number($('#table-column-width').value) / 17) * 17)
+      commitTableCells(cells, window.IcatTableModel.arrange(cells, grid))
+    }))
+  }
+
   function bindInspector() {
+    $('#workflow-translate').addEventListener('click', openTranslationApprovalModal)
+    $('#preview-pdf-button').addEventListener('click', () => exportDocument('pdf', true))
     elements.objectType.addEventListener('change', () => applySelectionChange(object => setObjectType(object, elements.objectType.value)))
-    elements.tableId.addEventListener('change', () => applySelectionChange(object => { if (object.type === 'table_cell') object.tableId = elements.tableId.value.trim() || `manual-table-page-${object.pageIndex + 1}` }))
-    const tableNumbers = [
-      [elements.tableRow, 'rowIndex', 0, 999],
-      [elements.tableColumn, 'columnIndex', 0, 999],
-      [elements.tableRowSpan, 'rowSpan', 1, 100],
-      [elements.tableColumnSpan, 'columnSpan', 1, 100],
-    ]
-    for (const [control, field, minimum, maximum] of tableNumbers) {
-      control.addEventListener('change', () => {
-        const value = Math.min(maximum, Math.max(minimum, Math.trunc(Number(control.value) || minimum)))
-        applySelectionChange(object => { if (object.type === 'table_cell') object[field] = value })
-      })
+    bindTableTools()
+    elements.tableId.addEventListener('change', () => changeTableAddress('tableId', elements.tableId.value.trim()))
+    for (const [control, field, offset] of [[elements.tableRow, 'rowIndex', 1], [elements.tableColumn, 'columnIndex', 1], [elements.tableRowSpan, 'rowSpan', 0], [elements.tableColumnSpan, 'columnSpan', 0]]) {
+      control.addEventListener('change', () => changeTableAddress(field, Math.trunc(Number(control.value)) - offset))
     }
     const bindText = (control, field) => {
       let knowledgeEditingObjects = []
@@ -6437,8 +6586,6 @@
           object[field] = control.value
           object[field === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'] = []
           if (field === 'sourceText') {
-            object.translation = servicePlaceholder(object.type, object.sourceText)
-            object.translationTextStyles = []
             object.translationUnits = []
             ensureObjectTranslationUnits(object)
           } else {
