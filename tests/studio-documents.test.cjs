@@ -74,6 +74,18 @@ test('documents can be archived, restored and permanently deleted with confirmat
   assert.deepEqual(savedDocument.scene.pages[0].gridAvailableBounds, { width: 714, height: 1043 })
   assert.ok(savedDocument.report)
 
+  response = await fetch(`${base}/documents/${id}/source/split`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectId: 'upper-left', segments: ['Upper', 'left'] }),
+  })
+  assert.equal(response.status, 200)
+  const splitDocument = await response.json()
+  assert.equal(splitDocument.scene.objects.length, 4)
+  assert.deepEqual(splitDocument.objectIds, ['upper-left', 'upper-left-split-1'])
+  assert.deepEqual(splitDocument.scene.objects.filter(object => splitDocument.objectIds.includes(object.id)).map(object => object.sourceText), ['Upper', 'left'])
+  assert.equal(splitDocument.metadata.objectCount, 4)
+  assert.equal(splitDocument.scene.translationCompleted, false)
+
   response = await fetch(`${base}/documents`)
   assert.deepEqual((await response.json()).documents.map(item => item.id), [id])
 

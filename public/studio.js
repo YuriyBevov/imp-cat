@@ -158,6 +158,8 @@
     confirmationModal: $('#confirmation-modal'), confirmationEyebrow: $('#confirmation-eyebrow'), confirmationTitle: $('#confirmation-title'),
     confirmationDescription: $('#confirmation-description'), confirmationClose: $('#confirmation-close'),
     confirmationCancel: $('#confirmation-cancel'), confirmationSubmit: $('#confirmation-submit'),
+    segmentSplitModal: $('#segment-split-modal'), segmentSplitText: $('#segment-split-text'),
+    segmentSplitClose: $('#segment-split-close'), segmentSplitCancel: $('#segment-split-cancel'), segmentSplitSubmit: $('#segment-split-submit'),
     translationApprovalModal: $('#translation-approval-modal'), translationApprovalContent: $('#translation-approval-content'),
     translationApprovalStatus: $('#translation-approval-status'), translationApprovalContinue: $('#translation-approval-continue'),
     translationApprovalClose: $('#translation-approval-close'), translationApprovalCancel: $('#translation-approval-cancel'),
@@ -187,6 +189,7 @@
     saveTimer: null,
     textCheckpoint: false,
     pointerAction: null,
+    segmentSplitObjectId: null,
     toastTimer: null,
     qaPanelCloseTimer: null,
     serviceStatus: null,
@@ -1684,6 +1687,7 @@
             row.append(createObjectElement(object, 'sourceText', {
               documentReviewIndex: state.workflowStage === 1 ? documentReviewIndex : null,
             }))
+            if (state.workflowStage === 1 && !object.excluded) row.append(createSourceSegmentInstructionControl(object))
           }
           list.append(row)
         }
@@ -3188,6 +3192,132 @@
     return control
   }
 
+  function sourceSplitParts(value) {
+    return String(value || '').split(/\n\s*\n+/).map(part => part.trim()).filter(Boolean)
+  }
+
+  function refreshSegmentSplitSubmit() {
+    elements.segmentSplitSubmit.disabled = sourceSplitParts(elements.segmentSplitText.value).length < 2
+  }
+
+  function openSegmentSplitModal(objectId) {
+    const object = state.scene?.objects.find(candidate => candidate.id === objectId)
+    if (!object || object.excluded || !String(object.sourceText || '').trim()) return
+    state.segmentSplitObjectId = object.id
+    elements.segmentSplitText.value = object.sourceText
+    refreshSegmentSplitSubmit()
+    elements.segmentSplitModal.hidden = false
+    requestAnimationFrame(() => elements.segmentSplitText.focus())
+  }
+
+  function closeSegmentSplitModal() {
+    elements.segmentSplitModal.hidden = true
+    elements.segmentSplitText.value = ''
+    state.segmentSplitObjectId = null
+  }
+
+  async function submitSegmentSplit() {
+    const objectId = state.segmentSplitObjectId
+    const segments = sourceSplitParts(elements.segmentSplitText.value)
+    if (!objectId || segments.length < 2) return
+    elements.segmentSplitSubmit.disabled = true
+    elements.segmentSplitSubmit.setAttribute('aria-busy', 'true')
+    try {
+      await saveScene(true)
+      const response = await api(`/api/studio/documents/${state.metadata.id}/source/split`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectId, segments }),
+      })
+      const data = await response.json()
+      checkpoint()
+      state.scene = data.scene
+      state.metadata = data.metadata || state.metadata
+      state.selected = new Set(data.objectIds || [])
+      closeSegmentSplitModal()
+      renderDocument()
+      showToast(data.message)
+    } catch (error) {
+      showToast(error.message, true)
+    } finally {
+      elements.segmentSplitSubmit.removeAttribute('aria-busy')
+      refreshSegmentSplitSubmit()
+    }
+  }
+
+  async function reviseSourceSegment(objectId, instruction, trigger) {
+    const value = String(instruction || '').trim()
+    if (!value || !state.scene || !state.metadata) return
+    const previousLabel = trigger.getAttribute('aria-label')
+    trigger.disabled = true
+    trigger.setAttribute('aria-busy', 'true')
+    trigger.setAttribute('aria-label', 'AI обрабатывает исходный сегмент')
+    try {
+      await saveScene(true)
+      const response = await api(`/api/studio/documents/${state.metadata.id}/source/revise`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectId, instruction: value }),
+      })
+      const data = await response.json()
+      checkpoint()
+      state.scene = data.scene
+      state.metadata = data.metadata || state.metadata
+      state.selected = new Set(data.objectIds || [])
+      renderDocument()
+      showToast(data.assistantMessage || data.message)
+    } catch (error) {
+      showToast(error.message, true)
+    } finally {
+      trigger.removeAttribute('aria-busy')
+      trigger.setAttribute('aria-label', previousLabel || 'Отправить сообщение AI')
+    }
+  }
+
+  function createSourceSegmentInstructionControl(object) {
+    const control = document.createElement('div')
+    control.className = 'ai-chat segment-ai-chat source-segment-ai-chat'
+    control.dataset.editorChrome = 'true'
+    control.addEventListener('pointerdown', event => event.stopPropagation())
+    const title = document.createElement('strong')
+    title.className = 'segment-ai-chat__title'
+    title.textContent = 'Чат с AI по исходному сегменту'
+    const messages = document.createElement('div')
+    messages.className = 'ai-chat__messages'
+    messages.setAttribute('role', 'log')
+    messages.setAttribute('aria-live', 'polite')
+    renderAiChatMessages(
+      messages,
+      object.sourceRevisionChat,
+      'Попросите исправить распознавание, разделить сегмент или выполнить другую задачу только с исходным текстом.',
+    )
+    const input = document.createElement('textarea')
+    input.rows = 2
+    input.maxLength = 10000
+    input.value = object.sourceRevisionInstruction || ''
+    input.placeholder = 'Например: раздели этот сегмент на отдельные строки'
+    input.setAttribute('aria-label', `Сообщение для AI по исходному сегменту ${object.readingOrder || object.id}`)
+    const send = document.createElement('button')
+    send.type = 'button'
+    send.className = 'button button--primary'
+    send.textContent = 'Отправить'
+    send.setAttribute('aria-label', 'Отправить сообщение AI')
+    const refresh = () => {
+      object.sourceRevisionInstruction = input.value.slice(0, 10000)
+      send.disabled = object.excluded || !object.sourceRevisionInstruction.trim()
+    }
+    input.addEventListener('input', () => { refresh(); scheduleSave() })
+    send.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      reviseSourceSegment(object.id, input.value, send)
+    })
+    refresh()
+    const composer = document.createElement('div')
+    composer.className = 'ai-chat__composer'
+    composer.append(input, send)
+    control.append(title, messages, composer)
+    return control
+  }
+
   function createSegmentRowMeta(object) {
     const meta = document.createElement('div')
     meta.className = 'segment-translation-row__meta'
@@ -3216,7 +3346,7 @@
       .trim()
   }
 
-  function appendRecognitionBadges(content, object, documentReviewIndex = null) {
+  function createRecognitionBadges(object, documentReviewIndex = null) {
     const badges = document.createElement('div')
     badges.className = 'segment-content-badges'
     badges.contentEditable = 'false'
@@ -3238,10 +3368,25 @@
       marker.textContent = String(number)
       marker.setAttribute('aria-label', `Сегмент ${number}`)
       status.append(marker)
-      if (state.workflowStage === 1) status.append(createDocumentReviewExclusionAction(object, documentReviewIndex))
+      if (state.workflowStage === 1) {
+        const split = document.createElement('button')
+        split.type = 'button'
+        split.className = 'icon-button icon-button--tiny icon-button--ghost'
+        split.innerHTML = iconMarkup('split')
+        split.setAttribute('aria-label', 'Разделить сегмент')
+        split.dataset.editorChrome = 'true'
+        split.disabled = object.excluded || !String(object.sourceText || '').trim()
+        split.addEventListener('pointerdown', event => event.stopPropagation())
+        split.addEventListener('click', event => {
+          event.preventDefault()
+          event.stopPropagation()
+          openSegmentSplitModal(object.id)
+        })
+        status.append(split, createDocumentReviewExclusionAction(object, documentReviewIndex))
+      }
     }
     badges.append(type, status)
-    content.prepend(badges)
+    return badges
   }
 
   async function openKnowledgePairForm(objectId) {
@@ -3259,7 +3404,7 @@
     showKnowledgeBaseEntryForm(draft)
   }
 
-  function appendTranslationKnowledgeBadges(content, object) {
+  function createTranslationKnowledgeBadges(object) {
     const badges = document.createElement('div')
     badges.className = 'segment-content-badges segment-content-badges--translation segment-knowledge-actions'
     badges.contentEditable = 'false'
@@ -3302,7 +3447,24 @@
     })
     actions.append(suggestions, add)
     badges.append(actions)
-    content.prepend(badges)
+    return badges
+  }
+
+  function createSegmentContentBadges(object, requestedField, options = {}) {
+    if (workflowUsesSegments() && requestedField === 'sourceText') {
+      return createRecognitionBadges(object, options.documentReviewIndex)
+    }
+    if (state.workflowStage === 2 && requestedField === 'translation') {
+      return createTranslationKnowledgeBadges(object)
+    }
+    return null
+  }
+
+  function replaceSegmentContentBadges(node, object, requestedField, options = {}) {
+    node.querySelector(':scope > .segment-content-badges')?.remove()
+    const badges = createSegmentContentBadges(object, requestedField, options)
+    const content = node.querySelector(':scope > .scene-object__content')
+    if (badges && content) node.insertBefore(badges, content)
   }
 
   function createAiTranslationAlternativeControl(object) {
@@ -3408,11 +3570,7 @@
     content.spellcheck = true
     content.dataset.editField = editField
     renderTextContent(content, object, displayField, state.workflowStage > 1)
-    if (workflowUsesSegments() && requestedField === 'sourceText') {
-      appendRecognitionBadges(content, object, options.documentReviewIndex)
-    } else if (state.workflowStage === 2 && requestedField === 'translation') {
-      appendTranslationKnowledgeBadges(content, object)
-    }
+    const contentBadges = createSegmentContentBadges(object, requestedField, options)
     if (canEditText && requestedField === 'translation') content.addEventListener('pointerdown', event => {
       if (String(object.translation || '').length || event.target.closest('button')) return
       event.preventDefault()
@@ -3440,11 +3598,7 @@
     if (canEditText) content.addEventListener('blur', () => {
       state.textCheckpoint = false
       renderTextContent(content, object, displayField)
-      if (workflowUsesSegments() && requestedField === 'sourceText') {
-        appendRecognitionBadges(content, object, options.documentReviewIndex)
-      } else if (state.workflowStage === 2 && requestedField === 'translation') {
-        appendTranslationKnowledgeBadges(content, object)
-      }
+      replaceSegmentContentBadges(node, object, requestedField, options)
       setObjectsKnowledgeEditing([object], false)
       refreshKnowledgeBaseAfterSegmentEdit()
     })
@@ -3482,14 +3636,16 @@
       }
       scheduleSave()
       requestAnimationFrame(() => {
-        if (workflowUsesSegments()) refreshSegmentsViewHeights()
+        if (workflowUsesSegments()) refreshSegmentsViewHeights(content)
         else fitObjectsToRenderedContent([object], true)
       })
     })
     const resize = document.createElement('span')
     resize.className = 'scene-object__resize'
     if (state.workflowStage === 3) resize.addEventListener('pointerdown', event => beginResize(event, object.id))
-    node.append(badge, handle, content)
+    node.append(badge, handle)
+    if (contentBadges) node.append(contentBadges)
+    node.append(content)
     if (knowledgeIndicator) node.append(knowledgeIndicator)
     node.append(resize)
     return node
@@ -4177,17 +4333,26 @@
     elements.zoomOutput.value = state.workflowStage === 1 ? '100%' : `${Math.round(state.zoom * 100)}%`
   }
 
-  function refreshSegmentsViewHeights() {
+  function refreshSegmentsViewHeights(target = null) {
     if (!workflowUsesSegments()) return
-    for (const shell of elements.canvas.querySelectorAll('.studio-page-shell')) {
+    const targetShell = target?.closest?.('.studio-page-shell') || null
+    const shells = targetShell ? [targetShell] : [...elements.canvas.querySelectorAll('.studio-page-shell')]
+    const anchor = target?.closest?.('.segment-translation-row') || null
+    const anchorTop = anchor?.getBoundingClientRect().top
+    const scrollTop = elements.canvasScroll.scrollTop
+    for (const shell of shells) {
       const surface = shell.querySelector('.studio-page--segments')
       if (!surface) continue
       surface.style.height = 'auto'
-      shell.style.height = 'auto'
+      if (!targetShell) shell.style.height = 'auto'
       const naturalHeight = Math.max(120, surface.scrollHeight || 0, surface.offsetHeight || 0)
       surface.style.height = `${naturalHeight}px`
       shell.dataset.naturalHeight = String(naturalHeight)
       shell.style.height = `${naturalHeight * state.zoom}px`
+    }
+    if (anchor && Number.isFinite(anchorTop)) {
+      const shift = anchor.getBoundingClientRect().top - anchorTop
+      if (Math.abs(shift) > .5) elements.canvasScroll.scrollTop = scrollTop + shift
     }
   }
 
@@ -6327,7 +6492,9 @@
     document.addEventListener('pointerdown', event => {
       const activeEditor = document.activeElement
       const isSegmentTextEditor = activeEditor?.matches?.('.scene-object__content, #source-text, #translation-text')
-      if (isSegmentTextEditor && !activeEditor.contains(event.target)) activeEditor.blur()
+      const editorObject = activeEditor?.closest?.('.scene-object')
+      const targetIsEditorChrome = editorObject?.contains(event.target) && event.target.closest?.('[data-editor-chrome]')
+      if (isSegmentTextEditor && !activeEditor.contains(event.target) && !targetIsEditorChrome) activeEditor.blur()
     }, true)
     elements.fileInput.addEventListener('change', () => upload(elements.fileInput.files))
     for (const eventName of ['dragenter', 'dragover']) elements.uploadZone.addEventListener(eventName, event => { event.preventDefault(); elements.uploadZone.classList.add('is-dragover') })
@@ -6487,6 +6654,13 @@
     elements.confirmationSubmit.addEventListener('click', () => closeConfirmationModal(true))
     elements.confirmationModal.addEventListener('pointerdown', event => {
       if (event.target === elements.confirmationModal) closeConfirmationModal(false)
+    })
+    elements.segmentSplitText.addEventListener('input', refreshSegmentSplitSubmit)
+    elements.segmentSplitClose.addEventListener('click', closeSegmentSplitModal)
+    elements.segmentSplitCancel.addEventListener('click', closeSegmentSplitModal)
+    elements.segmentSplitSubmit.addEventListener('click', submitSegmentSplit)
+    elements.segmentSplitModal.addEventListener('pointerdown', event => {
+      if (event.target === elements.segmentSplitModal) closeSegmentSplitModal()
     })
     elements.autoLayout.addEventListener('click', () => {
       checkpoint()

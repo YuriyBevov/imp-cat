@@ -13,7 +13,7 @@ const {
   pageContentBounds,
   validateScene,
 } = require('../lib/studio-model.cjs')
-const { createTranslationBatches, normalizeScene, parseJsonArray } = require('../lib/studio.cjs')
+const { createTranslationBatches, normalizeScene, parseJsonArray, splitSourceObject } = require('../lib/studio.cjs')
 
 function analysisFixture() {
   return {
@@ -48,6 +48,27 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.objects[2].type, 'signature')
   assert.equal(scene.objects[2].translation, '/Подпись/')
   assert.deepEqual(scene.pages[0].contentBounds, pageContentBounds(scene.pages[0].widthPx, scene.pages[0].heightPx))
+})
+
+test('source segment split creates ordered siblings with proportional original geometry', () => {
+  const scene = buildScene(analysisFixture(), { documentId: 'b'.repeat(32), title: 'Split fixture' })
+  const original = scene.objects[1]
+  original.translation = 'Existing translation'
+  original.translatedSourceText = original.sourceText
+  original.sourceRevisionChat = [{ id: 'm1', role: 'user', text: 'Раздели', createdAt: '2026-01-01T00:00:00.000Z' }]
+  const originalBottom = original.originalBounds.y + original.originalBounds.height
+  const objects = splitSourceObject(scene, original.id, ['First line of the body', 'continues on the next line.'])
+  assert.equal(objects.length, 2)
+  assert.equal(objects[0].id, original.id)
+  assert.match(objects[1].id, new RegExp(`^${original.id}-split-\\d+$`))
+  assert.deepEqual(objects.map(object => object.sourceText), ['First line of the body', 'continues on the next line.'])
+  assert.ok(objects.every(object => object.translation === '' && object.status === 'source-split'))
+  assert.equal(objects[0].sourceRevisionChat.length, 1)
+  assert.equal(objects[1].sourceRevisionChat.length, 0)
+  assert.equal(objects[0].originalBounds.y, original.originalBounds.y)
+  assert.equal(Number((objects[1].originalBounds.y + objects[1].originalBounds.height).toFixed(6)), Number(originalBottom.toFixed(6)))
+  assert.equal(scene.translationCompleted, false)
+  assert.equal(scene.layoutInitializationVersion, 0)
 })
 
 test('structural table model groups positioned cells by page and table id', () => {
@@ -227,6 +248,8 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.deepEqual(normalized.batchRevisionChat, [])
   assert.deepEqual(normalized.acceptedQaWarnings, ['qa-valid', 'x'.repeat(120)])
   assert.ok(normalized.objects.every(object => Array.isArray(object.revisionChat)))
+  assert.ok(normalized.objects.every(object => Array.isArray(object.sourceRevisionChat)))
+  assert.ok(normalized.objects.every(object => typeof object.sourceRevisionInstruction === 'string'))
 })
 
 test('normalizeScene migrates the removed translation stage without shifting current scenes', () => {

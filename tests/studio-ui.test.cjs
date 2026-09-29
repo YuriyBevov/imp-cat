@@ -36,6 +36,7 @@ test('studio exposes the complete source-to-export workflow', () => {
     'reanalyze-confirm-modal', 'reanalyze-confirm-close', 'reanalyze-confirm-cancel', 'reanalyze-confirm-submit',
     'reanalyze-orientation-pages', 'reanalyze-orientation-all-left', 'reanalyze-orientation-all-reset', 'reanalyze-orientation-all-right',
     'confirmation-modal', 'confirmation-title', 'confirmation-description', 'confirmation-close', 'confirmation-cancel', 'confirmation-submit',
+    'segment-split-modal', 'segment-split-title', 'segment-split-text', 'segment-split-close', 'segment-split-cancel', 'segment-split-submit',
     'translation-approval-modal', 'translation-approval-title', 'translation-approval-content', 'translation-approval-status',
     'translation-approval-close', 'translation-approval-cancel', 'translation-approval-continue', 'translation-approval-retranslate-all', 'translation-approval-submit',
     'translation-global-instruction',
@@ -1546,16 +1547,12 @@ test('approval advances through isolated document stages and switches the worksp
   assert.equal(reviewedWorkflowRow.querySelector('.segment-content-badge--type').tagName, 'SPAN')
   assert.equal(reviewedWorkflowRow.querySelector('.segment-content-badge--confidence').tagName, 'SPAN')
   const reviewedContent = reviewedWorkflowRow.querySelector('.scene-object__content')
-  for (const child of [...reviewedContent.childNodes]) {
-    if (child !== reviewedContent.querySelector('.segment-content-badges')) child.remove()
-  }
-  reviewedContent.append(dom.window.document.createTextNode('Исправленный исходник'))
+  assert.equal(reviewedContent.querySelector('.segment-content-badges'), null)
+  reviewedContent.replaceChildren(dom.window.document.createTextNode('Исправленный исходник'))
   reviewedContent.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
   reviewedContent.dispatchEvent(new dom.window.FocusEvent('blur'))
-  const reviewedContentClone = reviewedContent.cloneNode(true)
-  reviewedContentClone.querySelector('.segment-content-badges').remove()
-  assert.equal(reviewedContentClone.textContent, 'Исправленный исходник')
-  assert.equal(reviewedContent.querySelector('.segment-content-badges').contentEditable, 'false')
+  assert.equal(reviewedContent.textContent, 'Исправленный исходник')
+  assert.equal(reviewedWorkflowRow.querySelector('.scene-object > .segment-content-badges').contentEditable, 'false')
   assert.equal(reviewedWorkflowRow.querySelector('.segment-row-note').textContent.trim(), 'Проверьте имя по оригиналу.')
   assert.doesNotMatch(reviewedWorkflowRow.querySelector('.segment-row-note').textContent, /Автокоррекция макета/)
   assert.equal(dom.window.document.querySelector('[data-object-id="workflow-object-2"] .segment-translation-row__meta').hidden, true)
@@ -1650,8 +1647,21 @@ test('approval advances through isolated document stages and switches the worksp
   let exclusionAction = dom.window.document.querySelector('[data-object-id="workflow-object"] .document-review-segment__action')
   assert.equal(exclusionAction.textContent, '')
   assert.equal(exclusionAction.getAttribute('aria-label'), 'Исключить сегмент')
-  assert.equal(exclusionAction.previousElementSibling.classList.contains('document-review-segment__number'), true)
-  const editableReviewContent = exclusionAction.closest('.scene-object__content')
+  const splitAction = exclusionAction.previousElementSibling
+  assert.equal(splitAction.getAttribute('aria-label'), 'Разделить сегмент')
+  assert.ok(splitAction.matches('.icon-button.icon-button--tiny'))
+  assert.equal(splitAction.previousElementSibling.classList.contains('document-review-segment__number'), true)
+  assert.equal(dom.window.document.querySelectorAll('.source-segment-ai-chat').length, 2)
+  assert.match(dom.window.document.querySelector('.source-segment-ai-chat').textContent, /Чат с AI по исходному сегменту/)
+  splitAction.click()
+  assert.equal(dom.window.document.querySelector('#segment-split-modal').hidden, false)
+  const splitText = dom.window.document.querySelector('#segment-split-text')
+  splitText.value = 'Первая часть\n\nВторая часть'
+  splitText.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  assert.equal(dom.window.document.querySelector('#segment-split-submit').disabled, false)
+  dom.window.document.querySelector('#segment-split-cancel').click()
+  assert.equal(dom.window.document.querySelector('#segment-split-modal').hidden, true)
+  const editableReviewContent = exclusionAction.closest('.scene-object').querySelector('.scene-object__content')
   editableReviewContent.focus()
   const exclusionPointerDown = new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true })
   assert.equal(exclusionAction.dispatchEvent(exclusionPointerDown), false)
@@ -1889,10 +1899,17 @@ test('segment stage keeps the source read-only and provides document and local A
   const translationEditors = [...dom.window.document.querySelectorAll('.scene-object--translation .scene-object__content')]
   assert.ok(translationEditors.every(editor => editor.contentEditable === 'true'))
   const emptyTranslationEditor = rows[1].querySelector('.scene-object--translation .scene-object__content')
+  const translationChrome = rows[1].querySelector('.scene-object--translation > .segment-content-badges--translation')
+  assert.ok(translationChrome)
+  assert.equal(emptyTranslationEditor.contains(translationChrome), false)
   assert.equal(emptyTranslationEditor.getAttribute('aria-disabled'), 'false')
   emptyTranslationEditor.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 }))
+  emptyTranslationEditor.focus()
   emptyTranslationEditor.append(dom.window.document.createTextNode('Любой ручной перевод'))
   emptyTranslationEditor.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(dom.window.document.activeElement, emptyTranslationEditor)
+  assert.equal(rows[1].querySelector('.scene-object--translation .scene-object__content'), emptyTranslationEditor)
   assert.equal(scene.objects.find(object => object.id === 'logo-object').translation, 'Любой ручной перевод')
   assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--type').length, 2)
   assert.equal(dom.window.document.querySelectorAll('.segment-content-badge--confidence').length, 2)

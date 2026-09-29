@@ -359,6 +359,7 @@ body.has-document-tabs .upload-view, body.has-document-tabs .loading-view, body.
 .studio[data-workflow-stage="1"] .segment-translation-row__meta { grid-column: 1; display: block; }
 .studio[data-workflow-stage="1"] .segment-row-note { width: 100%; min-height: 38px; }
 .studio[data-workflow-stage="1"] .segment-translation-row > .scene-object { grid-column: 1; }
+.studio[data-workflow-stage="1"] .segment-translation-row > .source-segment-ai-chat { grid-column: 1; padding: 8px; border: 1px solid #d9e0ea; border-radius: 8px; background: #fff; }
 .studio[data-workflow-stage="1"] .studio-page--segments .scene-object__content { position: relative; padding: 10px; font-family: Arial, sans-serif !important; font-size: 16px !important; font-weight: 400 !important; font-style: normal !important; }
 .studio[data-workflow-stage="1"] .studio-page--segments .scene-object__content [data-text-style] { font-family: Arial, sans-serif !important; font-size: 16px !important; font-weight: 400 !important; font-style: normal !important; }
 .document-review-layout { width: 100%; max-width: 100%; min-width: 0; display: flex; align-items: flex-start; gap: var(--app-gutter, 12px); }
@@ -668,6 +669,8 @@ body.has-document-tabs .document-review-preview { height: calc(100vh - 140px); }
 .settings-dialog__intro { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .settings-dialog > label, .settings-dialog__fields label { display: grid; gap: 6px; color: #475467; font-size: 12px; font-weight: 750; }
 .settings-dialog select, .settings-dialog input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: var(--ink); }
+.segment-split-dialog { width: min(680px, 100%); }
+.segment-split-dialog textarea { width: 100%; min-height: 280px; padding: 10px; resize: vertical; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: var(--ink); font: 14px/1.45 Arial, sans-serif; }
 .administration-dialog { width: min(720px, 100%); max-height: calc(100vh - 40px); overflow: auto; }
 .administration-dialog textarea { width: 100%; min-height: 280px; padding: 10px; resize: vertical; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: var(--ink); font: 12px/1.5 Inter, sans-serif; }
 .administration-dialog #administration-status { margin: 0; }
