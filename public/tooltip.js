@@ -16,11 +16,12 @@
     const label = rawLabel.replace(/^(\s*)(\p{Ll})/u, (_, spacing, letter) => `${spacing}${letter.toLocaleUpperCase('ru-RU')}`)
     if (label && trigger.getAttribute('aria-label') !== label) trigger.setAttribute('aria-label', label)
     if (title) trigger.removeAttribute('title')
-    return label
+    return trigger.dataset.tooltip === 'off' ? '' : label
   }
 
   function positionTooltip() {
     if (!activeTrigger || tooltip.hidden) return
+    if (!activeTrigger.isConnected) return hideTooltip()
     const triggerRect = activeTrigger.getBoundingClientRect()
     const tooltipRect = tooltip.getBoundingClientRect()
     const gap = 8
@@ -56,7 +57,7 @@
 
   function showTooltip(trigger) {
     const label = prepareTrigger(trigger)
-    if (!label) return
+    if (!label) return hideTooltip()
     if (activeTrigger && activeTrigger !== trigger) activeTrigger.removeAttribute('aria-describedby')
     activeTrigger = trigger
     tooltip.textContent = label
@@ -94,6 +95,10 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') hideTooltip()
   })
+  document.addEventListener('pointerdown', () => hideTooltip(), true)
+  new MutationObserver(() => {
+    if (activeTrigger && !activeTrigger.isConnected) hideTooltip()
+  }).observe(document.body, { childList: true, subtree: true })
   document.addEventListener('scroll', positionTooltip, true)
   window.addEventListener('resize', positionTooltip)
 })()

@@ -1,4 +1,7 @@
 (() => {
+  for (const button of document.querySelectorAll('[data-row-select-demo]')) {
+    button.addEventListener('click', () => button.setAttribute('aria-pressed', String(button.getAttribute('aria-pressed') !== 'true')))
+  }
   for (const demo of document.querySelectorAll('.component-workflow-demo')) {
     const previous = demo.querySelector('[data-component-workflow-previous]')
     const approve = demo.querySelector('[data-component-workflow-approve]')

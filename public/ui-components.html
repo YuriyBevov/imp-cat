@@ -32,12 +32,32 @@
 
       <div class="components-list">
         <details class="component-section" open>
+          <summary class="component-section__summary">
+            <span>Сегменты на сетке</span>
+            <code>SceneObject / ContentBoundary</code>
+          </summary>
+          <div class="component-section__body">
+            <div class="component-meta">
+              <span class="component-status">Согласовано</span>
+              <p>Минимальная рамка — одна клетка 17 × 17 px. Размеры округляются вверх до целых клеток, все края совпадают с линиями сетки. Короткий текст и пустая ячейка занимают полную область.</p>
+            </div>
+            <div class="component-grid-demo">
+              <div class="content-boundary" style="left: 0; top: 0; width: 272px; height: 136px;"></div>
+              <article class="scene-object" data-type="text" style="left: 17px; top: 17px; width: 17px; height: 17px; font-size: 8px;"><div class="scene-object__content">A</div></article>
+              <article class="scene-object" data-type="text" style="left: 17px; top: 51px; width: 238px; height: 34px; font-size: 12px;"><div class="scene-object__content">Многострочный текст занимает две клетки по высоте</div></article>
+              <article class="scene-object" data-type="table_cell" style="left: 17px; top: 85px; width: 119px; height: 17px; font-size: 10px;"><div class="scene-object__content">Ячейка таблицы</div></article>
+              <article class="scene-object" data-type="table_cell" style="left: 136px; top: 85px; width: 119px; height: 17px;"><div class="scene-object__content"></div></article>
+            </div>
+          </div>
+        </details>
+
+        <details class="component-section" open>
           <summary class="component-section__summary"><span>Видимость типов сегментов</span><code>SegmentTypeLabelsToggle</code></summary>
           <div class="component-section__body">
-            <div class="component-meta"><span class="component-status">Согласовано</span><p>Иконная кнопка этапа «Макет» скрывает служебные подписи типов сегментов и повторным нажатием возвращает их. Иконка и адаптивный тултип всегда обозначают следующее доступное действие.</p></div>
+            <div class="component-meta"><span class="component-status">Согласовано</span><p>Иконная кнопка этапа «Макет» скрывает служебные подписи типов сегментов и повторным нажатием возвращает их. Обычный глаз означает, что подписи видны; перечёркнутый — скрыты. Тултип обозначает действие следующего нажатия.</p></div>
             <div class="component-control-demo">
-              <button class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye-off"></use></svg></button>
-              <button class="icon-button is-active" type="button" aria-label="Показать типы сегментов" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye"></use></svg></button>
+              <button class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye"></use></svg></button>
+              <button class="icon-button is-active" type="button" aria-label="Показать типы сегментов" aria-pressed="true"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye-off"></use></svg></button>
             </div>
           </div>
         </details>
@@ -191,6 +211,8 @@
             </div>
             <div class="component-control-demo">
               <button id="component-tooltip-demo" class="icon-button" type="button" aria-label="Пример тултипа"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-wand"></use></svg></button>
+              <button class="icon-button icon-button--tiny icon-button--filled" type="button" aria-label="Переместить" data-tooltip="off"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-grip-vertical"></use></svg></button>
+              <span>Маркер перемещения без всплывающей подсказки</span>
             </div>
           </div>
         </details>
@@ -271,10 +293,44 @@
           </div>
         </details>
 
-        <details class="component-section"><summary class="component-section__summary"><span>Таблица</span><code>TableTools</code></summary>
-          <details class="layout-card table-tools" open><summary>Таблица</summary><p class="note note--info note--compact">Пустые ячейки сохраняются; ширина меняется для всей колонки.</p>
+        <details class="component-section"><summary class="component-section__summary"><span>Таблица</span><code>TableTools · ContextMenu · TableRowSelector</code></summary>
+          <p class="note note--info note--compact">Правый щелчок по ячейке открывает меню. Размеры меняются маркерами прямо на макете; строка копируется и вставляется выше или ниже нужной ячейки.</p>
+          <div style="position: relative; height: 110px; margin: 20px;">
+            <article class="scene-object is-selected is-primary-selected" data-type="table_cell" style="left: 0; top: 0; width: 204px; height: 68px; font-size: 14px;" tabindex="0" aria-haspopup="menu">
+              <div class="scene-object__content">Выбранная ячейка</div>
+              <span class="scene-object__resize table-cell-resize table-cell-resize--column" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Ширина колонки — маркер" aria-valuenow="204" aria-valuemin="17"></span>
+              <span class="scene-object__resize table-cell-resize table-cell-resize--row" role="separator" tabindex="0" aria-orientation="horizontal" aria-label="Высота строки — маркер" aria-valuenow="68" aria-valuemin="17"></span>
+            </article>
+          </div>
+          <p class="note note--info note--compact">Номера строк: Shift выделяет диапазон, Ctrl / Cmd добавляет отдельные строки. «Перенести выделенные строки…» позволяет выбрать другую рабочую область. Продолжение остаётся частью единой таблицы.</p>
+          <div><button class="button table-row-selector" data-row-select-demo type="button" aria-label="Выделить строку 1 — пример" aria-pressed="false">1</button> <button class="button table-row-selector" data-row-select-demo type="button" aria-label="Выделить строку 2 — пример" aria-pressed="true">2</button></div>
+          <div class="context-menu context-menu--example" role="menu" aria-label="Действия с таблицей — пример">
+            <div class="context-menu__title" role="presentation">Строка 1 · колонка A</div>
+            <button class="context-menu__item" type="button" role="menuitem">Вырезать строку</button>
+            <button class="context-menu__item" type="button" role="menuitem">Копировать строку</button>
+            <button class="context-menu__item" type="button" role="menuitem">Вставить строку выше</button>
+            <button class="context-menu__item" type="button" role="menuitem">Вставить строку ниже</button>
+            <div class="context-menu__separator" role="separator"></div>
+            <button class="context-menu__item" type="button" role="menuitem">Строка выше</button>
+            <button class="context-menu__item" type="button" role="menuitem">Строка ниже</button>
+            <button class="context-menu__item" type="button" role="menuitem">Колонка слева</button>
+            <button class="context-menu__item" type="button" role="menuitem">Колонка справа</button>
+            <div class="context-menu__separator" role="separator"></div>
+            <button class="context-menu__item" type="button" role="menuitem">Выделить строку</button>
+            <button class="context-menu__item" type="button" role="menuitem">Выделить строки отсюда до конца</button>
+            <button class="context-menu__item" type="button" role="menuitem">Перенести выделенные строки…</button>
+            <button class="context-menu__item" type="button" role="menuitem">Выделить колонку</button>
+            <button class="context-menu__item" type="button" role="menuitem">Выделить таблицу</button>
+            <button class="context-menu__item" type="button" role="menuitem">Объединить ячейки</button>
+            <button class="context-menu__item" type="button" role="menuitem" disabled>Разделить ячейку</button>
+            <button class="context-menu__item" type="button" role="menuitem">Выровнять сетку по тексту</button>
+            <div class="context-menu__separator" role="separator"></div>
+            <button class="context-menu__item context-menu__item--danger" type="button" role="menuitem">Удалить строку</button>
+            <button class="context-menu__item context-menu__item--danger" type="button" role="menuitem">Исключить таблицу из сборки</button>
+          </div>
+          <details class="layout-card table-tools" open><summary>Таблица</summary><label>Таблицы документа<select aria-label="Таблицы документа — пример"><option>Таблица 1 · стр. 1 · 3 × 3</option></select></label><strong>Новая таблица</strong>
           <div class="table-tools__grid"><label>Строк<input type="number" min="1" value="3" /></label><label>Колонок<input type="number" min="1" value="3" /></label></div>
-          <button class="button" type="button" disabled>Создать таблицу</button><details><summary>Адрес и объединение ячейки</summary><p>Строка 1, колонка 1</p></details></details>
+          <button class="button" type="button">Указать место на странице</button><p class="note note--info note--compact">Щёлкните в макете, чтобы поставить верхний левый угол таблицы. Зелёная сетка — место свободно, красная — занято или за границей. Esc — отмена.</p></details>
         </details>
 
         <details class="component-section">

@@ -398,7 +398,8 @@
   // Input boxes have already been measured by the rendering engine. Keep the
   // source column and propagate growth only through vertically related boxes.
   // Page offsets are relative to this source page, never another source page.
-  function layoutSourceFlow(boxes, area, obstacles = []) {
+  function layoutSourceFlow(boxes, area, obstacles = [], gridSize = 0) {
+    const snapY = value => gridSize > 0 ? area.y + Math.ceil((value - area.y) / gridSize - 1e-6) * gridSize : value;
     const horizontalOverlap = (a, b) => a.x < b.x + b.width - .01 && a.x + a.width > b.x + .01;
     const ordered = [...boxes].sort((a, b) => a.anchor.y - b.anchor.y
       || a.anchor.x - b.anchor.x || (a.order || 0) - (b.order || 0));
@@ -423,6 +424,7 @@
         const sourceGap = Math.max(0, band.y - predecessor.anchor.y - predecessor.anchor.height);
         y = Math.max(y, predecessor.y + predecessor.height + sourceGap);
       }
+      y = snapY(y);
       const positioned = band.boxes.map(box => ({ ...box, x: clamp(box.x, area.x, area.x + area.width - box.width) }));
       const firstOnPage = () => [...placed.filter(item => item.pageOffset === pageOffset), ...(pageOffset === 0 ? obstacles : [])];
       const moveBelowBlockers = () => {
@@ -430,7 +432,7 @@
           const blockers = firstOnPage().filter(item => positioned.some(box => horizontalOverlap(box, item)
             && y < item.y + item.height - .01 && y + rowHeight > item.y + .01));
           if (!blockers.length) break;
-          y = Math.max(...blockers.map(item => item.y + item.height + 2));
+          y = snapY(Math.max(...blockers.map(item => item.y + item.height + (gridSize ? 0 : 2))));
         }
       };
       moveBelowBlockers();
@@ -604,6 +606,81 @@
     return candidates[0]?.rectangle || null;
   }
 
+  // Find a translation of a rigid selection, preserving every rectangle and
+  // the space between them. Touching edges are allowed; overlap is not.
+  function findNearestFreePlacement(objects, obstacles, area, step = 17) {
+    if (!objects.length) return null;
+    const visualRectangle = object => {
+      const angle = (Number(object.rotation) || 0) * Math.PI / 180;
+      if (!angle) return object;
+      const width = Math.abs(Math.cos(angle)) * object.width + Math.abs(Math.sin(angle)) * object.height;
+      const height = Math.abs(Math.sin(angle)) * object.width + Math.abs(Math.cos(angle)) * object.height;
+      return { x: object.x + (object.width - width) / 2, y: object.y + (object.height - height) / 2, width, height };
+    };
+    const left = Math.min(...objects.map(object => object.x));
+    const top = Math.min(...objects.map(object => object.y));
+    const storedRight = Math.max(...objects.map(object => object.x + object.width));
+    const storedBottom = Math.max(...objects.map(object => object.y + object.height));
+    objects = objects.map(visualRectangle);
+    obstacles = obstacles.map(visualRectangle);
+    const spacing = Math.max(1, Number(step) || 17);
+    const ceilGrid = (value, origin) => origin + Math.ceil((value - origin) / spacing - 1e-6) * spacing;
+    const floorGrid = (value, origin) => origin + Math.floor((value - origin) / spacing + 1e-6) * spacing;
+    const minX = ceilGrid(area.x + Math.max(0, left - Math.min(...objects.map(object => object.x))), area.x);
+    const minY = ceilGrid(area.y + Math.max(0, top - Math.min(...objects.map(object => object.y))), area.y);
+    const maxX = floorGrid(area.x + area.width - Math.max(storedRight - left, ...objects.map(object => object.x + object.width - left)), area.x);
+    const maxY = floorGrid(area.y + area.height - Math.max(storedBottom - top, ...objects.map(object => object.y + object.height - top)), area.y);
+    if (maxX < minX || maxY < minY) return null;
+    const valid = (x, y) => objects.every(object => !obstacles.some(obstacle => (
+      object.x + x - left < obstacle.x + obstacle.width - 1e-6
+      && object.x + x - left + object.width > obstacle.x + 1e-6
+      && object.y + y - top < obstacle.y + obstacle.height - 1e-6
+      && object.y + y - top + object.height > obstacle.y + 1e-6
+    )));
+    const desiredX = clamp(area.x + Math.round((left - area.x) / spacing) * spacing, minX, maxX);
+    const desiredY = clamp(area.y + Math.round((top - area.y) / spacing) * spacing, minY, maxY);
+    if (valid(desiredX, desiredY)) return { x: desiredX, y: desiredY, dx: desiredX - left, dy: desiredY - top };
+    const xs = [];
+    for (let x = minX; x <= maxX + 1e-6; x += spacing) xs.push(x);
+    xs.sort((a, b) => Math.abs(a - left) - Math.abs(b - left) || a - b);
+    let best = null, distance = Infinity;
+    for (const x of xs) {
+      if ((x - left) ** 2 > distance) break;
+      // At each grid X, forbidden open Y intervals are merged. Only the
+      // adjacent grid lines can contain the nearest free placement.
+      const blocked = [];
+      for (const object of objects) for (const obstacle of obstacles) {
+        if (object.x + x - left >= obstacle.x + obstacle.width - 1e-6
+          || object.x + x - left + object.width <= obstacle.x + 1e-6) continue;
+        blocked.push({ start: obstacle.y - (object.y - top) - object.height,
+          end: obstacle.y + obstacle.height - (object.y - top) });
+      }
+      blocked.sort((a, b) => a.start - b.start);
+      const merged = [];
+      for (const interval of blocked) {
+        const previous = merged.at(-1);
+        if (previous && interval.start < previous.end - 1e-6) previous.end = Math.max(previous.end, interval.end);
+        else merged.push({ ...interval });
+      }
+      const ys = new Set([desiredY, minY, maxY]);
+      for (const interval of merged) {
+        const before = floorGrid(interval.start, area.y), after = ceilGrid(interval.end, area.y);
+        if (before >= minY && before <= maxY) ys.add(before);
+        if (after >= minY && after <= maxY) ys.add(after);
+      }
+      for (const y of ys) {
+        const candidateDistance = (x - left) ** 2 + (y - top) ** 2;
+        if (candidateDistance > distance) continue;
+        if (merged.some(interval => y > interval.start + 1e-6 && y < interval.end - 1e-6)) continue;
+        if (candidateDistance < distance || !best || y < best.y || (y === best.y && x < best.x)) {
+          best = { x, y, dx: x - left, dy: y - top };
+          distance = candidateDistance;
+        }
+      }
+    }
+    return best;
+  }
+
   return {
     captureZoomAnchor,
     alignTableColumnsToGrid,
@@ -611,6 +688,7 @@
     createSegmentMergePlan,
     findSegmentOverlaps,
     findNearestFreeGridRect,
+    findNearestFreePlacement,
     layoutSourceFlow,
     getFlowPageCount,
     getFlowPagePlacement,

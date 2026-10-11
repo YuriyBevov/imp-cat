@@ -121,7 +121,6 @@
     instructionPresetEditSave: $('#instruction-preset-edit-save'),
     objectInspector: $('#object-inspector'),
     objectType: $('#object-type'),
-    tableCellFields: $('#table-cell-fields'), tableId: $('#table-id'), tableRow: $('#table-row'), tableColumn: $('#table-column'), tableRowSpan: $('#table-row-span'), tableColumnSpan: $('#table-column-span'),
     sourceText: $('#source-text'), translationText: $('#translation-text'), confidence: $('#confidence-value'), segmentNote: $('#segment-note'),
     segmentGridCoordinates: $('#segment-grid-coordinates'),
     lineHeightDecrease: $('#line-height-decrease'), lineHeight: $('#line-height'), lineHeightIncrease: $('#line-height-increase'),
@@ -189,6 +188,12 @@
     saveTimer: null,
     textCheckpoint: false,
     pointerAction: null,
+    tablePlacement: null,
+    tableRowTransfer: null,
+    tableRowSelectionAnchor: null,
+    tableRowClipboard: null,
+    tableMenuAnchorId: null,
+    tableMenuScroll: null,
     segmentSplitObjectId: null,
     toastTimer: null,
     qaPanelCloseTimer: null,
@@ -346,7 +351,7 @@
     const label = hidden ? 'Показать типы сегментов' : 'Скрыть типы сегментов'
     elements.segmentTypeLabelsToggle.setAttribute('aria-label', label)
     elements.segmentTypeLabelsToggle.title = label
-    elements.segmentTypeLabelsToggle.innerHTML = iconMarkup(hidden ? 'eye' : 'eye-off')
+    elements.segmentTypeLabelsToggle.innerHTML = iconMarkup(hidden ? 'eye-off' : 'eye')
   }
 
   function toggleSegmentTypeLabels() {
@@ -361,6 +366,7 @@
     const stage = Math.max(1, Math.min(3, Math.trunc(Number(nextStage) || 1)))
     const changed = stage !== state.workflowStage
     if (changed) {
+      cancelTablePlacement()
       state.textCheckpoint = false
       refreshUndoButtons()
     }
@@ -506,7 +512,7 @@
     exportActions.append(elements.exportDocx, elements.exportPdf)
     finalTestingTools.prepend(exportActions)
     const tableTools = $('#table-tools')
-    $('#table-address-editor').append(elements.tableCellFields)
+    tableTools.append(elements.exclude)
     const currentNodes = [...elements.objectInspector.children].filter(node => node !== tableTools)
     const typographySelectionToolbar = elements.objectInspector.querySelector('.typography-selection-toolbar')
     const typography = elements.objectInspector.querySelector('.typography-card')
@@ -1103,6 +1109,8 @@
   }
 
   async function activateTab(key, forceReload = false) {
+    closeTableContextMenu()
+    cancelTablePlacement()
     const tab = state.tabs.get(key)
     if (!tab) return
     const activationRevision = ++state.tabActivationRevision
@@ -1604,18 +1612,36 @@
       return {
         id: key.slice(key.indexOf(':') + 1), pageIndex: cells[0].pageIndex,
         x: left, y: top, width: right - left, height: bottom - top,
-        rowCount: Math.max(...cells.map(cell => cell.rowIndex + (cell.rowSpan || 1))),
+        rowCount: Math.max(...cells.map(cell => cell.rowIndex + (cell.rowSpan || 1))) - Math.min(...cells.map(cell => cell.rowIndex)),
         columnCount: Math.max(...cells.map(cell => cell.columnIndex + (cell.columnSpan || 1))),
         cells: cells.map(cell => ({ objectId: cell.id, rowIndex: cell.rowIndex, columnIndex: cell.columnIndex, rowSpan: cell.rowSpan || 1, columnSpan: cell.columnSpan || 1 })),
       }
     })
   }
 
-  function renderDocument() {
+  function renderDocument(options = {}) {
+    // Rebuilding the canvas destroys pointer capture and the drag's live nodes.
+    if (state.pointerAction) {
+      state.renderAfterPointer = true
+      return
+    }
+    state.renderAfterPointer = false
+    const preserveTableMenu = options.preserveTableMenu && !$('#table-context-menu').hidden
+      && state.workflowStage === 3 && primarySelectedObject()?.id === state.tableMenuAnchorId
+      && state.scene.objects.some(object => object.id === state.tableMenuAnchorId && object.type === 'table_cell' && !object.excluded)
+    const menuScroll = preserveTableMenu ? { left: elements.canvasScroll.scrollLeft, top: elements.canvasScroll.scrollTop } : null
+    if (!preserveTableMenu) closeTableContextMenu()
+    if (state.tablePlacement && (state.tablePlacement.documentId !== state.metadata?.id || state.workflowStage !== 3)) cancelTablePlacement()
+    if (state.tableRowTransfer && (state.tableRowTransfer.documentId !== state.metadata?.id || state.workflowStage !== 3
+      || state.tableRowTransfer.ids.some(id => !state.scene.objects.some(object => object.id === id && !object.excluded)))) cancelTableRowTransfer()
     closeKnowledgeSuggestion()
     const segmentsView = workflowUsesSegments()
     const gridBoundsChanged = segmentsView ? false : normalizeSceneGridBounds()
-    const gridGeometryChanged = segmentsView ? false : snapObjectsToGridCells(state.scene.objects)
+    const gridGeometryBeforeTables = segmentsView ? false : snapObjectsToGridCells(state.scene.objects)
+    const repairedTables = segmentsView ? false : repairTableLayouts()
+    const gridGeometryChanged = (segmentsView ? false : snapObjectsToGridCells(state.scene.objects)) || gridGeometryBeforeTables
+    if (gridBoundsChanged || gridGeometryChanged) state.sceneEditRevision += 1
+    const collisionsChanged = segmentsView ? false : resolveSceneObjectCollisions(options.placementGroups)
     rebuildClientTables()
     renderThumbnails()
     renderWorkflowStageState()
@@ -1646,6 +1672,9 @@
       surface.style.height = segmentsView ? 'auto' : `${page.heightPx}px`
       if (!segmentsView) {
         applyGridToSurface(surface)
+        surface.addEventListener('pointerdown', placeTableFromPointer, true)
+        surface.addEventListener('pointermove', previewTableFromPointer)
+        surface.addEventListener('pointerleave', () => surface.querySelector('.table-placement-preview')?.remove())
         surface.addEventListener('pointerdown', beginMarquee)
       }
 
@@ -1735,13 +1764,19 @@
           if (table.pageIndex !== page.index) continue
           const tableBoundary = document.createElement('div')
           tableBoundary.className = 'table-structure-boundary'
+          tableBoundary.dataset.tableId = table.id
           tableBoundary.title = `Структурная таблица: ${table.rowCount} × ${table.columnCount}`
           Object.assign(tableBoundary.style, {
             left: `${table.x}px`, top: `${table.y}px`, width: `${table.width}px`, height: `${table.height}px`,
           })
-          const label = document.createElement('span')
+          const label = document.createElement('button')
+          label.type = 'button'
+          label.className = 'button table-structure-label'
           label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
-          tableBoundary.append(label)
+          label.setAttribute('aria-label', `Выбрать таблицу ${table.rowCount} × ${table.columnCount} на странице ${page.index + 1}`)
+          label.addEventListener('pointerdown', event => event.stopPropagation())
+          label.addEventListener('click', () => selectTable(table))
+          tableBoundary.append(label, ...createTableRowSelectors(table))
           surface.append(tableBoundary)
         }
 
@@ -1762,7 +1797,11 @@
     refreshSelection()
     refreshTranslationSelectionControls()
     if (!segmentsView) requestAnimationFrame(expandClippedObjects)
-    if (gridBoundsChanged || gridGeometryChanged) scheduleSave()
+    if (menuScroll) {
+      elements.canvasScroll.scrollLeft = menuScroll.left
+      elements.canvasScroll.scrollTop = menuScroll.top
+    }
+    if (gridBoundsChanged || gridGeometryChanged || repairedTables || collisionsChanged) scheduleSave()
   }
 
   function refreshTranslationStaleMarkers() {
@@ -3526,7 +3565,6 @@
   }
 
   function createObjectElement(object, requestedField = null, options = {}) {
-    const displayField = requestedField || objectOutputField(object)
     const editField = requestedField || 'translation'
     const node = document.createElement('article')
     node.className = 'scene-object'
@@ -3539,6 +3577,11 @@
     if (primarySelectedObject()?.id === object.id) node.classList.add('is-primary-selected')
     node.dataset.id = object.id
     node.dataset.type = object.type
+    if (object.type === 'table_cell' && state.workflowStage === 3) {
+      node.tabIndex = 0
+      node.setAttribute('aria-haspopup', 'menu')
+      node.setAttribute('aria-controls', 'table-context-menu')
+    }
     positionObjectNode(node, object)
     node.style.fontFamily = object.style.fontFamily
     node.style.fontSize = `${object.style.fontSizePx}px`
@@ -3565,14 +3608,15 @@
       knowledgeIndicator.addEventListener('click', event => {
         event.preventDefault()
         event.stopPropagation()
-        openKnowledgeSuggestionPopover(event, object.id, knowledgeMatches, displayField)
+        openKnowledgeSuggestionPopover(event, object.id, knowledgeMatches, requestedField || objectOutputField(object))
       })
     }
     const handle = document.createElement('button')
     handle.className = 'icon-button icon-button--tiny icon-button--filled scene-object__handle'
     handle.type = 'button'
     handle.innerHTML = iconMarkup('grip-vertical')
-    handle.title = object.type === 'table_cell' ? 'Переместить таблицу' : 'Переместить'
+    handle.setAttribute('aria-label', object.type === 'table_cell' ? 'Переместить таблицу' : 'Переместить')
+    handle.dataset.tooltip = 'off'
     if (state.workflowStage === 3) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
     content.className = 'scene-object__content'
@@ -3592,7 +3636,7 @@
     }
     content.spellcheck = true
     content.dataset.editField = editField
-    renderTextContent(content, object, displayField, state.workflowStage > 1)
+    renderTextContent(content, object, requestedField, state.workflowStage > 1)
     const contentBadges = createSegmentContentBadges(object, requestedField, options)
     if (canEditText && requestedField === 'translation') content.addEventListener('pointerdown', event => {
       if (String(object.translation || '').length || event.target.closest('button')) return
@@ -3620,7 +3664,9 @@
     if (canEditText) for (const eventName of ['pointerup', 'keyup']) content.addEventListener(eventName, () => rememberTextSelection(content, object.id))
     if (canEditText) content.addEventListener('blur', () => {
       state.textCheckpoint = false
-      renderTextContent(content, object, displayField)
+      // Layout editors may acquire their first translation while mounted.
+      // Resolve the displayed field again instead of restoring the initial source.
+      renderTextContent(content, object, requestedField)
       replaceSegmentContentBadges(node, object, requestedField, options)
       setObjectsKnowledgeEditing([object], false)
       refreshKnowledgeBaseAfterSegmentEdit()
@@ -3629,6 +3675,7 @@
       setObjectsKnowledgeEditing([object], true)
       state.sceneEditRevision += 1
       object[editField] = editableContentText(content)
+      content.dataset.outputField = editField
       const stylesField = editField === 'translation' ? 'translationTextStyles' : 'sourceTextStyles'
       object[stylesField] = extractInlineStyles(content, object[editField])
       if (editField === 'sourceText') {
@@ -3668,8 +3715,11 @@
     node.append(badge, handle)
     if (contentBadges) node.append(contentBadges)
     node.append(content)
+    if (object.type === 'table_cell' && state.workflowStage === 3) {
+      for (const axis of ['column', 'row']) node.append(createTableResizeHandle(object, axis))
+    }
     if (knowledgeIndicator) node.append(knowledgeIndicator)
-    node.append(resize)
+    if (object.type !== 'table_cell') node.append(resize)
     return node
   }
 
@@ -3681,7 +3731,7 @@
   }
 
   function growObjectToContent(node, object) {
-    if (!node || !object || object.manualHeight !== false) return false
+    if (!node || !object || object.type === 'table_cell' || object.manualHeight !== false) return false
     const content = node.querySelector('.scene-object__content')
     if (!content) return false
     // The visible content has min-height: 100%. Measuring that rendered box and
@@ -3702,13 +3752,16 @@
   }
 
   function expandClippedObjects() {
-    if (!state.scene || workflowUsesSegments() || state.scene.layoutInitializationVersion >= 2) return
+    if (!state.scene || state.pointerAction || workflowUsesSegments() || state.scene.layoutInitializationVersion >= 2) return
     let changed = false
     for (const node of elements.canvas.querySelectorAll('.scene-object')) {
       const object = state.scene.objects.find(item => item.id === node.dataset.id)
       if (object && growObjectToContent(node, object)) changed = true
     }
-    if (changed) scheduleSave()
+    if (changed) {
+      if (resolveSceneObjectCollisions()) renderDocument()
+      scheduleSave()
+    }
   }
 
   function gridAvailableBounds(page) {
@@ -3776,10 +3829,8 @@
   function snapObjectToGridCells(object) {
     const page = state.scene?.pages?.[object?.pageIndex]
     if (!object || !page || object.excluded) return false
-    // The grid is a manual positioning aid. Rendering must never enlarge a
-    // measured text box or shift the source anchor to a cell boundary.
-    const horizontal = { position: Math.max(page.contentBounds.x, Math.min(object.x, page.contentBounds.x + page.contentBounds.width - object.width)), length: Math.min(object.width, page.contentBounds.width) }
-    const vertical = { position: Math.max(page.contentBounds.y, Math.min(object.y, page.contentBounds.y + page.contentBounds.height - object.height)), length: Math.min(object.height, page.contentBounds.height) }
+    const horizontal = snapAxisToGridCells(object.x, object.width, page, 'x')
+    const vertical = snapAxisToGridCells(object.y, object.height, page, 'y')
     const changed = Math.abs(object.x - horizontal.position) > 0.001
       || Math.abs(object.y - vertical.position) > 0.001
       || Math.abs(object.width - horizontal.length) > 0.001
@@ -3807,6 +3858,8 @@
   function snapObjectsToGridCells(objects) {
     let changed = false
     for (const object of objects || []) {
+      // Whole table rows are laid out together; per-cell clamping causes overlaps.
+      if (object.type === 'table_cell') continue
       if (snapObjectToGridCells(object)) changed = true
     }
     return changed
@@ -3865,10 +3918,16 @@
         if (!box.tableId) continue
         const object = pageObjects.get(box.id)
         if (!object || (options.preserveManual && object.manualHeight)) continue
-        box.height = Math.max(12, Math.ceil(measureObjectContent(object, box.width).height))
+        box.height = Math.max(17, Math.ceil(measureObjectContent(object, box.width).height / 17) * 17)
+      }
+      for (const box of boxes) {
+        const horizontal = snapAxisToGridCells(box.x, box.width, layoutPage, 'x')
+        box.x = horizontal.position
+        box.width = horizontal.length
+        box.height = Math.max(metrics.size, Math.ceil(box.height / metrics.size - 1e-6) * metrics.size)
       }
       const obstacles = state.scene.objects.filter(object => !object.excluded && object.pageIndex === page.index && !targetIds.has(object.id))
-      const plan = window.ICATLayout.layoutSourceFlow(boxes, layoutPage.contentBounds, obstacles)
+      const plan = window.ICATLayout.layoutSourceFlow(boxes, layoutPage.contentBounds, obstacles, metrics.size)
       plans.push({ page, boxes, targets: pageTargets, ...plan })
       addedPages += plan.pageCount - 1
     }
@@ -4189,19 +4248,22 @@
     const changed = Math.abs(object.width - width) > .5 || Math.abs(object.height - height) > .5
       || Math.abs(object.x - x) > .5 || Math.abs(object.y - y) > .5
     Object.assign(object, { x, y, width, height })
-    return changed
+    return snapObjectToGridCells(object) || changed
   }
 
   function fitObjectGeometryToContent(object, options = {}) {
+    // Table geometry must be changed as a shared grid, never one cell at a time.
+    if (object.type === 'table_cell') return false
     if (!canFitObjectToText(object)) return constrainObjectToWorkArea(object)
     const page = state.scene.pages[object.pageIndex]
     const area = page.contentBounds
     const fitWidth = options.forceWidth || object.manualWidth === false
     const fitHeight = options.forceHeight || object.manualHeight === false
     const natural = fitWidth ? measureObjectContent(object) : null
-    const width = fitWidth
+    const requestedWidth = fitWidth
       ? Math.min(area.width, Math.max(12, Math.min(contentSize(natural.width), Math.max(object.layoutWidthLimit || object.originalBounds?.width || area.width, measureObjectMinContentWidth(object)))))
       : Math.min(area.width, Math.max(12, Number(object.width) || 12))
+    const width = snapAxisToGridCells(object.x, requestedWidth, page, 'x').length
     const wrapped = measureObjectContent(object, width)
     const height = fitHeight
       ? Math.min(area.height, Math.max(12, contentSize(wrapped.height)))
@@ -4214,6 +4276,7 @@
   }
 
   function fitObjectsToRenderedContent(objects, updateNodes = false, options = {}) {
+    if (state.pointerAction) return false
     let changed = false
     for (const object of objects) {
       if (!fitObjectGeometryToContent(object, options)) continue
@@ -4221,6 +4284,26 @@
       if (updateNodes) {
         for (const node of elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)) positionObjectNode(node, object)
       }
+    }
+    if (changed) state.sceneEditRevision += 1
+    if (changed && updateNodes && !workflowUsesSegments()) {
+      const pageCount = state.scene.pages.length
+      if (resolveSceneObjectCollisions()) {
+        if (state.scene.pages.length !== pageCount) renderDocument()
+        else {
+          // Keep the focused editor and its caret mounted while typing.
+          for (const object of state.scene.objects) {
+            for (const node of elements.canvas.querySelectorAll(`[data-id="${CSS.escape(object.id)}"]`)) {
+              const surface = elements.canvas.querySelector(`.studio-page[data-page-index="${object.pageIndex}"]`)
+              if (surface && node.closest('.studio-page') !== surface) surface.append(node)
+              positionObjectNode(node, object)
+            }
+          }
+          rebuildClientTables()
+          refreshSegmentGridCoordinates()
+        }
+      }
+      scheduleSave()
     }
     return changed
   }
@@ -4444,7 +4527,7 @@
   }
 
   function selectFromPointer(event, id) {
-    if (event.button !== 0 || event.target.closest('.scene-object__handle, .scene-object__resize')) return
+    if (event.button !== 0 || event.target.closest('.scene-object__handle, .scene-object__resize, .table-cell-resize')) return
     event.stopPropagation()
     if (state.workflowStage === 2) {
       state.selected = new Set([id])
@@ -4463,7 +4546,7 @@
         state.selected.delete(id)
         state.selected.add(id)
       }
-    } else if (!state.selected.has(id)) {
+    } else if (!state.selected.has(id) || state.scene.objects.find(object => object.id === id)?.type === 'table_cell') {
       state.selected = new Set([id])
     } else {
       state.selected.delete(id)
@@ -4534,8 +4617,12 @@
       row.classList.toggle('is-translation-selected', state.translationSelected.has(objectId))
       row.classList.toggle('is-primary-selected', objectId === primaryId)
     }
+    refreshTableRowSelectors()
     const selection = selectedObjects()
     refreshInspectorSelectionState(selection.length > 0)
+    for (const button of document.querySelectorAll('.fit-size-actions button')) {
+      button.disabled = !selection.length || selection.some(object => object.type === 'table_cell')
+    }
     refreshBatchRevisionControls()
     refreshSegmentGridCoordinates(selection)
     renderInspectorSegmentWorkspace(selection)
@@ -4555,7 +4642,6 @@
     refreshFormattingSelectionToggle()
     refreshTableTools()
     elements.segmentNote.hidden = true
-    elements.tableCellFields.hidden = !selection.length || selection.some(item => item.type !== 'table_cell')
     if (!selection.length) {
       elements.objectType.value = ''
       elements.sourceText.value = ''
@@ -4566,13 +4652,7 @@
     }
     const first = selection[0]
     setMixedControl(elements.objectType, selection.map(item => item.type))
-    if (!elements.tableCellFields.hidden) {
-      setMixedControl(elements.tableId, selection.map(item => item.tableId || ''))
-      setMixedControl(elements.tableRow, selection.map(item => (item.rowIndex ?? 0) + 1))
-      setMixedControl(elements.tableColumn, selection.map(item => (item.columnIndex ?? 0) + 1))
-      setMixedControl(elements.tableRowSpan, selection.map(item => item.rowSpan || 1))
-      setMixedControl(elements.tableColumnSpan, selection.map(item => item.columnSpan || 1))
-    }
+
     setMixedControl(elements.sourceText, selection.map(item => item.sourceText))
     setMixedControl(elements.translationText, selection.map(item => item.translation))
     elements.translationText.disabled = false
@@ -4904,6 +4984,76 @@
       : `${horizontal ? 'Горизонтальная' : 'Вертикальная'} расстановка применена`)
   }
 
+  function resolveSceneObjectCollisions(placementGroups = []) {
+    const findPlacement = window.ICATLayout?.findNearestFreePlacement
+    if (!findPlacement) return false
+    const units = new Map()
+    for (const object of state.scene.objects) {
+      if (object.excluded) continue
+      const key = object.type === 'table_cell' && object.tableId ? `table:${object.pageIndex}:${object.tableId}` : `object:${object.id}`
+      if (!units.has(key)) units.set(key, [])
+      units.get(key).push(object)
+    }
+    let groups = [...units.values()]
+    for (const ids of placementGroups) {
+      const selected = new Set(ids)
+      for (const pageIndex of new Set(groups.flat().filter(object => selected.has(object.id)).map(object => object.pageIndex))) {
+        const matching = groups.filter(group => group[0].pageIndex === pageIndex && group.some(object => selected.has(object.id)))
+        groups = groups.filter(group => !matching.includes(group))
+        if (matching.length) groups.push(matching.flat())
+      }
+    }
+    groups.sort((a, b) => Number(a.some(object => state.selected.has(object.id))) - Number(b.some(object => state.selected.has(object.id))))
+    const placed = []
+    let changed = false
+    for (const objects of groups) {
+      const sourcePage = state.scene.pages[objects[0].pageIndex]
+      if (!sourcePage) continue
+      const ids = new Set(objects.map(object => object.id))
+      let destination = sourcePage
+      let placement = findPlacement(objects, placed.filter(object => object.pageIndex === sourcePage.index), sourcePage.contentBounds, currentGridSize(sourcePage))
+      if (!placement) {
+        const pages = [...state.scene.pages].filter(page => page !== sourcePage)
+          .sort((a, b) => Math.abs(a.index - sourcePage.index) - Math.abs(b.index - sourcePage.index) || b.index - a.index)
+        for (const page of pages) {
+          const obstacles = state.scene.objects.filter(object => !object.excluded && !ids.has(object.id) && object.pageIndex === page.index)
+          placement = findPlacement(objects, obstacles, page.contentBounds, currentGridSize(page))
+          if (placement) { destination = page; break }
+        }
+      }
+      if (!placement && state.scene.pages.length < 400) {
+        placement = findPlacement(objects, [], sourcePage.contentBounds, currentGridSize(sourcePage))
+        if (placement) destination = addBlankPageAt(sourcePage.index + 1, sourcePage)
+      }
+      if (!placement) {
+        // A rigid multi-selection may exceed a destination's full work area.
+        // Keep tables intact, but place independent segments separately.
+        const separate = new Map()
+        for (const object of objects) {
+          const key = object.type === 'table_cell' ? object.tableId : object.id
+          if (!separate.has(key)) separate.set(key, [])
+          separate.get(key).push(object)
+        }
+        if (separate.size > 1) { groups.push(...separate.values()); continue }
+        showToast('Для сегмента недостаточно места в рабочей области', true)
+        placed.push(...objects)
+        continue
+      }
+      for (const object of objects) {
+        if (Math.abs(placement.dx) > .001 || Math.abs(placement.dy) > .001 || object.pageIndex !== destination.index) {
+          object.x += placement.dx
+          object.y += placement.dy
+          object.pageIndex = destination.index
+          object.manualPosition = true
+          changed = true
+        }
+      }
+      placed.push(...objects)
+    }
+    if (changed) state.sceneEditRevision += 1
+    return changed
+  }
+
   function cancelPointerAction() {
     const action = state.pointerAction
     if (!action) return
@@ -4915,6 +5065,12 @@
     const pointerId = event.pointerId
     let active = true
     let lastEvent = event
+    state.sceneEditRevision += 1
+    const complete = (handler, current) => {
+      state.sceneEditRevision += 1
+      handler?.(current)
+      if (state.renderAfterPointer) renderDocument()
+    }
     const cleanup = () => {
       if (!active) return
       active = false
@@ -4938,17 +5094,17 @@
       lastEvent = current
       handlers.move?.(current)
       cleanup()
-      handlers.commit?.(current)
+      complete(handlers.commit, current)
     }
     const commitLatest = current => {
       if (!active || (current?.pointerId != null && current.pointerId !== pointerId)) return
       cleanup()
-      handlers.commit?.(lastEvent)
+      complete(handlers.commit, lastEvent)
     }
     const cancel = current => {
       if (!active || (current?.pointerId != null && current.pointerId !== pointerId)) return
       cleanup()
-      handlers.cancel?.(lastEvent)
+      complete(handlers.cancel, lastEvent)
     }
     action.cancel = () => cancel(null)
     action.updateFromScroll = () => { if (active) handlers.move?.(lastEvent) }
@@ -5037,11 +5193,11 @@
       action.lastY = current.clientY
       const deltaX = (current.clientX - start.x + elements.canvasScroll.scrollLeft - start.scrollLeft) / state.zoom
       const deltaY = (current.clientY - start.y + elements.canvasScroll.scrollTop - start.scrollTop) / state.zoom
+      const anchor = snapDragPositionToGridCells(objects[0], originBounds.left + deltaX, originBounds.top + deltaY)
       for (const object of objects) {
         const origin = origins.get(object.id)
-        const position = snapDragPositionToGridCells(object, origin.x + deltaX, origin.y + deltaY)
-        object.x = position.x
-        object.y = position.y
+        object.x = origin.x + anchor.x - originBounds.left
+        object.y = origin.y + anchor.y - originBounds.top
         const node = elements.canvas.querySelector(`[data-id="${CSS.escape(object.id)}"]`)
         if (node) positionObjectNode(node, object)
       }
@@ -5067,7 +5223,7 @@
         const origin = origins.get(object.id)
         if (!origin || object.pageIndex !== origin.pageIndex || Math.abs(object.x - origin.x) > .5 || Math.abs(object.y - origin.y) > .5) object.manualPosition = true
       }
-      renderDocument()
+      renderDocument({ placementGroups: [objects.map(object => object.id)] })
       scheduleSave()
     }
     const cancel = () => {
@@ -5178,8 +5334,10 @@
     const update = current => {
       const page = state.scene.pages[object.pageIndex]
       const area = page.contentBounds
-      object.width = Math.min(area.x + area.width - object.x, Math.max(0, start.width + (current.clientX - start.x) / state.zoom))
-      object.height = Math.min(area.y + area.height - object.y, Math.max(0, start.height + (current.clientY - start.y) / state.zoom))
+      const step = currentGridSize(page)
+      const snapSize = (value, maximum) => Math.min(maximum, Math.max(step, Math.ceil(value / step - 1e-6) * step))
+      object.width = snapSize(start.width + (current.clientX - start.x) / state.zoom, area.x + area.width - object.x)
+      object.height = snapSize(start.height + (current.clientY - start.y) / state.zoom, area.y + area.height - object.y)
       if (objectNode) positionObjectNode(objectNode, object)
       refreshSegmentGridCoordinates()
     }
@@ -5189,7 +5347,7 @@
       if (Math.abs(object.width - start.width) > .5) object.manualWidth = true
       if (Math.abs(object.height - start.height) > .5) object.manualHeight = true
       if (objectNode) positionObjectNode(objectNode, object)
-      refreshSelection()
+      renderDocument()
       scheduleSave()
     }
     const cancel = () => {
@@ -5267,6 +5425,7 @@
 
   function checkpoint() {
     if (!state.scene) return
+    state.sceneEditRevision += 1
     state.history.push(createHistorySnapshot())
     if (state.history.length > 60) state.history.shift()
     state.future = []
@@ -5284,6 +5443,7 @@
   }
 
   function restoreHistorySnapshot(snapshot) {
+    state.sceneEditRevision += 1
     const normalized = typeof snapshot === 'string' ? { scene: snapshot } : snapshot
     state.scene = JSON.parse(normalized.scene)
     state.scene.workflowStage = state.workflowStage
@@ -5957,21 +6117,8 @@
   }
 
   function addBlankPageAt(insertIndex, reference) {
-    const blankPage = {
-      index: insertIndex,
-      sourcePageIndex: null,
-      isAdded: true,
-      widthPx: reference.widthPx,
-      heightPx: reference.heightPx,
-      sourceWidth: reference.sourceWidth || reference.widthPx,
-      sourceHeight: reference.sourceHeight || reference.heightPx,
-      imageUrl: null,
-      sourceFrame: { x: 0, y: 0, width: reference.widthPx, height: reference.heightPx },
-      contentBounds: { ...reference.contentBounds },
-      gridAvailableBounds: { ...gridAvailableBounds(reference) },
-      languages: [],
-      recognitionStats: { manualPage: true },
-    }
+    const blankPage = window.IcatTableModel.createContinuationPage(reference, insertIndex)
+    delete blankPage.layoutContinuation
     state.scene.pages.splice(insertIndex, 0, blankPage)
     for (const object of state.scene.objects) {
       if (object.pageIndex >= insertIndex) object.pageIndex += 1
@@ -6470,78 +6617,701 @@
 
   let tableObjectSequence = 0
   const tableObjectId = () => `table-cell-${Date.now().toString(36)}-${++tableObjectSequence}`
+  function repairTableLayouts() {
+    let changed = false
+    const failed = new Set()
+    // Repair old saved overlaps and overflow before rendering, never by
+    // independently pushing every cell against the bottom of the page.
+    for (let pass = 0; pass < 400; pass++) {
+      const groups = new Map()
+      for (const cell of state.scene.objects) {
+        if (cell.excluded || cell.type !== 'table_cell' || !cell.tableId) continue
+        const key = `${cell.pageIndex}:${cell.tableId}`
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(cell)
+      }
+      const invalid = [...groups.entries()].find(([key, cells]) => {
+        if (failed.has(key)) return false
+        const area = state.scene.pages[cells[0].pageIndex]?.contentBounds
+        if (!area) return false
+        const aligned = value => Math.abs(value / 17 - Math.round(value / 17)) < .000001
+        return cells.some(cell => cell.x < area.x - .01 || cell.y < area.y - .01 || cell.x + cell.width > area.x + area.width + .01 || cell.y + cell.height > area.y + area.height + .01)
+          || cells.some(cell => cell.width < 17 || cell.height < 17 || !aligned(cell.x - area.x) || !aligned(cell.y - area.y) || !aligned(cell.width) || !aligned(cell.height))
+          || cells.some((a, i) => cells.slice(i + 1).some(b => a.x < b.x + b.width - .01 && a.x + a.width > b.x + .01 && a.y < b.y + b.height - .01 && a.y + a.height > b.y + .01))
+      })
+      if (!invalid) break
+      const [key, cells] = invalid
+      try {
+        const grid = window.IcatTableModel.geometry(cells), area = state.scene.pages[cells[0].pageIndex].contentBounds
+        const fitted = fitTableCellsToText(window.IcatTableModel.snapToGrid(cells, area))
+        const repaired = window.IcatTableModel.reflowRows(state.scene, cells, fitted, { at: grid.firstRow })
+        const liveObjects = new Map(state.scene.objects.map(object => [object.id, object]))
+        Object.assign(state.scene, repaired, { objects: repaired.objects.map(object => Object.assign(liveObjects.get(object.id) || {}, object)) })
+        reindexScenePages()
+        changed = true
+      } catch (error) {
+        failed.add(key)
+        if (state.tableLayoutError !== `${key}:${error.message}`) showToast(error.message, true)
+        state.tableLayoutError = `${key}:${error.message}`
+      }
+    }
+    if (changed) state.sceneEditRevision += 1
+    return changed
+  }
+
+  function selectTableRows(cells, ids, primaryId = ids.at(-1)) {
+    const chosen = window.IcatTableModel.selectedRows(cells, ids)
+    const selectedIds = chosen.cells.map(cell => cell.id)
+    state.selected = new Set([...selectedIds.filter(id => id !== primaryId), ...(selectedIds.includes(primaryId) ? [primaryId] : [])])
+    state.activePage = cells[0].pageIndex
+    refreshSelection()
+  }
+
+  function createTableRowSelectors(table) {
+    const cells = state.scene.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === table.id && cell.pageIndex === table.pageIndex)
+    try {
+      const grid = window.IcatTableModel.geometry(cells)
+      return Array.from({ length: grid.rows }, (_, index) => {
+        const row = grid.firstRow + index
+        const covering = cells.filter(cell => cell.rowIndex <= row && row < cell.rowIndex + (cell.rowSpan || 1))
+        if (!covering.length) return null
+        const y = Math.min(...covering.map(cell => cell.y + (row - cell.rowIndex) * cell.height / (cell.rowSpan || 1)))
+        const height = Math.max(17, Math.min(...covering.map(cell => cell.height / (cell.rowSpan || 1))))
+        const button = document.createElement('button')
+        button.type = 'button'; button.className = 'button table-row-selector'
+        button.dataset.tableId = table.id; button.dataset.pageIndex = table.pageIndex; button.dataset.rowIndex = row
+        button.textContent = row + 1
+        button.setAttribute('aria-label', `Выделить строку ${row + 1} таблицы на странице ${table.pageIndex + 1}`)
+        button.setAttribute('aria-pressed', 'false')
+        button.title = 'Выделить строку: Shift — диапазон, Ctrl / Cmd — отдельные строки'
+        Object.assign(button.style, { top: `${y - table.y}px`, height: `${height}px` })
+        button.addEventListener('pointerdown', event => event.stopPropagation())
+        const rowIds = () => covering.map(cell => cell.id)
+        button.addEventListener('click', event => {
+          const previous = state.tableRowSelectionAnchor
+          let ids = rowIds()
+          if (event.shiftKey && previous?.tableId === table.id && previous.pageIndex === table.pageIndex) {
+            const first = Math.min(previous.row, row), last = Math.max(previous.row, row)
+            ids = cells.filter(cell => cell.rowIndex <= last && cell.rowIndex + (cell.rowSpan || 1) > first).map(cell => cell.id)
+          } else if (event.ctrlKey || event.metaKey) {
+            const current = [...state.selected].filter(id => cells.some(cell => cell.id === id))
+            const group = window.IcatTableModel.selectedRows(cells, ids).cells.map(cell => cell.id)
+            ids = group.every(id => state.selected.has(id)) ? current.filter(id => !group.includes(id)) : [...current, ...group]
+          }
+          if (!event.shiftKey) state.tableRowSelectionAnchor = { tableId: table.id, pageIndex: table.pageIndex, row }
+          if (ids.length) selectTableRows(cells, ids, ids.includes(covering[0]?.id) ? covering[0].id : ids.at(-1))
+          else { state.selected.clear(); refreshSelection() }
+        })
+        button.addEventListener('contextmenu', event => {
+          event.preventDefault(); event.stopPropagation()
+          if (!rowIds().every(id => state.selected.has(id))) selectTableRows(cells, rowIds(), covering[0].id)
+          openTableContextMenu(covering[0].id, { x: event.clientX, y: event.clientY })
+        })
+        button.addEventListener('keydown', event => {
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault(); if (!rowIds().every(id => state.selected.has(id))) selectTableRows(cells, rowIds(), covering[0].id); openTableContextMenu(covering[0].id)
+          }
+        })
+        return button
+      }).filter(Boolean)
+    } catch { return [] }
+  }
+
+  function refreshTableRowSelectors() {
+    for (const button of elements.canvas.querySelectorAll('.table-row-selector')) {
+      const row = Number(button.dataset.rowIndex)
+      const cells = state.scene.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === button.dataset.tableId
+        && cell.pageIndex === Number(button.dataset.pageIndex) && cell.rowIndex <= row && row < cell.rowIndex + (cell.rowSpan || 1))
+      button.setAttribute('aria-pressed', String(cells.length > 0 && cells.every(cell => state.selected.has(cell.id))))
+    }
+  }
+
+  function cancelTableRowTransfer() {
+    state.tableRowTransfer = null
+    elements.canvas.classList.remove('is-transferring-table-rows')
+    $('#table-transfer-hint').hidden = true
+    $('#table-transfer-cancel').hidden = true
+  }
+
+  function beginTableRowTransfer() {
+    const cells = selectedTableCells()
+    if (!cells.length) return
+    const chosen = window.IcatTableModel.selectedRows(cells, [...state.selected])
+    cancelPointerAction(); cancelTablePlacement(); closeTableContextMenu()
+    selectTableRows(cells, chosen.cells.map(cell => cell.id), primarySelectedObject()?.id)
+    state.tableRowTransfer = { ids: chosen.cells.map(cell => cell.id), sourceId: cells[0].id, documentId: state.metadata?.id }
+    elements.canvas.classList.add('is-transferring-table-rows')
+    const hint = $('#table-transfer-hint')
+    hint.textContent = `Выбрано строк: ${chosen.rows.length}. Щёлкните в нужной рабочей области, чтобы перенести продолжение таблицы. Щелчок по ячейке вставляет строки перед ней. Esc — отмена.`
+    hint.hidden = false
+    $('#table-transfer-cancel').hidden = false
+    showToast('Выберите место переноса в макете. Щёлкните по ячейке для вставки перед ней или внутри другой рабочей области.')
+  }
+
+  function placeTableRowsFromPointer(event) {
+    if (event.button !== 0) return
+    event.preventDefault(); event.stopImmediatePropagation()
+    try {
+      const transfer = state.tableRowTransfer, source = state.scene.objects.find(cell => cell.id === transfer.sourceId)
+        || state.scene.objects.find(cell => transfer.ids.includes(cell.id))
+      if (!source) throw new Error('Строки источника больше недоступны.')
+      const cells = state.scene.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === source.tableId && cell.pageIndex === source.pageIndex)
+      const page = state.scene.pages[Number(event.currentTarget.dataset.pageIndex)], area = page.contentBounds
+      const rect = event.currentTarget.getBoundingClientRect(), scale = rect.width > 0 ? rect.width / page.widthPx : state.zoom
+      const rawX = (event.clientX - rect.left) / scale, rawY = (event.clientY - rect.top) / scale
+      if (rawX < area.x || rawX >= area.x + area.width || rawY < area.y || rawY >= area.y + area.height) throw new Error('Щёлкните внутри рабочей области назначения.')
+      const anchorId = event.target.closest('.scene-object[data-type="table_cell"]:not(.is-excluded)')?.dataset.id
+      const destination = { pageIndex: page.index, anchorId, position: 'before',
+        x: area.x + Math.floor((rawX - area.x) / 17) * 17, y: area.y + Math.floor((rawY - area.y) / 17) * 17 }
+      const result = window.IcatTableModel.transferRows(state.scene, cells, transfer.ids, destination,
+        { fit: (next, previous) => fitTableCellsToText(next, false, previous) })
+      cancelTableRowTransfer()
+      commitTableScene(result.scene, [...result.movedIds.slice(1), result.movedIds[0]])
+      focusPage(state.activePage, result.movedIds[0])
+      showToast('Строки перенесены. Продолжение остаётся частью таблицы; Ctrl / Cmd + Z отменяет весь перенос.')
+    } catch (error) {
+      $('#table-transfer-hint').textContent = `${error.message} Выберите другое место или нажмите Esc.`
+      showToast(error.message, true)
+    }
+  }
+
   function selectedTableCells() {
     const anchor = primarySelectedObject()
     return anchor?.type === 'table_cell' ? state.scene.objects.filter(object => !object.excluded && object.type === 'table_cell' && object.tableId === anchor.tableId && object.pageIndex === anchor.pageIndex) : []
   }
 
-  function refreshTableTools() {
-    const cells = selectedTableCells(), anchor = primarySelectedObject()
-    if (cells.length) $('#table-tools').open = true
-    for (const id of ['table-select', 'table-insert-row', 'table-insert-column', 'table-merge', 'table-split', 'table-column-width']) $( `#${id}`).disabled = !cells.length
-    $('#table-from-selection').disabled = !selectedObjects().length
-    $('#table-selection-address').textContent = cells.length ? `${anchor.tableId} · строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1} · ${anchor.rowSpan || 1} × ${anchor.columnSpan || 1}` : 'Ячейка не выбрана'
-    try { $('#table-column-width').value = cells.length ? Math.round(window.IcatTableModel.geometry(cells).widths[anchor.columnIndex]) : '' } catch { $('#table-column-width').value = '' }
+  function fitTableCellsToText(cells, shrink = false, previous = null, measure = measureObjectContent) {
+    const model = window.IcatTableModel
+    const area = state.scene.pages[cells[0].pageIndex].contentBounds
+    const grid = model.geometry(model.snapToGrid(cells, area, { fitWidth: false, clampPosition: false }))
+    const previousById = new Map((previous || []).map(cell => [cell.id, cell]))
+    if (shrink) {
+      grid.heights.fill(17)
+    }
+    for (const cell of [...cells].sort((a, b) => (a.rowSpan || 1) - (b.rowSpan || 1))) {
+      const width = grid.widths.slice(cell.columnIndex, cell.columnIndex + (cell.columnSpan || 1)).reduce((sum, value) => sum + value, 0)
+      const first = cell.rowIndex - grid.firstRow, last = first + (cell.rowSpan || 1) - 1
+      const current = grid.heights.slice(first, last + 1).reduce((sum, value) => sum + value, 0)
+      let needed = Math.max(17, Math.ceil(measure(cell, width).height / 17) * 17)
+      const before = previousById.get(cell.id)
+      if (before) {
+        const oldNeeded = Math.max(17, Math.ceil(measure(before, before.width).height / 17) * 17)
+        // A resize must not enlarge unrelated rows because of pre-existing overflow.
+        needed = Math.min(oldNeeded, before.height) + Math.max(0, needed - oldNeeded)
+      }
+      needed = Math.ceil(needed / 17 - 1e-6) * 17
+      if (needed > current) grid.heights[last] += needed - current
+    }
+    return model.arrange(cells, grid)
   }
 
-  function commitTableCells(previous, next) {
+  function validateTableGeometry(previous, next) {
     window.IcatTableModel.validate(next)
-    const page = state.scene.pages[next[0].pageIndex]
-    if (next.some(cell => cell.x + cell.width > page.contentBounds.x + page.contentBounds.width + 1 || cell.y + cell.height > page.contentBounds.y + page.contentBounds.height + 1)) throw new Error('Таблица не помещается в рабочую область. Уменьшите размеры или перенесите её на свободную страницу.')
+    const page = state.scene.pages[next[0].pageIndex], area = page.contentBounds
+    if (next.some(cell => cell.x < area.x - 1 || cell.y < area.y - 1 || cell.x + cell.width > area.x + area.width + 1 || cell.y + cell.height > area.y + area.height + 1)) throw new Error('Таблица не помещается в рабочую область. Уменьшите размеры или перенесите её на свободную страницу.')
+    const ids = new Set(previous.map(cell => cell.id))
+    const overlapArea = (cells, obstacle) => cells.reduce((sum, cell) => sum
+      + Math.max(0, Math.min(cell.x + cell.width, obstacle.x + obstacle.width) - Math.max(cell.x, obstacle.x))
+      * Math.max(0, Math.min(cell.y + cell.height, obstacle.y + obstacle.height) - Math.max(cell.y, obstacle.y)), 0)
+    for (const object of state.scene.objects) {
+      if (object.excluded || object.pageIndex !== page.index || ids.has(object.id)) continue
+      if (overlapArea(next, object) > overlapArea(previous, object) + 1) throw new Error('Этот размер создаёт наложение на другой сегмент. Уменьшите размер или переместите таблицу за ручку слева от ячейки.')
+    }
+  }
+
+  function tableTrackMinimums(cells, axis, measure = measureObjectContent) {
+    const model = window.IcatTableModel, grid = model.geometry(cells)
+    if (axis === 'column') return grid.widths.map(() => 17)
+    const fitted = model.geometry(fitTableCellsToText(cells, true, null, measure))
+    return grid.heights.map((height, index) => Math.min(height, fitted.heights[index]))
+  }
+
+  function planTableResize(cells, axis, index, size, cache = new Map()) {
+    if (!Number.isFinite(size)) throw new Error('Введите размер в пикселях.')
+    const model = window.IcatTableModel, grid = model.geometry(cells)
+    const offset = axis === 'column' ? index : index - grid.firstRow
+    const originalSize = (axis === 'column' ? grid.widths : grid.heights)[offset]
+    const area = state.scene.pages[cells[0].pageIndex].contentBounds
+    const requested = Math.max(17, Math.round(size / 17) * 17)
+    const target = Math.min(requested, Math.floor((axis === 'column' ? area.width : area.height) / 17) * 17)
+    const measure = (cell, width) => {
+      const key = `${cell.id}:${width}`
+      if (!cache.has(key)) cache.set(key, measureObjectContent(cell, width))
+      return cache.get(key)
+    }
+    let minimums = null
+    const attempt = value => {
+      for (const preserveExtent of value > originalSize ? [false, true] : [false]) {
+        try {
+          if (preserveExtent) minimums ||= tableTrackMinimums(cells, axis, measure)
+          const resized = model.resize(cells, axis, index, value, { preserveExtent, minimumSizes: minimums })
+          const next = fitTableCellsToText(resized, false, cells, measure)
+          validateTableGeometry(cells, next)
+          const nextGrid = model.geometry(next)
+          return { cells: next, size: (axis === 'column' ? nextGrid.widths : nextGrid.heights)[offset], redistributed: preserveExtent }
+        } catch { /* Try using the existing table space before limiting the gesture. */ }
+      }
+      return null
+    }
+    let plan = attempt(target)
+    if (!plan) {
+      const direction = Math.sign(target - originalSize)
+      let low = 0, high = Math.ceil(Math.abs(target - originalSize) / 17)
+      plan = { cells, size: originalSize, redistributed: false }
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2)
+        const candidate = attempt(originalSize + direction * middle * 17)
+        if (candidate) { low = middle; plan = candidate } else high = middle - 1
+      }
+    }
+    plan.notice = Math.abs(plan.size - requested) > .5
+      ? `Применён доступный размер ${Math.round(plan.size)} px. Дальнейшее изменение ограничено текстом, краем страницы или соседним блоком.`
+      : plan.redistributed ? `Размер ${Math.round(plan.size)} px: место перераспределено между ${axis === 'column' ? 'колонками' : 'строками'} внутри таблицы.` : ''
+    return plan
+  }
+
+  function showTableSizeFeedback(message = '') {
+    const note = $('#table-size-feedback')
+    note.textContent = message
+    note.hidden = !message
+  }
+
+  function applyTableResizePlan(cells, plan) {
+    const changed = plan.cells.some((cell, index) => ['x', 'y', 'width', 'height'].some(key => Math.abs(cell[key] - cells[index][key]) > .01))
+    if (changed) commitTableCells(cells, plan.cells)
+    else refreshTableTools()
+    showTableSizeFeedback(plan.notice)
+  }
+
+  function repaintTableGeometry(cells) {
+    for (const cell of cells) {
+      const node = elements.canvas.querySelector(`.scene-object[data-id="${CSS.escape(cell.id)}"]`)
+      if (node) positionObjectNode(node, cell)
+    }
+    const bounds = boundsOf(cells)
+    for (const boundary of elements.canvas.querySelectorAll('.table-structure-boundary')) {
+      if (boundary.dataset.tableId === cells[0].tableId && Number(boundary.closest('.studio-page').dataset.pageIndex) === cells[0].pageIndex) {
+        Object.assign(boundary.style, { left: `${bounds.left}px`, top: `${bounds.top}px`, width: `${bounds.width}px`, height: `${bounds.height}px` })
+      }
+    }
+  }
+
+  function previewTableSize(plan) {
+    repaintTableGeometry(plan.cells)
+    showTableSizeFeedback(plan.notice)
+  }
+
+  function createTableResizeHandle(object, axis) {
+    const handle = document.createElement('span')
+    handle.className = `scene-object__resize table-cell-resize table-cell-resize--${axis}`
+    handle.tabIndex = 0
+    handle.setAttribute('role', 'separator')
+    handle.setAttribute('aria-orientation', axis === 'column' ? 'vertical' : 'horizontal')
+    const index = axis === 'column' ? object.columnIndex + (object.columnSpan || 1) - 1 : object.rowIndex + (object.rowSpan || 1) - 1
+    const label = axis === 'column' ? `Изменить ширину колонки ${index + 1}` : `Изменить высоту строки ${index + 1}`
+    handle.setAttribute('aria-label', label)
+    handle.title = `${label}: перетащите маркер или используйте стрелки`
+    handle.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      cancelPointerAction()
+      state.selected = new Set([object.id])
+      refreshSelection()
+      state.sceneEditRevision += 1
+      const cells = selectedTableCells(), grid = window.IcatTableModel.geometry(cells)
+      const size = axis === 'column' ? grid.widths[index] : grid.heights[index - grid.firstRow]
+      const start = axis === 'column' ? event.clientX : event.clientY
+      const measurements = new Map()
+      let plan = null
+      startPointerAction(event, handle, { kind: 'table-resize' }, {
+        move: current => {
+          const delta = ((axis === 'column' ? current.clientX : current.clientY) - start) / state.zoom
+          if (!delta && !plan) return
+          plan = planTableResize(cells, axis, index, size + delta, measurements)
+          previewTableSize(plan)
+        },
+        commit: () => {
+          if (plan) applyTableResizePlan(cells, plan)
+          else repaintTableGeometry(cells)
+        },
+        cancel: () => { repaintTableGeometry(cells); refreshTableTools() },
+      })
+    })
+    handle.addEventListener('keydown', event => {
+      const directions = axis === 'column' ? { ArrowLeft: -17, ArrowRight: 17 } : { ArrowUp: -17, ArrowDown: 17 }
+      if (!directions[event.key]) return
+      event.preventDefault()
+      event.stopPropagation()
+      state.selected = new Set([object.id])
+      const cells = selectedTableCells(), grid = window.IcatTableModel.geometry(cells)
+      const size = axis === 'column' ? grid.widths[index] : grid.heights[index - grid.firstRow]
+      try {
+        applyTableResizePlan(cells, planTableResize(cells, axis, index, size + directions[event.key]))
+        elements.canvas.querySelector(`.scene-object[data-id="${CSS.escape(object.id)}"] .table-cell-resize--${axis}`)?.focus()
+      } catch (error) { showToast(error.message, true) }
+    })
+    return handle
+  }
+
+  function selectTable(table) {
+    cancelTablePlacement()
+    const ids = table.cells.map(cell => cell.objectId)
+    state.selected = new Set([...ids.slice(1), ids[0]])
+    state.activePage = table.pageIndex
+    refreshSelection()
+    focusPage(table.pageIndex, ids[0])
+  }
+
+  function cancelTablePlacement() {
+    state.tablePlacement = null
+    elements.canvas.classList.remove('is-placing-table')
+    elements.canvas.querySelectorAll('.table-placement-preview').forEach(node => node.remove())
+    $('#table-create').setAttribute('aria-pressed', 'false')
+    $('#table-placement-cancel').hidden = true
+    $('#table-placement-hint').textContent = 'Задайте размер, нажмите «Указать место на странице» и щёлкните свободное место в макете.'
+  }
+
+  function beginTablePlacement() {
+    if (state.workflowStage !== 3) return
+    cancelPointerAction()
+    cancelTableRowTransfer()
+    state.tablePlacement = { ...tableDimensions(), documentId: state.metadata?.id }
+    elements.canvas.classList.add('is-placing-table')
+    $('#table-create').setAttribute('aria-pressed', 'true')
+    $('#table-placement-cancel').hidden = false
+    $('#table-placement-hint').textContent = 'Щёлкните в макете, чтобы поставить верхний левый угол таблицы. Зелёная сетка — место свободно, красная — занято или за границей. Esc — отмена.'
+  }
+
+  function tableDimensions() {
+    return {
+      rows: Math.max(1, Math.min(50, Math.trunc(Number($('#new-table-rows').value) || 3))),
+      columns: Math.max(1, Math.min(20, Math.trunc(Number($('#new-table-columns').value) || 3))),
+    }
+  }
+
+  function tablePlacementAt(event) {
+    const page = state.scene.pages.find(item => item.index === Number(event.currentTarget.dataset.pageIndex))
+    const area = page.contentBounds, rect = event.currentTarget.getBoundingClientRect()
+    const scale = rect.width > 0 ? rect.width / page.widthPx : state.zoom
+    const rawX = (event.clientX - rect.left) / scale
+    const rawY = (event.clientY - rect.top) / scale
+    const x = area.x + Math.round((rawX - area.x) / 17) * 17
+    const y = area.y + Math.round((rawY - area.y) / 17) * 17
+    const { rows, columns } = state.tablePlacement
+    const columnWidth = Math.max(17, Math.min(102, Math.floor((area.x + area.width - x) / columns / 17) * 17))
+    const width = columns * columnWidth, height = rows * 34
+    const outside = rawX < area.x || rawY < area.y || x < area.x || y < area.y || x + width > area.x + area.width || y + height > area.y + area.height
+    const occupied = state.scene.objects.some(object => !object.excluded && object.pageIndex === page.index
+      && object.x < x + width && object.x + object.width > x && object.y < y + height && object.y + object.height > y)
+    return { pageIndex: page.index, x, y, width, height, columnWidth, rows, columns,
+      error: outside ? 'Таблица выходит за рабочую область. Выберите другое место или уменьшите число строк и колонок.'
+        : occupied ? 'Это место занято. Переместите сетку на свободный участок страницы.' : '' }
+  }
+
+  function previewTableFromPointer(event) {
+    if (!state.tablePlacement) return
+    const placement = tablePlacementAt(event)
+    elements.canvas.querySelectorAll('.table-placement-preview').forEach(node => node.remove())
+    const preview = document.createElement('div')
+    preview.className = 'table-placement-preview'
+    preview.classList.toggle('is-invalid', Boolean(placement.error))
+    preview.setAttribute('aria-hidden', 'true')
+    Object.assign(preview.style, { left: `${placement.x}px`, top: `${placement.y}px`, width: `${placement.width}px`, height: `${placement.height}px` })
+    preview.style.setProperty('--table-column-width', `${placement.columnWidth}px`)
+    event.currentTarget.append(preview)
+  }
+
+  function placeTableFromPointer(event) {
+    if (state.tableRowTransfer) return placeTableRowsFromPointer(event)
+    if (!state.tablePlacement || event.button !== 0) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    const placement = tablePlacementAt(event)
+    if (placement.error) {
+      $('#table-placement-hint').textContent = `${placement.error} Esc — отмена.`
+      previewTableFromPointer(event)
+      return
+    }
+    try {
+      cancelTablePlacement()
+      createTable(placement)
+      showToast('Таблица размещена. Щёлкните ячейку, чтобы ввести текст.')
+    } catch (error) { showToast(error.message, true) }
+  }
+
+  function refreshTableTools() {
+    showTableSizeFeedback()
+    elements.exclude.disabled = !selectedObjects().length
+    const cells = selectedTableCells(), anchor = primarySelectedObject()
+    const picker = $('#table-picker')
+    picker.replaceChildren(new Option(state.scene?.tables?.length ? 'Выберите таблицу' : 'Структурных таблиц пока нет', ''))
+    for (const [index, table] of (state.scene?.tables || []).entries()) {
+      const option = new Option(`Таблица ${index + 1} · стр. ${table.pageIndex + 1} · ${table.rowCount} × ${table.columnCount}`, table.cells[0].objectId)
+      option.selected = table.id === anchor?.tableId && table.pageIndex === anchor?.pageIndex
+      picker.append(option)
+    }
+    picker.disabled = !state.scene?.tables?.length
+    for (const button of document.querySelectorAll('[data-table-insert-axis]')) button.disabled = !cells.length
+    if (cells.length) $('#table-tools').open = true
+    for (const id of ['table-transfer-rows', 'table-select-rows-below', 'table-select', 'table-select-row', 'table-select-column', 'table-copy-row', 'table-cut-row', 'table-delete-row', 'table-exclude', 'table-fit-grid']) $(`#${id}`).disabled = !cells.length
+    $('#table-selection-address').textContent = cells.length ? `Страница ${anchor.pageIndex + 1} · строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1} · ${anchor.rowSpan || 1} × ${anchor.columnSpan || 1}. Команды строки и колонки применяются к этой ячейке.` : anchor?.type === 'table' ? 'Таблица распознана одним текстовым блоком. Структурные команды доступны только для отдельных ячеек.' : 'Для изменения таблицы выберите её из списка или щёлкните ячейку в макете.'
+    try {
+      const grid = cells.length ? window.IcatTableModel.geometry(cells) : null
+      if (grid) for (const cell of cells) {
+        const node = elements.canvas.querySelector(`.scene-object[data-id="${CSS.escape(cell.id)}"]`)
+        for (const axis of ['column', 'row']) {
+          const index = axis === 'column' ? cell.columnIndex + (cell.columnSpan || 1) - 1 : cell.rowIndex + (cell.rowSpan || 1) - 1 - grid.firstRow
+          const handle = node?.querySelector(`.table-cell-resize--${axis}`)
+          handle?.setAttribute('aria-valuenow', String(Math.round((axis === 'column' ? grid.widths : grid.heights)[index])))
+          handle?.setAttribute('aria-valuemin', '17')
+        }
+      }
+    } catch { /* Invalid table geometry is reported by structural commands and QA. */ }
+    $('#table-merge').disabled = !cells.length || selectedObjects().length < 2
+    $('#table-split').disabled = !cells.length || (anchor.rowSpan || 1) * (anchor.columnSpan || 1) === 1
+    for (const button of document.querySelectorAll('[data-table-paste-position]')) {
+      button.disabled = !cells.length || !state.tableRowClipboard || state.tableRowClipboard.columns !== Math.max(...cells.map(cell => cell.columnIndex + (cell.columnSpan || 1)))
+      button.title = !state.tableRowClipboard ? 'Сначала скопируйте или вырежьте строку' : button.disabled ? 'Для вставки нужно одинаковое число колонок' : ''
+    }
+  }
+
+  function commitTableCells(previous, next, selectIds = null) {
+    validateTableGeometry(previous, next)
     checkpoint()
+    state.sceneEditRevision += 1
     const ids = new Set(previous.map(cell => cell.id))
     state.scene.objects = state.scene.objects.filter(object => !ids.has(object.id)).concat(next)
     const kept = new Set(next.map(cell => cell.id))
-    state.selected = new Set([...state.selected].filter(id => kept.has(id)))
+    state.selected = new Set((selectIds || [...state.selected]).filter(id => kept.has(id)))
     if (!state.selected.size) state.selected.add(next[0].id)
     synchronizeReadingOrder()
     renderDocument()
     scheduleSave()
   }
 
-  function changeTableAddress(field, value) {
-    const chosen = selectedObjects()
-    if (chosen.length !== 1 || chosen[0].type !== 'table_cell') return showToast('Для изменения адреса выберите одну ячейку.', true)
-    try {
-      const changed = { ...chosen[0], [field]: value }
-      window.IcatTableModel.validate(state.scene.objects.filter(object => !object.excluded && object.type === 'table_cell').map(cell => cell.id === changed.id ? changed : cell))
-      checkpoint()
-      Object.assign(chosen[0], changed)
-      renderDocument(); scheduleSave()
-    } catch (error) { showToast(error.message, true); refreshSelection() }
+  function commitTableScene(planned, ids, fallback = null) {
+    checkpoint()
+    state.sceneEditRevision += 1
+    state.scene = planned
+    const available = new Set(planned.objects.filter(object => !object.excluded).map(object => object.id))
+    state.selected = new Set(ids.filter(id => available.has(id)))
+    if (!state.selected.size && fallback) {
+      const neighbour = planned.objects.filter(object => !object.excluded && object.type === 'table_cell' && object.tableId === fallback.tableId)
+        .sort((a, b) => Math.abs(a.rowIndex - fallback.row) - Math.abs(b.rowIndex - fallback.row) || a.columnIndex - b.columnIndex)[0]
+      if (neighbour) state.selected.add(neighbour.id)
+    }
+    reindexScenePages()
+    state.activePage = primarySelectedObject()?.pageIndex ?? Math.min(state.activePage, planned.pages.length - 1)
+    state.sourceRenderedPage = null
+    synchronizeReadingOrder()
+    renderDocument()
+    scheduleSave()
   }
 
-  function createTable(fromSelection = false) {
+  function compactSelectedTable() {
+    const tableId = primarySelectedObject()?.tableId
+    if (!tableId || !selectedTableCells().length) return
+    let planned = state.scene
+    for (let pageIndex = 0; pageIndex < planned.pages.length; pageIndex++) {
+      const cells = planned.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === tableId && cell.pageIndex === pageIndex)
+      if (!cells.length) continue
+      const grid = window.IcatTableModel.geometry(cells), area = planned.pages[pageIndex].contentBounds
+      let next = fitTableCellsToText(cells, true)
+      next = fitTableCellsToText(window.IcatTableModel.fitWidth(next, area.x + area.width - grid.x))
+      planned = window.IcatTableModel.reflowRows(planned, cells, next, { at: grid.firstRow })
+    }
+    commitTableScene(planned, [...state.selected])
+    showToast('Промежутки убраны во всех продолжениях таблицы. Строки подогнаны по тексту и перенесены без наложений.')
+  }
+
+  function commitTableRowChange(previous, next, at, selectIds = null) {
+    const planned = window.IcatTableModel.reflowRows(state.scene, previous, next, { at })
+    commitTableScene(planned, selectIds || [...state.selected], { tableId: previous[0].tableId, row: at })
+  }
+
+  function createTable(placement = null) {
     const model = window.IcatTableModel
-    const previous = fromSelection ? selectedObjects() : []
-    const rows = Math.max(1, Math.min(50, Math.trunc(Number($('#new-table-rows').value) || 3)))
-    const columns = Math.max(1, Math.min(20, Math.trunc(Number($('#new-table-columns').value) || 3)))
-    if (fromSelection && (previous.length !== rows * columns || new Set(previous.map(cell => cell.pageIndex)).size !== 1)) throw new Error('Количество выделенных сегментов должно равняться числу строк × колонок. Выберите сегменты одной страницы.')
-    if (previous.some(cell => cell.type === 'table_cell')) throw new Error('Для существующих ячеек используйте команды таблицы.')
-    const page = state.scene.pages[previous[0]?.pageIndex ?? state.activePage] || state.scene.pages[0]
+    const previous = []
+    const { rows, columns } = placement || tableDimensions()
+    const page = state.scene.pages[placement?.pageIndex ?? state.activePage] || state.scene.pages[0]
     const area = page.contentBounds
     const tableId = `table-${Date.now().toString(36)}-${++tableObjectSequence}`
-    const width = Math.floor(area.width / columns / 17) * 17
+    const width = placement?.columnWidth ?? Math.floor(area.width / columns / 17) * 17
     if (width < 17) throw new Error('Слишком много колонок для этой страницы.')
     const existing = state.scene.objects.filter(object => !object.excluded && object.pageIndex === page.index && !previous.includes(object))
-    const y = fromSelection ? Math.min(...previous.map(cell => cell.y)) : Math.max(area.y, ...existing.map(cell => cell.y + cell.height + 17))
+    const x = placement?.x ?? area.x
+    const y = placement?.y ?? Math.max(area.y, ...existing.map(cell => cell.y + cell.height + 17))
     const template = { pageIndex: page.index, type: 'table_cell', tableId, readingOrder: state.scene.objects.length + 1, confidence: 1, rotation: 0, x: area.x, y, width, height: 34,
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' } }
-    const sorted = visualReadingOrder(previous)
-    const cells = Array.from({ length: rows * columns }, (_, index) => ({ ...model.blank(template, Math.floor(index / columns), index % columns, tableObjectId()), ...(sorted[index] || {}),
+    const cells = Array.from({ length: rows * columns }, (_, index) => ({ ...model.blank(template, Math.floor(index / columns), index % columns, tableObjectId()),
       type: 'table_cell', tableId, rowIndex: Math.floor(index / columns), columnIndex: index % columns, rowSpan: 1, columnSpan: 1 }))
-    const arranged = model.arrange(cells, { x: area.x, y, firstRow: 0, widths: Array(columns).fill(width), heights: Array(rows).fill(34) })
+    const arranged = model.arrange(cells, { x, y, firstRow: 0, widths: Array(columns).fill(width), heights: Array(rows).fill(34) })
+    state.activePage = page.index
     commitTableCells(previous, arranged)
+  }
+
+  function closeTableContextMenu(restoreFocus = false) {
+    const menu = $('#table-context-menu')
+    if (!menu || menu.hidden) return
+    const id = state.tableMenuAnchorId
+    menu.hidden = true
+    state.tableMenuAnchorId = null
+    state.tableMenuScroll = null
+    if (restoreFocus && id) elements.canvas.querySelector(`.scene-object[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true })
+  }
+
+  function openTableContextMenu(objectId, point = null) {
+    const object = state.scene?.objects.find(cell => cell.id === objectId && !cell.excluded && cell.type === 'table_cell')
+    if (!object || state.workflowStage !== 3) return
+    cancelPointerAction()
+    cancelTablePlacement()
+    cancelTableRowTransfer()
+    closeTableContextMenu()
+    const cells = state.scene.objects.filter(cell => !cell.excluded && cell.tableId === object.tableId && cell.pageIndex === object.pageIndex && cell.type === 'table_cell')
+    const ids = new Set(cells.map(cell => cell.id))
+    const selection = state.selected.has(object.id) && [...state.selected].every(id => ids.has(id)) ? [...state.selected] : []
+    state.selected = new Set([...selection.filter(id => id !== object.id), object.id])
+    state.activePage = object.pageIndex
+    refreshSelection()
+    state.tableMenuAnchorId = object.id
+    state.tableMenuScroll = { left: elements.canvasScroll.scrollLeft, top: elements.canvasScroll.scrollTop }
+    const menu = $('#table-context-menu')
+    $('#table-context-title').textContent = `Строка ${object.rowIndex + 1} · колонка ${gridColumnLabel(object.columnIndex)}`
+    menu.hidden = false
+    const cellRect = elements.canvas.querySelector(`.scene-object[data-id="${CSS.escape(object.id)}"]`)?.getBoundingClientRect()
+    const rect = menu.getBoundingClientRect()
+    const x = point?.x ?? cellRect?.left ?? 8, y = point?.y ?? cellRect?.bottom ?? 8
+    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`
+    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`
+    menu.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true })
+  }
+
+  function bindTableContextMenu() {
+    const menu = $('#table-context-menu')
+    elements.canvas.addEventListener('contextmenu', event => {
+      const cell = event.target.closest('.scene-object[data-type="table_cell"]')
+      if (!cell || state.workflowStage !== 3 || cell.classList.contains('is-excluded')) return
+      event.preventDefault()
+      event.stopPropagation()
+      openTableContextMenu(cell.dataset.id, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : null)
+    })
+    elements.canvas.addEventListener('keydown', event => {
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return
+      const cell = event.target.closest('.scene-object[data-type="table_cell"]')
+      if (!cell || state.workflowStage !== 3) return
+      event.preventDefault()
+      event.stopPropagation()
+      openTableContextMenu(cell.dataset.id)
+    })
+    menu.addEventListener('keydown', event => {
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        if (event.key === 'Escape') event.preventDefault()
+        event.stopPropagation()
+        closeTableContextMenu(true)
+        return
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      event.stopPropagation()
+      const items = [...menu.querySelectorAll('[role="menuitem"]:not(:disabled)')]
+      const current = items.indexOf(document.activeElement)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+      items[next]?.focus()
+    })
+    menu.addEventListener('click', event => {
+      if (event.target.closest('[role="menuitem"]:not(:disabled)')) closeTableContextMenu(true)
+    })
+    document.addEventListener('pointerdown', event => {
+      if (!menu.contains(event.target)) closeTableContextMenu()
+    }, true)
+    document.addEventListener('scroll', event => {
+      if (menu.hidden || menu.contains(event.target)) return
+      if (event.target === elements.canvasScroll) {
+        if (state.tableMenuScroll?.left !== elements.canvasScroll.scrollLeft || state.tableMenuScroll?.top !== elements.canvasScroll.scrollTop) closeTableContextMenu()
+      } else if (event.target === document || elements.canvas.contains(event.target)) closeTableContextMenu()
+    }, true)
+    window.addEventListener('resize', () => closeTableContextMenu())
+    window.addEventListener('blur', () => closeTableContextMenu())
   }
 
   function bindTableTools() {
     const safely = callback => () => { try { callback() } catch (error) { showToast(error.message, true) } }
-    $('#table-create').addEventListener('click', safely(() => createTable()))
-    $('#table-from-selection').addEventListener('click', safely(() => createTable(true)))
-    $('#table-select').addEventListener('click', () => { state.selected = new Set(selectedTableCells().map(cell => cell.id)); refreshSelection() })
-    for (const axis of ['row', 'column']) $(`#table-insert-${axis}`).addEventListener('click', safely(() => {
+    bindTableContextMenu()
+    $('#table-transfer-rows').addEventListener('click', safely(beginTableRowTransfer))
+    $('#table-transfer-cancel').addEventListener('click', cancelTableRowTransfer)
+    $('#table-select-rows-below').addEventListener('click', safely(() => {
+      const anchor = primarySelectedObject(), cells = selectedTableCells()
+      if (!cells.length) return
+      selectTableRows(cells, cells.filter(cell => cell.rowIndex >= anchor.rowIndex).map(cell => cell.id), anchor.id)
+    }))
+    $('#table-create').addEventListener('click', beginTablePlacement)
+    $('#table-placement-cancel').addEventListener('click', cancelTablePlacement)
+    for (const id of ['new-table-rows', 'new-table-columns']) $(`#${id}`).addEventListener('input', () => { if (state.tablePlacement) { cancelTablePlacement(); beginTablePlacement() } })
+    $('#table-picker').addEventListener('change', event => {
+      const table = state.scene.tables.find(table => table.cells[0].objectId === event.target.value)
+      if (table) selectTable(table)
+    })
+    $('#table-select').addEventListener('click', () => {
+      const anchor = primarySelectedObject()
+      const ids = selectedTableCells().map(cell => cell.id)
+      state.selected = new Set([...ids.filter(id => id !== anchor?.id), ...(anchor ? [anchor.id] : [])])
+      refreshSelection()
+    })
+    for (const axis of ['row', 'column']) $(`#table-select-${axis}`).addEventListener('click', () => {
+      const anchor = primarySelectedObject()
+      if (!anchor) return
+      const index = axis === 'row' ? anchor.rowIndex : anchor.columnIndex
+      const field = axis === 'row' ? 'rowIndex' : 'columnIndex', span = axis === 'row' ? 'rowSpan' : 'columnSpan'
+      const ids = selectedTableCells().filter(cell => cell[field] <= index && index < cell[field] + (cell[span] || 1)).map(cell => cell.id)
+      state.selected = new Set([...ids.filter(id => id !== anchor.id), anchor.id])
+      refreshSelection()
+    })
+    $('#table-copy-row').addEventListener('click', safely(() => {
+      state.tableRowClipboard = window.IcatTableModel.copyRow(selectedTableCells(), primarySelectedObject()?.id)
+      showToast('Строка скопирована. Откройте меню нужной ячейки и выберите вставку выше или ниже.')
+      refreshTableTools()
+    }))
+    for (const [id, cut] of [['table-delete-row', false], ['table-cut-row', true]]) $(`#${id}`).addEventListener('click', safely(() => {
+      const cells = selectedTableCells(), anchor = primarySelectedObject()
+      if (!cells.length) return
+      const snapshot = cut ? window.IcatTableModel.copyRow(cells, anchor.id) : null
+      const next = window.IcatTableModel.deleteRow(cells, anchor.id)
+      commitTableRowChange(cells, next, anchor.rowIndex)
+      if (cut) {
+        state.tableRowClipboard = snapshot
+        refreshTableTools()
+        showToast('Строка вырезана. Откройте меню нужной ячейки и вставьте её выше или ниже.')
+      }
+    }))
+    for (const button of document.querySelectorAll('[data-table-paste-position]')) button.addEventListener('click', safely(() => {
+      const cells = selectedTableCells(), anchor = primarySelectedObject()
+      if (!cells.length) return
+      const next = window.IcatTableModel.pasteRow(cells, anchor.id, state.tableRowClipboard, tableObjectId,
+        { position: button.dataset.tablePastePosition })
+      const originalIds = new Set(cells.map(cell => cell.id))
+      const addedIds = next.filter(cell => !originalIds.has(cell.id)).map(cell => cell.id)
+      const at = anchor.rowIndex + (button.dataset.tablePastePosition === 'before' ? 0 : (anchor.rowSpan || 1))
+      commitTableRowChange(cells, fitTableCellsToText(next, false, cells), at, [...addedIds.slice(1), addedIds[0]])
+    }))
+    $('#table-exclude').addEventListener('click', () => {
+      state.selected = new Set(selectedTableCells().map(cell => cell.id))
+      excludeSelected()
+    })
+    for (const button of document.querySelectorAll('[data-table-insert-axis]')) button.addEventListener('click', safely(() => {
       const cells = selectedTableCells()
-      commitTableCells(cells, window.IcatTableModel.insert(cells, primarySelectedObject()?.id, axis, tableObjectId))
+      if (!cells.length) return
+      const area = state.scene.pages[cells[0].pageIndex].contentBounds
+      const grid = window.IcatTableModel.geometry(cells)
+      const anchor = primarySelectedObject()
+      const next = window.IcatTableModel.insert(cells, anchor?.id, button.dataset.tableInsertAxis, tableObjectId,
+        { maxWidth: area.x + area.width - grid.x, position: button.dataset.tableInsertPosition })
+      if (button.dataset.tableInsertAxis === 'row') {
+        const originalIds = new Set(cells.map(cell => cell.id))
+        const addedIds = next.filter(cell => !originalIds.has(cell.id)).map(cell => cell.id)
+        const at = anchor.rowIndex + (button.dataset.tableInsertPosition === 'before' ? 0 : (anchor.rowSpan || 1))
+        commitTableRowChange(cells, next, at, [...addedIds.slice(1), addedIds[0]].filter(Boolean))
+      } else commitTableCells(cells, next)
     }))
     $('#table-merge').addEventListener('click', safely(() => {
       const cells = selectedTableCells()
@@ -6552,11 +7322,7 @@
       const cells = selectedTableCells()
       commitTableCells(cells, window.IcatTableModel.split(cells, primarySelectedObject()?.id, tableObjectId))
     }))
-    $('#table-column-width').addEventListener('change', safely(() => {
-      const cells = selectedTableCells(), grid = window.IcatTableModel.geometry(cells)
-      grid.widths[primarySelectedObject().columnIndex] = Math.max(17, Math.round(Number($('#table-column-width').value) / 17) * 17)
-      commitTableCells(cells, window.IcatTableModel.arrange(cells, grid))
-    }))
+    $('#table-fit-grid').addEventListener('click', safely(compactSelectedTable))
   }
 
   function bindInspector() {
@@ -6564,10 +7330,6 @@
     $('#preview-pdf-button').addEventListener('click', () => exportDocument('pdf', true))
     elements.objectType.addEventListener('change', () => applySelectionChange(object => setObjectType(object, elements.objectType.value)))
     bindTableTools()
-    elements.tableId.addEventListener('change', () => changeTableAddress('tableId', elements.tableId.value.trim()))
-    for (const [control, field, offset] of [[elements.tableRow, 'rowIndex', 1], [elements.tableColumn, 'columnIndex', 1], [elements.tableRowSpan, 'rowSpan', 0], [elements.tableColumnSpan, 'columnSpan', 0]]) {
-      control.addEventListener('change', () => changeTableAddress(field, Math.trunc(Number(control.value)) - offset))
-    }
     const bindText = (control, field) => {
       let knowledgeEditingObjects = []
       control.addEventListener('focus', () => {
@@ -6960,6 +7722,12 @@
         if (event.shiftKey) redo(); else undo()
       }
       if (event.key === 'Escape') {
+        if (state.tableRowTransfer) { event.preventDefault(); cancelTableRowTransfer(); return }
+        if (state.tablePlacement) {
+          event.preventDefault()
+          cancelTablePlacement()
+          return
+        }
         if (!elements.translationApprovalModal.hidden) {
           closeTranslationApprovalModal()
           return
@@ -7204,16 +7972,17 @@
 
   async function refreshCurrentKnowledgeBaseMatches(expectedEditRevision = null, expectedDocumentId = state.metadata?.id) {
     if (!state.scene || !state.metadata) return 0
+    const requestRevision = expectedEditRevision ?? state.sceneEditRevision
     const response = await api(`/api/studio/documents/${expectedDocumentId}/knowledge-matches/refresh`, { method: 'POST' })
     const data = await response.json()
     if (state.metadata?.id !== expectedDocumentId) return 0
-    if (expectedEditRevision != null && state.sceneEditRevision !== expectedEditRevision) return 0
+    if (state.pointerAction || state.sceneEditRevision !== requestRevision) return 0
     state.metadata = data.metadata
     state.scene = data.scene
     const activeTab = state.tabs.get(state.activeTabKey)
     if (activeTab?.status === 'completed') activeTab.documentData = { metadata: state.metadata, scene: state.scene }
     closeKnowledgeSuggestion()
-    renderDocument()
+    renderDocument({ preserveTableMenu: true })
     return Number(data.matchCount) || 0
   }
 

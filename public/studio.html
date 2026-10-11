@@ -147,7 +147,7 @@
               <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
               <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
               <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
-              <button id="segment-type-labels-toggle" class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false" hidden><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye-off"></use></svg></button>
+              <button id="segment-type-labels-toggle" class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false" hidden><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye"></use></svg></button>
             </div>
           </div>
         </div>
@@ -225,13 +225,6 @@
             <div class="confidence-row"><span>Уверенность распознавания</span><strong id="confidence-value">—</strong></div>
           </div>
           <p id="segment-grid-coordinates" class="note note--info note--compact segment-grid-coordinates inspector-scope--segments" hidden>Координаты: —</p>
-          <section id="table-cell-fields" class="table-cell-fields inspector-scope--segments" hidden>
-            <label>ID таблицы<input id="table-id" type="text" maxlength="120" /></label>
-            <label>Строка (с 1)<input id="table-row" type="number" min="1" max="999" step="1" /></label>
-            <label>Колонка (с 1)<input id="table-column" type="number" min="1" max="999" step="1" /></label>
-            <label>Строк занимает<input id="table-row-span" type="number" min="1" max="100" step="1" /></label>
-            <label>Колонок занимает<input id="table-column-span" type="number" min="1" max="100" step="1" /></label>
-          </section>
           <div class="segment-content-fields inspector-scope--segments">
             <label>Распознанный исходник
               <textarea id="source-text" rows="7" spellcheck="true"></textarea>
@@ -241,25 +234,22 @@
             </label>
           </div>
           <p id="segment-note" class="note note--warning note--compact inspector-scope--segments" hidden></p>
-          <details id="table-tools" class="layout-card table-tools">
+          <details id="table-tools" class="layout-card table-tools" open>
             <summary>Таблица</summary>
-            <p class="note note--info note--compact">Ячейка имеет таблицу, строку и колонку. Пустые ячейки сохраняются. Выделите ячейку, чтобы изменить всю строку или колонку.</p>
+            <label>Таблицы документа<select id="table-picker" aria-label="Таблицы документа"><option value="">Выберите таблицу</option></select></label>
+            <p class="note note--info note--compact">Правый щелчок по ячейке открывает действия с таблицей. Текст редактируется прямо в ячейке; ширина колонки и высота строки меняются маркерами на макете. Номера строк слева выделяют строки: Shift — диапазон, Ctrl / Cmd — отдельные строки. Для выбора нескольких ячеек удерживайте Ctrl / Cmd.</p>
+            <p id="table-selection-address" class="note note--compact">Ячейка не выбрана</p>
+            <p id="table-transfer-hint" class="note note--info note--compact" role="status" hidden></p>
+            <button id="table-transfer-cancel" class="button" type="button" hidden>Отменить перенос строк</button>
+            <p id="table-size-feedback" class="note note--info note--compact" role="status" hidden></p>
+            <strong>Новая таблица</strong>
             <div class="table-tools__grid">
               <label>Строк<input id="new-table-rows" type="number" min="1" max="50" value="3" /></label>
               <label>Колонок<input id="new-table-columns" type="number" min="1" max="20" value="3" /></label>
             </div>
-            <button id="table-create" class="button" type="button">Создать таблицу</button>
-            <button id="table-from-selection" class="button" type="button">Выделенные сегменты → таблица</button>
-            <p id="table-selection-address" class="note note--compact">Ячейка не выбрана</p>
-            <div class="table-tools__grid">
-              <button id="table-select" class="button" type="button">Выделить таблицу</button>
-              <button id="table-insert-row" class="button" type="button">Строка ниже</button>
-              <button id="table-insert-column" class="button" type="button">Колонка справа</button>
-              <button id="table-merge" class="button" type="button">Объединить ячейки</button>
-              <button id="table-split" class="button" type="button">Разделить ячейку</button>
-              <label>Ширина колонки, px<input id="table-column-width" type="number" min="17" step="17" /></label>
-            </div>
-            <details id="table-address-editor"><summary>Адрес и объединение ячейки</summary></details>
+            <button id="table-create" class="button" type="button" aria-pressed="false">Указать место на странице</button>
+            <p id="table-placement-hint" class="note note--info note--compact" role="status">Задайте размер, нажмите «Указать место на странице» и щёлкните свободное место в макете.</p>
+            <button id="table-placement-cancel" class="button" type="button" hidden>Отменить размещение</button>
           </details>
           <div class="typography-selection-toolbar inspector-scope--layout">
             <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
@@ -660,6 +650,30 @@
           <button id="save-ai-settings" class="button button--primary" type="button">Сохранить</button>
         </div>
       </section>
+    </div>
+    <div id="table-context-menu" class="context-menu" role="menu" aria-label="Действия с таблицей" hidden>
+      <div id="table-context-title" class="context-menu__title" role="presentation"></div>
+      <button id="table-cut-row" class="context-menu__item" type="button" role="menuitem">Вырезать строку</button>
+      <button id="table-copy-row" class="context-menu__item" type="button" role="menuitem">Копировать строку</button>
+      <button id="table-paste-row-before" class="context-menu__item" type="button" role="menuitem" data-table-paste-position="before" disabled>Вставить строку выше</button>
+      <button id="table-paste-row-after" class="context-menu__item" type="button" role="menuitem" data-table-paste-position="after" disabled>Вставить строку ниже</button>
+      <div class="context-menu__separator" role="separator"></div>
+      <button id="table-insert-row-before" class="context-menu__item" type="button" role="menuitem" data-table-insert-axis="row" data-table-insert-position="before">Строка выше</button>
+      <button id="table-insert-row" class="context-menu__item" type="button" role="menuitem" data-table-insert-axis="row" data-table-insert-position="after">Строка ниже</button>
+      <button id="table-insert-column-before" class="context-menu__item" type="button" role="menuitem" data-table-insert-axis="column" data-table-insert-position="before">Колонка слева</button>
+      <button id="table-insert-column" class="context-menu__item" type="button" role="menuitem" data-table-insert-axis="column" data-table-insert-position="after">Колонка справа</button>
+      <div class="context-menu__separator" role="separator"></div>
+      <button id="table-select-row" class="context-menu__item" type="button" role="menuitem">Выделить строку</button>
+      <button id="table-select-rows-below" class="context-menu__item" type="button" role="menuitem">Выделить строки отсюда до конца</button>
+      <button id="table-transfer-rows" class="context-menu__item" type="button" role="menuitem">Перенести выделенные строки…</button>
+      <button id="table-select-column" class="context-menu__item" type="button" role="menuitem">Выделить колонку</button>
+      <button id="table-select" class="context-menu__item" type="button" role="menuitem">Выделить таблицу</button>
+      <button id="table-merge" class="context-menu__item" type="button" role="menuitem">Объединить ячейки</button>
+      <button id="table-split" class="context-menu__item" type="button" role="menuitem">Разделить ячейку</button>
+      <button id="table-fit-grid" class="context-menu__item" type="button" role="menuitem">Выровнять сетку по тексту</button>
+      <div class="context-menu__separator" role="separator"></div>
+      <button id="table-delete-row" class="context-menu__item context-menu__item--danger" type="button" role="menuitem">Удалить строку</button>
+      <button id="table-exclude" class="context-menu__item context-menu__item--danger" type="button" role="menuitem">Исключить таблицу из сборки</button>
     </div>
     <script src="/translation-units.js"></script>
     <script src="/layout-model.js"></script>

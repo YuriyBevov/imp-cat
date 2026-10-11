@@ -46,6 +46,9 @@ test('Codex prompt requires complete text and readable service-object content', 
   assert.match(prompt, /Сохраняй отдельные колонки, строки таблиц/)
   assert.match(prompt, /tableId/)
   assert.match(prompt, /Никогда не возвращай всю строку таблицы одним сегментом/)
+  assert.match(prompt, /Заголовки колонок являются ячейками общей строки/)
+  assert.match(prompt, /пустые физические ячейки/)
+  assert.match(prompt, /всю физическую ячейку, а не только рамку текста/)
 })
 
 test('normalizes structural table coordinates for native export', () => {

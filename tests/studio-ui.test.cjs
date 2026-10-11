@@ -25,6 +25,68 @@ const iconSprite = fs.readFileSync(path.join(root, 'public/icons.svg'), 'utf8')
 const legacyPrototypeHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8')
 const agentsGuide = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8')
 
+test('fresh coarse table recognition becomes a grid with horizontal headers and safe continuations', async () => {
+  const { buildSceneFromAgent } = require('../lib/studio-model.cjs')
+  const id = 'b'.repeat(32)
+  const labels = ['No.', 'Details', 'Amount']
+  const style = { fontFamily: 'Arial', fontSizePt: 8, fontWeight: 400, textAlign: 'left', lineHeight: 1.2, color: '#000000' }
+  const segment = (segmentId, sourceText, y, height, extra = {}) => ({ segmentId, type: 'table', sourceText,
+    readingOrder: y * 100, flowGroup: 'statement', regions: [{ x: .05, y, width: .9, height }], style, confidence: .98, ...extra })
+  const analysis = { pages: [0, 1, 2].map(index => ({ index, width: 1600, height: 1131,
+    segments: index < 2 ? [
+      segment(`title-${index}`, 'Statement', .05, .04, { type: 'text', flowGroup: 'header' }),
+      segment(`header-${index}`, labels.join('\n'), .2, .04),
+      segment(`body-${index}`, Array.from({ length: 20 }, (_, row) => `${row + 1} | Purpose | ${row % 2 ? '100' : ''}`).join('\n'), .24, .6),
+    ] : labels.map((label, col) => segment(`valid-${col}`, label, .2, .04, { type: 'table_cell', tableId: 'valid-table',
+      rowIndex: 0, columnIndex: col, rowSpan: 1, columnSpan: 1,
+      regions: [{ x: [.05, .14, .68][col], y: .2, width: [.09, .54, .27][col], height: .04 }] })) })) }
+  const scene = buildSceneFromAgent(analysis, { documentId: id })
+  scene.workflowStage = 3
+  scene.translationCompleted = true
+  for (const object of scene.objects) object.translation = object.sourceText === 'Purpose' ? 'Назначение платежа '.repeat(25) : object.sourceText
+  const errors = []
+  const virtualConsole = new VirtualConsole()
+  virtualConsole.on('jsdomError', error => errors.push(error))
+  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true,
+    url: `http://127.0.0.1:3100/?document=${id}`, virtualConsole })
+  let savedScene
+  dom.window.CSS = { escape: value => String(value) }
+  dom.window.fetch = async (url, options = {}) => {
+    if (options.method === 'PUT') savedScene = JSON.parse(options.body)
+    return { ok: true, json: async () => String(url).endsWith('/status') ? { translationProviderConfigured: false }
+      : { metadata: { id, revision: 1 }, scene } }
+  }
+  dom.window.eval(translationUnits)
+  dom.window.eval(layoutModelClient)
+  dom.window.eval(tableModelClient)
+  dom.window.eval(client)
+  try {
+    for (let attempt = 0; attempt < 100 && !savedScene; attempt += 1) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(errors.length, 0)
+    assert.ok(savedScene, dom.window.document.querySelector('#toast').textContent)
+    assert.ok(savedScene.pages.some(page => page.layoutContinuation))
+    assert.equal(savedScene.objects.some(object => object.type === 'table'), false)
+    assert.equal(savedScene.objects.filter(object => object.type === 'table_cell').length, 129)
+    assert.equal(dom.window.document.querySelectorAll('.table-structure-boundary').length, savedScene.tables.length)
+    for (const tableId of ['recovered-0-statement', 'recovered-1-statement']) {
+      const headers = savedScene.objects.filter(object => object.tableId === tableId && object.rowIndex === 0)
+      assert.equal(new Set(headers.map(object => `${object.pageIndex}:${object.y}`)).size, 1)
+      assert.deepEqual(headers.sort((a, b) => a.columnIndex - b.columnIndex).map(object => object.translation), labels)
+      assert.ok(new Set(savedScene.objects.filter(object => object.tableId === tableId).map(object => object.pageIndex)).size > 1)
+    }
+    for (const object of savedScene.objects) {
+      const area = savedScene.pages[object.pageIndex].contentBounds
+      for (const value of [object.x - area.x, object.y - area.y, object.width, object.height]) assert.ok(Math.abs(value / 17 - Math.round(value / 17)) < 1e-6)
+      assert.ok(object.y + object.height <= area.y + area.height + 1e-6)
+      for (const other of savedScene.objects) {
+        if (other.id === object.id || other.pageIndex !== object.pageIndex) continue
+        assert.ok(Math.min(object.x + object.width, other.x + other.width) <= Math.max(object.x, other.x) + 1e-6
+          || Math.min(object.y + object.height, other.y + other.height) <= Math.max(object.y, other.y) + 1e-6, `${object.id} overlaps ${other.id}`)
+      }
+    }
+  } finally { dom.window.close() }
+})
+
 test('studio exposes the complete source-to-export workflow', () => {
   for (const id of [
     'file-input', 'orientation-view', 'orientation-pages', 'orientation-all-left', 'orientation-all-reset', 'orientation-all-right', 'orientation-submit',
@@ -53,7 +115,6 @@ test('studio exposes the complete source-to-export workflow', () => {
     'instruction-library-new', 'instruction-library-list', 'instruction-library-form', 'instruction-library-id',
     'instruction-library-text', 'instruction-library-form-cancel',
     'knowledge-suggestion-popover', 'knowledge-suggestion-list', 'knowledge-suggestion-close', 'approve-button', 'merge-button', 'split-button',
-    'table-cell-fields', 'table-id', 'table-row', 'table-column', 'table-row-span', 'table-column-span',
     'align-left-button',
     'fit-content-width-button', 'fit-content-height-button', 'fit-content-both-button',
     'stretch-work-area-width-button', 'stretch-work-area-height-button', 'fit-min-content-width-button',
@@ -409,19 +470,20 @@ test('layout toolbar hides and restores segment type labels in both directions',
   assert.equal(toggle.hidden, false)
   assert.equal(toggle.getAttribute('aria-label'), 'Скрыть типы сегментов')
   assert.equal(toggle.getAttribute('aria-pressed'), 'false')
+  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye')
   assert.ok(canvas.querySelector('.scene-object__badge'))
 
   toggle.click()
   assert.equal(canvas.classList.contains('is-segment-type-labels-hidden'), true)
   assert.equal(toggle.getAttribute('aria-label'), 'Показать типы сегментов')
   assert.equal(toggle.getAttribute('aria-pressed'), 'true')
-  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye')
+  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye-off')
 
   toggle.click()
   assert.equal(canvas.classList.contains('is-segment-type-labels-hidden'), false)
   assert.equal(toggle.getAttribute('aria-label'), 'Скрыть типы сегментов')
   assert.equal(toggle.getAttribute('aria-pressed'), 'false')
-  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye-off')
+  assert.equal(toggle.querySelector('use').getAttribute('href'), '/icons.svg#icon-eye')
   dom.window.close()
 })
 
@@ -1570,6 +1632,8 @@ test('workflow keeps paired editors, preserves history and combines layout with 
   assert.equal(reviewedWorkflowRow.querySelector('.scene-object > .segment-content-badges').contentEditable, 'false')
   assert.equal(reviewedWorkflowRow.querySelector('.segment-row-note').textContent.trim(), 'Проверьте имя по оригиналу.')
   assert.doesNotMatch(reviewedWorkflowRow.querySelector('.segment-row-note').textContent, /Автокоррекция макета/)
+  assert.equal(reviewedWorkflowRow.firstElementChild.className, 'segment-translation-row__meta')
+  assert.match(styles, /\.studio\[data-workflow-stage="1"\] \.segment-translation-row__meta\s*\{[^}]*grid-column:\s*1 \/ -1/)
   assert.equal(dom.window.document.querySelector('[data-object-id="workflow-object-2"] .segment-translation-row__meta').hidden, true)
   assert.ok(dom.window.document.querySelector('.document-review-layout'))
   assert.ok(dom.window.document.querySelector('.document-review-preview'))
@@ -2078,7 +2142,9 @@ test('layout initialization inserts continuation pages, preserves source links a
   const continuationSourcePreview = dom.window.document.querySelector('#source-preview-canvas .source-preview-page')
   assert.equal(continuationSourcePreview.querySelector('img')?.getAttribute('src'), `/api/studio/documents/${id}/pages/0/image`)
   assert.equal(continuationSourcePreview.querySelector('.source-preview-page__empty'), null)
-  assert.equal(centered.x + centered.width / 2, 270)
+  assert.ok(Math.abs(centered.x + centered.width / 2 - 270) <= 17, 'centering is preserved within one grid cell')
+  assert.equal((centered.x - 40) % 17, 0)
+  assert.equal(centered.width % 17, 0)
   assert.ok(centered.width < 300)
   const before = savedScene.objects.map(({ x, y, width, height, pageIndex }) => ({ x, y, width, height, pageIndex }))
   dom.window.document.querySelector('#workflow-previous').click()
@@ -2323,12 +2389,12 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const automaticHeight = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height)
   assert.ok(automaticWidth < 200)
   assert.ok(automaticHeight <= 34)
-  const resizeHandle = dom.window.document.querySelector('.scene-object__resize')
+  let resizeHandle = dom.window.document.querySelector('.scene-object__resize')
   resizeHandle.dispatchEvent(pointer('pointerdown', 0, 0))
   resizeHandle.dispatchEvent(pointer('pointermove', 20, 10))
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-resizing'), true)
-  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width), automaticWidth + 20)
-  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height), automaticHeight + 10)
+  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width), automaticWidth + 34)
+  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height), automaticHeight + 17)
   resizeHandle.dispatchEvent(pointer('pointerup', 20, 10))
   assert.equal(dom.window.document.querySelector('.scene-object').classList.contains('is-resizing'), false)
   assert.equal(resizeHandle.style.width, '')
@@ -2337,6 +2403,7 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const firstWidth = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
   assert.ok(firstWidth >= firstWidthMinimum)
   assert.ok(Math.abs(firstWidth / gridStep - Math.round(firstWidth / gridStep)) < 0.0001)
+  resizeHandle = dom.window.document.querySelector('.scene-object__resize')
   resizeHandle.dispatchEvent(pointer('pointerdown', 20, 10))
   resizeHandle.dispatchEvent(pointer('pointermove', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointerup', 30, 20))
@@ -2344,10 +2411,11 @@ test('studio restores a saved scene and renders editable page objects', async ()
   const secondWidth = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.width)
   assert.ok(secondWidth >= secondWidthMinimum)
   assert.ok(Math.abs(secondWidth / gridStep - Math.round(secondWidth / gridStep)) < 0.0001)
+  resizeHandle = dom.window.document.querySelector('.scene-object__resize')
 
   resizeHandle.dispatchEvent(pointer('pointerdown', 30, 20))
   resizeHandle.dispatchEvent(pointer('pointermove', 30, -1000))
-  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height), 0)
+  assert.equal(Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height), 17)
   resizeHandle.dispatchEvent(pointer('pointerup', 30, -1000))
   const minimumRenderedHeight = Number.parseFloat(dom.window.document.querySelector('.scene-object').style.height)
   assert.ok(minimumRenderedHeight > 12, 'resize handle must preserve the minimum text height')
@@ -3143,13 +3211,43 @@ test('table tools create, edit a column, insert and undo while export stays avai
   const $ = selector => dom.window.document.querySelector(selector)
   $('#new-table-rows').value = '2'; $('#new-table-columns').value = '2'
   $('#table-create').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 0)
+  assert.equal($('#table-create').getAttribute('aria-pressed'), 'true')
+  let surface = $('.studio-page')
+  surface.getBoundingClientRect = () => ({ left: 100, top: 50, width: 397, height: 561.5 })
+  const point = { bubbles: true, cancelable: true, button: 0, clientX: 100 + (40 + 34) / 2, clientY: 50 + (40 + 68) / 2 }
+  surface.dispatchEvent(new dom.window.MouseEvent('pointermove', point))
+  assert.equal($('.table-placement-preview').classList.contains('is-invalid'), false)
+  surface.dispatchEvent(new dom.window.MouseEvent('pointerdown', point))
   assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 4)
+  assert.equal($('.scene-object[data-type="table_cell"]').style.left, '74px')
+  assert.equal($('.scene-object[data-type="table_cell"]').style.top, '108px')
+  assert.equal($('#table-create').getAttribute('aria-pressed'), 'false')
+  assert.equal($('.table-placement-preview'), null)
+  assert.equal($('#table-picker').options.length, 2)
+  $('.table-structure-label').click()
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 4)
+  $('#table-picker').value = $('#table-picker').options[1].value
+  $('#table-picker').dispatchEvent(new dom.window.Event('change'))
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 4)
+  $('#table-create').click()
+  surface = $('.studio-page')
+  surface.getBoundingClientRect = () => ({ left: 100, top: 50, width: 397, height: 561.5 })
+  surface.dispatchEvent(new dom.window.MouseEvent('pointerdown', point))
+  assert.equal($('.table-placement-preview').classList.contains('is-invalid'), true)
+  assert.match($('#table-placement-hint').textContent, /занято/)
+  assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 4)
+  surface.dispatchEvent(new dom.window.MouseEvent('pointerdown', { ...point, clientY: 610 }))
+  assert.match($('#table-placement-hint').textContent, /выходит за рабочую область/)
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  assert.equal($('#table-create').getAttribute('aria-pressed'), 'false')
+  assert.equal($('.table-placement-preview'), null)
+  $('.scene-object[data-type="table_cell"]').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+  assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 1)
   assert.equal($('#table-tools').closest('[hidden]'), null)
   assert.equal($('#export-pdf-button').disabled, false)
   assert.match($('#table-selection-address').textContent, /строка 1, колонка 1/)
-  assert.equal($('#table-row').value, '1')
-  $('#table-column-width').value = '170'
-  $('#table-column-width').dispatchEvent(new dom.window.Event('change'))
+  for (let i = 0; i < 4; i++) $('.scene-object[data-type="table_cell"] .table-cell-resize--column').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
   assert.equal(dom.window.document.querySelector('.scene-object[data-type="table_cell"]').style.width, '170px')
   $('#table-insert-row').click()
   assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 6)
@@ -3162,4 +3260,842 @@ test('table tools create, edit a column, insert and undo while export stays avai
   assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 4)
   assert.deepEqual(errors, [])
   dom.window.close()
+})
+
+test('table insertion shifts later rows and fits a new column into the occupied working width with undo', async () => {
+  const id = '4'.repeat(32)
+  const scene = { title: 'Insertion into a full-width table', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 612, height: 1020 } }],
+    objects: Array.from({ length: 6 }, (_, i) => ({ id: `insert-${i}`, type: 'table_cell', tableId: 'insert', pageIndex: 0,
+      rowIndex: Math.floor(i / 2) + 13, columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + (i % 2 ? 204 : 0), y: 40 + Math.floor(i / 2) * 34, width: i % 2 ? 408 : 204, height: 34,
+      sourceText: `source-${i}`, translation: `text-${i}`, confidence: 1, excluded: false,
+      manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }, sourceTextStyles: [], translationTextStyles: [] })) }
+  const errors = [], console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  try {
+    dom.window.CSS = { escape: String }
+    dom.window.Element.prototype.scrollIntoView = function () {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => options.method === 'PUT' ? { metadata: { id, revision: 2 } }
+      : String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {} })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const cell = index => $(`.scene-object[data-id="insert-${index}"]`)
+    const allCells = () => [...dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]')]
+    assert.equal($('#table-insert-row-before').disabled, true)
+    cell(0).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    assert.equal($('#table-insert-row-before').disabled, false)
+    $('#table-insert-row-before').click()
+    assert.equal(allCells().length, 8)
+    assert.equal(cell(0).style.top, '74px')
+    assert.equal(cell(4).style.top, '142px')
+    assert.equal(allCells().filter(node => node.style.top === '40px').length, 2)
+    assert.equal(cell(0).querySelector('.scene-object__content').textContent, 'text-0')
+    $('#undo-button').click()
+    assert.equal(allCells().length, 6)
+    assert.equal(cell(0).style.top, '40px')
+    $('#table-select').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 6)
+    assert.match($('#table-selection-address').textContent, /строка 14, колонка 1/)
+    $('#table-insert-row').click()
+    assert.equal(allCells().length, 8)
+    assert.equal(cell(0).style.top, '40px')
+    assert.equal(cell(2).style.top, '108px')
+    assert.equal(cell(4).style.top, '142px')
+    assert.equal(allCells().filter(node => node.style.top === '74px').length, 2)
+    assert.equal(cell(4).querySelector('.scene-object__content').textContent, 'text-4')
+    $('#undo-button').click()
+    assert.equal(allCells().length, 6)
+    assert.equal(cell(2).style.top, '74px')
+    assert.equal(cell(4).style.top, '108px')
+    cell(4).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    $('#table-insert-row').click()
+    assert.equal(allCells().filter(node => node.style.top === '142px').length, 2)
+    assert.equal(cell(4).style.top, '108px')
+    $('#undo-button').click()
+    cell(0).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    $('#table-insert-column').click()
+    assert.equal(allCells().length, 9)
+    for (const index of [0, 2, 4]) assert.equal(cell(index).style.width, '204px')
+    for (const index of [1, 3, 5]) {
+      assert.equal(cell(index).style.left, '261px')
+      assert.equal(cell(index).style.width, '391px')
+      assert.equal(cell(index).querySelector('.scene-object__content').textContent, `text-${index}`)
+    }
+    const newCells = allCells().filter(node => !node.dataset.id.startsWith('insert-'))
+    assert.equal(newCells.length, 3)
+    assert.ok(newCells.every(node => node.style.left === '244px' && node.style.width === '17px'))
+    assert.ok(allCells().every(node => Number.parseFloat(node.style.left) + Number.parseFloat(node.style.width) <= 652))
+    $('#undo-button').click()
+    assert.equal(allCells().length, 6)
+    assert.equal(cell(1).style.width, '408px')
+    assert.equal(cell(1).style.left, '244px')
+    cell(0).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    $('#table-insert-column-before').click()
+    assert.equal(allCells().length, 9)
+    assert.equal(cell(0).style.left, '57px')
+    assert.equal(cell(1).style.left, '261px')
+    const leftCells = allCells().filter(node => !node.dataset.id.startsWith('insert-'))
+    assert.equal(leftCells.length, 3)
+    assert.ok(leftCells.every(node => node.style.left === '40px' && node.style.width === '17px'))
+    assert.equal(cell(1).querySelector('.scene-object__content').textContent, 'text-1')
+    $('#undo-button').click()
+    assert.equal(allCells().length, 6)
+    assert.equal(cell(0).style.left, '40px')
+    assert.equal(cell(1).style.width, '408px')
+    assert.deepEqual(errors, [])
+  } finally { dom.window.close() }
+})
+
+test('table context menu copies a row, pastes at the clicked cell, preserves selection and closes accessibly', async () => {
+  const id = '3'.repeat(32)
+  const scene = { title: 'Table context menu', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }],
+    objects: Array.from({ length: 7 }, (_, i) => ({ id: `menu-${i}`, type: 'table_cell', tableId: i < 4 ? 'main' : 'different', pageIndex: 0,
+      rowIndex: i < 4 ? Math.floor(i / 2) : 0, columnIndex: i < 4 ? i % 2 : i - 4,
+      rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + (i < 4 ? i % 2 * 102 : (i - 4) * 68), y: i < 4 ? 40 + Math.floor(i / 2) * 34 : 244, width: i < 4 ? 102 : 68, height: 34,
+      sourceText: `source-${i}`, translation: `text-${i}`, confidence: 1, excluded: false,
+      manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: i === 0 ? 700 : 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }, sourceTextStyles: [], translationTextStyles: [] })) }
+  const errors = [], console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  try {
+    dom.window.CSS = { escape: String }
+    dom.window.Element.prototype.scrollIntoView = function () {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => options.method === 'PUT' ? { metadata: { id, revision: 2 } }
+      : String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {} })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const cell = index => $(`.scene-object[data-id="menu-${index}"]`)
+    const menu = $('#table-context-menu')
+    const rightClick = index => {
+      const event = new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 500, clientY: 300 })
+      cell(index).querySelector('.scene-object__content').dispatchEvent(event)
+      assert.equal(event.defaultPrevented, true)
+      assert.equal(menu.hidden, false)
+    }
+    assert.equal($('#table-column-width'), null)
+    assert.equal($('#table-row-height-range'), null)
+    assert.equal($('#table-menu-open'), null)
+    rightClick(0)
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 1)
+    assert.equal($('#table-paste-row-before').disabled, true)
+    assert.match($('#table-context-title').textContent, /Строка 1 · колонка A/)
+    $('#table-select-row').click()
+    assert.equal(menu.hidden, true)
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+    rightClick(1)
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+    $('#table-copy-row').click()
+    assert.equal(menu.hidden, true)
+    rightClick(4)
+    assert.equal($('#table-paste-row-before').disabled, true, 'a table with a different column count cannot accept this row')
+    menu.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(menu.hidden, true)
+    assert.equal(dom.window.document.activeElement, cell(4))
+    rightClick(2)
+    assert.equal($('#table-paste-row-before').disabled, false)
+    $('#table-paste-row-before').click()
+    assert.equal(menu.hidden, true)
+    const inserted = [...dom.window.document.querySelectorAll('.scene-object.is-selected')]
+    assert.equal(inserted.length, 2)
+    assert.deepEqual(inserted.map(node => node.querySelector('.scene-object__content').textContent), ['text-0', 'text-1'])
+    assert.equal(inserted[0].style.fontWeight, '700')
+    assert.ok(inserted.every(node => node.style.top === '74px'))
+    assert.equal(cell(2).style.top, '108px')
+    assert.equal(cell(2).querySelector('.scene-object__content').textContent, 'text-2')
+    $('#undo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 7)
+    assert.equal(cell(2).style.top, '74px')
+    $('#redo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 9)
+    $('#undo-button').click()
+    rightClick(2)
+    $('#table-paste-row-after').click()
+    assert.equal(cell(2).style.top, '74px')
+    assert.ok([...dom.window.document.querySelectorAll('.scene-object.is-selected')].every(node => node.style.top === '108px'))
+    $('#undo-button').click()
+    cell(0).focus()
+    cell(0).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }))
+    assert.equal(menu.hidden, false)
+    menu.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    assert.equal(dom.window.document.activeElement, $('#table-exclude'))
+    menu.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    assert.equal(dom.window.document.activeElement, $('#table-cut-row'))
+    dom.window.document.body.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    assert.equal(menu.hidden, true)
+    dom.window.document.querySelector('.scene-object.is-primary-selected').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }))
+    assert.equal(menu.hidden, false)
+    $('.studio-page').dispatchEvent(new dom.window.Event('scroll', { bubbles: false }))
+    assert.equal(menu.hidden, true)
+    rightClick(0)
+    $('#table-select-column').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+    rightClick(0)
+    $('#table-exclude').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 3)
+    $('#undo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 7)
+    assert.deepEqual(errors, [])
+  } finally { dom.window.close() }
+})
+
+test('table menu survives the delayed knowledge refresh caused by leaving an editor', async () => {
+  const id = '2'.repeat(32)
+  const scene = { title: 'Menu refresh race', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }],
+    objects: Array.from({ length: 2 }, (_, i) => ({ id: `race-${i}`, type: 'table_cell', tableId: 'race', pageIndex: 0,
+      rowIndex: 0, columnIndex: i, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + i * 102, y: 40, width: 102, height: 34, sourceText: `source-${i}`, translation: `text-${i}`, confidence: 1, excluded: false,
+      manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }, sourceTextStyles: [], translationTextStyles: [] })) }
+  let delayRefresh = false, releaseRefresh, savedScene = scene
+  const errors = [], console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  try {
+    dom.window.CSS = { escape: String }
+    dom.window.Element.prototype.scrollIntoView = function () {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => {
+      if (String(url).endsWith(`/documents/${id}`)) return { metadata: { id, revision: 1 }, scene }
+      if (options.method === 'PUT') {
+        savedScene = JSON.parse(options.body)
+        return { metadata: { id, revision: 2 } }
+      }
+      if (String(url).endsWith('/knowledge-matches/refresh')) {
+        if (delayRefresh) return new Promise(resolve => { releaseRefresh = resolve })
+        return { metadata: { id, revision: 2 }, scene: savedScene, matchCount: 0 }
+      }
+      return {}
+    } })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const editor = $('.scene-object[data-id="race-0"] .scene-object__content')
+    delayRefresh = true
+    editor.focus()
+    editor.textContent = 'Edited'
+    editor.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+    editor.dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 500, clientY: 300 }))
+    const menu = $('#table-context-menu')
+    assert.equal(menu.hidden, false)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(typeof releaseRefresh, 'function')
+    const focusedItem = dom.window.document.activeElement
+    const menuLeft = menu.style.left, menuTop = menu.style.top
+    releaseRefresh({ metadata: { id, revision: 3 }, scene: JSON.parse(JSON.stringify(savedScene)), matchCount: 0 })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(menu.hidden, false, 'a background refresh must not dismiss the open table menu')
+    assert.equal(menu.style.left, menuLeft)
+    assert.equal(menu.style.top, menuTop)
+    assert.equal(dom.window.document.activeElement, focusedItem)
+    $('#inspector-panel-body').dispatchEvent(new dom.window.Event('scroll'))
+    assert.equal(menu.hidden, false, 'unrelated panel scroll must not dismiss the table menu')
+    $('#canvas-scroll').dispatchEvent(new dom.window.Event('scroll'))
+    assert.equal(menu.hidden, false, 'an unchanged scroll position after rendering must not dismiss the menu')
+    $('#canvas-scroll').scrollTop = 34
+    $('#canvas-scroll').dispatchEvent(new dom.window.Event('scroll'))
+    assert.equal(menu.hidden, true, 'an actual canvas scroll must still dismiss the menu')
+    dom.window.document.querySelector('.scene-object.is-primary-selected').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true }))
+    assert.equal(menu.hidden, false)
+    $('#table-copy-row').click()
+    assert.equal(menu.hidden, true)
+    $('.scene-object[data-id="race-0"]').dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    $('#table-paste-row-after').click()
+    const inserted = [...dom.window.document.querySelectorAll('.scene-object.is-selected')]
+    assert.deepEqual(inserted.map(node => node.querySelector('.scene-object__content').textContent), ['Edited', 'text-1'])
+    assert.deepEqual(errors, [])
+  } finally { dom.window.close() }
+})
+
+test('new table cells keep entered text visible immediately when focus moves between cells', async () => {
+  const id = 'f'.repeat(32)
+  const scene = { title: 'Table cell editing', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru', objects: [],
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }] }
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}` })
+  try {
+    dom.window.CSS = { escape: String }
+    dom.window.fetch = async (url, options = {}) => {
+      // Keep saves pending: text must remain visible before a server refresh can redraw the table.
+      if (options.method === 'PUT') return new Promise(() => {})
+      return { ok: true, json: async () => String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {} }
+    }
+    dom.window.eval(translationUnits)
+    dom.window.eval(tableModelClient)
+    dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    $('#new-table-rows').value = '1'
+    $('#new-table-columns').value = '2'
+    $('#table-create').click()
+    $('.studio-page').dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientX: 74, clientY: 108 }))
+    const editors = [...dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"] .scene-object__content')]
+    assert.equal(editors.length, 2)
+    const enterText = (editor, text) => {
+      editor.focus()
+      editor.textContent = text
+      editor.dispatchEvent(new dom.window.InputEvent('input', { bubbles: true, inputType: 'insertText' }))
+    }
+    enterText(editors[0], 'Первое значение')
+    editors[1].focus()
+    assert.equal(editors[0].textContent, 'Первое значение')
+    assert.equal(editors[0].dataset.outputField, 'translation')
+    assert.equal(scene.objects[0].translation, 'Первое значение')
+    enterText(editors[1], 'Второе значение')
+    editors[0].focus()
+    assert.equal(editors[1].textContent, 'Второе значение')
+    enterText(editors[0], `${editors[0].textContent} дополнено`)
+    assert.equal(editors[0].dataset.outputField, 'translation')
+    editors[1].focus()
+    assert.equal(editors[0].textContent, 'Первое значение дополнено')
+    assert.equal(editors[1].textContent, 'Второе значение')
+    assert.equal(dom.window.document.activeElement, editors[1])
+  } finally { dom.window.close() }
+})
+
+test('table dimensions repair overlaps, resize shared edges and reject new collisions', async () => {
+  const { validateScene } = require('../lib/studio-model.cjs')
+  const id = '9'.repeat(32)
+  const scene = { title: 'Table dimensions', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }],
+    objects: Array.from({ length: 4 }, (_, i) => ({ id: `dimension-${i}`, type: 'table_cell', tableId: 'dimensions', pageIndex: 0,
+      rowIndex: Math.floor(i / 2), columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + i % 2 * 68, y: 108 + Math.floor(i / 2) * 17, width: 102, height: 34,
+      sourceText: 'Source', translation: 'Текст', confidence: 1, excluded: false, manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [] })) }
+  scene.objects.push({ ...scene.objects[0], id: 'obstacle', type: 'text', tableId: null, x: 330, y: 108, width: 68, height: 68 })
+  assert.ok(validateScene(scene).warnings.some(warning => warning.code === 'overlap'))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}` })
+  try {
+    dom.window.CSS = { escape: String }
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => options.method === 'PUT' ? { metadata: { id, revision: 2 } }
+      : String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {} })
+    dom.window.eval(translationUnits)
+    dom.window.eval(tableModelClient)
+    dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const cell = index => $(`.scene-object[data-id="dimension-${index}"]`)
+    const assertNoCellOverlaps = () => {
+      const current = { ...scene, objects: [...dom.window.document.querySelectorAll('.scene-object')].map(node => ({
+        ...scene.objects.find(object => object.id === node.dataset.id), x: parseFloat(node.style.left), y: parseFloat(node.style.top), width: parseFloat(node.style.width), height: parseFloat(node.style.height),
+      })) }
+      assert.equal(validateScene(current).warnings.some(warning => warning.code === 'overlap'), false)
+    }
+    assertNoCellOverlaps()
+    cell(0).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    assert.equal($('#fit-content-width-button').disabled, true)
+    assert.ok(cell(0).querySelector('.table-cell-resize--column'))
+    assert.ok(cell(0).querySelector('.table-cell-resize--row'))
+    $('#table-fit-grid').click()
+    assertNoCellOverlaps()
+    const change = (axis, value) => {
+      const handle = cell(0).querySelector(`.table-cell-resize--${axis}`)
+      const key = axis === 'column' ? 'clientX' : 'clientY'
+      const size = Number.parseFloat(cell(0).style[axis === 'column' ? 'width' : 'height'])
+      handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, [key]: 200 }))
+      dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', { [key]: 200 + Number(value) - size }))
+      dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', { [key]: 200 + Number(value) - size }))
+    }
+    change('row', '17')
+    assert.equal(cell(0).style.height, '34px', 'the row cannot shrink below its text height')
+    change('row', '102')
+    assert.equal(cell(0).style.height, '102px')
+    assert.equal(cell(1).style.height, '102px')
+    assert.equal(cell(2).style.top, '210px')
+    change('row', '136')
+    assert.equal(cell(2).style.top, '244px')
+    change('column', '153')
+    assert.equal(cell(2).style.width, '153px')
+    assert.equal(cell(1).style.left, '193px')
+    const handle = cell(0).querySelector('.table-cell-resize--column')
+    handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientX: 200 }))
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientX: 234 }))
+    assert.equal(cell(0).style.width, '187px')
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', { clientX: 234 }))
+    assert.equal(cell(1).style.left, '227px')
+    assertNoCellOverlaps()
+    // A different segment to the right limits growth; available space inside the grid remains usable.
+    change('column', '306')
+    assert.equal(cell(0).style.width, '238px')
+    assert.match($('#table-size-feedback').textContent, /доступный размер/)
+    assertNoCellOverlaps()
+    $('#undo-button').click()
+    assert.equal(cell(0).style.width, '187px')
+    change('row', '2000')
+    assert.ok(Number.parseFloat(cell(0).style.height) > 136)
+    assert.match($('#table-size-feedback').textContent, /доступный размер/)
+    $('#undo-button').click()
+    assert.equal(cell(0).style.height, '136px')
+    const rowHandle = cell(0).querySelector('.table-cell-resize--row')
+    rowHandle.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientY: 200 }))
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientY: 234 }))
+    assert.equal(cell(0).style.height, '170px')
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(cell(0).style.height, '136px')
+    $('#undo-button').click()
+    assert.equal(cell(0).style.width, '153px')
+  } finally { dom.window.close() }
+})
+
+test('existing full-page tables resize using neighbouring space without expanding unrelated rows', async () => {
+  const id = '8'.repeat(32)
+  const heights = [34, 34, 952], tops = [40, 74, 108]
+  const scene = { title: 'Full table', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }],
+    objects: Array.from({ length: 6 }, (_, i) => ({ id: `full-${i}`, type: 'table_cell', tableId: 'full', pageIndex: 0,
+      rowIndex: Math.floor(i / 2), columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + i % 2 * 340, y: tops[Math.floor(i / 2)], width: 340, height: heights[Math.floor(i / 2)],
+      sourceText: 'A', translation: i === 2 ? 'Длинный исходный текст '.repeat(50) : 'А', confidence: 1, excluded: false,
+      manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }, sourceTextStyles: [], translationTextStyles: [] })) }
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}` })
+  try {
+    dom.window.CSS = { escape: String }
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => options.method === 'PUT' ? { metadata: { id, revision: 2 } }
+      : String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {} })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const cell = index => $(`.scene-object[data-id="full-${index}"]`)
+    cell(0).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    assert.equal($('#table-column-width'), null)
+    assert.equal($('#table-row-height'), null)
+    assert.ok(cell(0).querySelector('.table-cell-resize--column').classList.contains('scene-object__resize'))
+    cell(0).querySelector('.table-cell-resize--column').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    assert.equal(cell(0).style.width, '357px')
+    assert.equal(cell(1).style.width, '323px')
+    assert.equal(cell(1).style.left, '397px')
+    assert.equal(cell(2).style.height, '34px', 'pre-existing overflow in another row must not block width changes')
+    assert.match($('#table-size-feedback').textContent, /перераспределено/)
+    cell(0).querySelector('.table-cell-resize--row').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    assert.equal(cell(0).style.height, '51px')
+    assert.equal(cell(4).style.height, '935px')
+    assert.equal(Number.parseFloat(cell(4).style.top) + Number.parseFloat(cell(4).style.height), 1060)
+    let handle = cell(0).querySelector('.table-cell-resize--column')
+    const start = () => handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientX: 200 }))
+    start()
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientX: 217 }))
+    assert.equal(cell(0).style.width, '374px')
+    assert.equal(scene.objects[0].width, 357, 'marker preview must not create intermediate scene edits')
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal(cell(0).style.width, '357px')
+    handle = cell(0).querySelector('.table-cell-resize--column')
+    start()
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientX: 217 }))
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', { clientX: 217 }))
+    assert.equal(cell(0).style.width, '374px')
+    $('#undo-button').click()
+    assert.equal(cell(0).style.width, '357px')
+  } finally { dom.window.close() }
+})
+
+test('table row menu cascades onto occupied pages, saves new pages, and supports cut, paste, deletion and undo', async () => {
+  const id = '9'.repeat(32)
+  const page = index => ({ index, sourcePageIndex: index, widthPx: 794, heightPx: 1123, imageUrl: `/page-${index}.png`, contentBounds: { x: 40, y: 40, width: 204, height: 136 } })
+  const objects = Array.from({ length: 12 }, (_, i) => ({ id: `flow-${i}`, type: 'table_cell', tableId: 'flow', pageIndex: Math.floor(i / 6),
+    rowIndex: Math.floor(i / 2), columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+    x: 40 + i % 2 * 102, y: 40 + Math.floor(i % 6 / 2) * 34, width: 102, height: 34,
+    sourceText: `s${i}`, translation: `t${i}`, confidence: 1, excluded: false,
+    manualPosition: true, manualWidth: true, manualHeight: true,
+    style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }, sourceTextStyles: [], translationTextStyles: [],
+  }))
+  for (let i = 0; i < 2; i++) objects.push({ ...objects[0], id: `footer-${i}`, type: 'text', tableId: null, pageIndex: i, y: 142, width: 204, translation: 'Footer' })
+  const scene = { title: 'Row flow', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4, sourceLanguage: 'en', targetLanguage: 'ru', pages: [page(0), page(1)], objects }
+  const errors = [], console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  try {
+    let saved
+    dom.window.CSS = { escape: String }
+    dom.window.Element.prototype.scrollIntoView = function () {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => {
+      if (options.method === 'PUT') { saved = JSON.parse(options.body); return { metadata: { id, revision: 2 } } }
+      if (String(url).endsWith(`/documents/${id}`)) return { metadata: { id, revision: 1 }, scene }
+      return {}
+    } })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const cell = id => $(`.scene-object[data-id="${id}"]`)
+    const rightClick = id => cell(id).dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    const pageIndex = id => Number(cell(id).closest('.studio-page').dataset.pageIndex)
+    assert.equal($('#table-from-selection'), null)
+    assert.equal($('#table-address-editor'), null)
+    assert.equal($('#table-cell-fields'), null)
+    rightClick('flow-0'); $('#table-insert-row-before').click()
+    assert.equal($('#table-context-menu').hidden, true)
+    assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 3)
+    assert.equal(cell('flow-0').style.top, '74px')
+    assert.equal(pageIndex('footer-0'), 1)
+    assert.equal(cell('flow-6').style.top, '74px')
+    assert.equal(pageIndex('footer-1'), 2)
+    assert.deepEqual([...dom.window.document.querySelectorAll('.table-structure-label')].map(node => node.textContent), ['Таблица 4×2', 'Таблица 3×2'])
+    await new Promise(resolve => setTimeout(resolve, 800))
+    assert.equal(saved.pages.length, 3)
+    assert.equal(saved.pages[2].sourcePageIndex, null)
+    assert.equal(saved.pages[2].layoutContinuation, true)
+    assert.equal(saved.pages[1].sourcePageIndex, 1)
+    assert.equal(saved.objects.find(object => object.id === 'flow-6').rowIndex, 4)
+    $('#undo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 2)
+    assert.equal(cell('flow-0').style.top, '40px')
+    $('#redo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 3)
+    $('#undo-button').click()
+    rightClick('flow-0'); $('#table-cut-row').click()
+    assert.equal(cell('flow-0'), null)
+    assert.equal(cell('flow-1'), null)
+    assert.equal(cell('flow-2').style.top, '40px')
+    assert.equal(cell('footer-0').style.top, '108px')
+    rightClick('flow-4')
+    assert.equal($('#table-paste-row-after').disabled, false)
+    $('#table-paste-row-after').click()
+    assert.deepEqual([...dom.window.document.querySelectorAll('.scene-object.is-selected')].map(node => node.querySelector('.scene-object__content').textContent), ['t0', 't1'])
+    assert.ok([...dom.window.document.querySelectorAll('.scene-object.is-selected')].every(node => node.style.top === '108px'))
+    assert.equal(cell('flow-2').querySelector('.scene-object__content').textContent, 't2')
+    assert.equal(cell('footer-0').style.top, '142px')
+    $('#undo-button').click(); $('#undo-button').click()
+    assert.equal(cell('flow-0').style.top, '40px')
+    rightClick('flow-2'); $('#table-delete-row').click()
+    assert.equal(cell('flow-2'), null)
+    assert.equal(cell('flow-4').style.top, '74px')
+    assert.equal(cell('footer-0').style.top, '108px')
+    $('#undo-button').click()
+    assert.equal(cell('flow-2').querySelector('.scene-object__content').textContent, 't2')
+    assert.deepEqual(errors, [])
+  } finally { dom.window.close() }
+})
+
+test('row numbers select ranges and separate rows, transfer keeps one table, cancellation and undo preserve all data', async () => {
+  const id = '6'.repeat(32)
+  const scene = { title: 'Move selected rows', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4, sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [0, 1].map(index => ({ index, sourcePageIndex: index, widthPx: 794, heightPx: 1123, imageUrl: `/page-${index}.png`, contentBounds: { x: 40, y: 40, width: 204, height: 204 } })),
+    objects: Array.from({ length: 10 }, (_, i) => ({ id: `move-${i}`, type: 'table_cell', tableId: 'unified', pageIndex: 0,
+      rowIndex: Math.floor(i / 2), columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + i % 2 * 102, y: 40 + Math.floor(i / 2) * 34, width: 102, height: 34,
+      sourceText: `s${i}`, translation: `t${i}`, confidence: 1, excluded: false, manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], translationUnits: [{ id: `original-unit-${i}` }], knowledgeMatches: [{ entryId: `entry-${i}` }],
+    })) }
+  const errors = [], console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  try {
+    let saved
+    dom.window.CSS = { escape: String }
+    dom.window.Element.prototype.scrollIntoView = function () {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => {
+      if (options.method === 'PUT') { saved = JSON.parse(options.body); return { metadata: { id, revision: 2 } } }
+      return String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {}
+    } })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const row = index => $(`.table-row-selector[data-page-index="0"][data-row-index="${index}"]`)
+    const cell = id => $(`.scene-object[data-id="${id}"]`)
+    const selectedIds = () => [...dom.window.document.querySelectorAll('.scene-object.is-selected')].map(node => node.dataset.id)
+    assert.equal($('#table-menu-open'), null)
+    assert.equal(dom.window.document.querySelectorAll('.table-row-selector').length, 5)
+    row(1).click()
+    row(3).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, shiftKey: true }))
+    assert.equal(selectedIds().length, 6)
+    assert.ok([1, 2, 3].every(index => row(index).getAttribute('aria-pressed') === 'true'))
+    row(0).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    assert.equal(selectedIds().length, 8)
+    row(0).dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    assert.equal(selectedIds().length, 6)
+    row(2).dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 100, clientY: 120 }))
+    assert.equal(selectedIds().length, 6, 'right clicking a selected row must preserve the range')
+    $('#table-transfer-rows').click()
+    assert.equal($('#table-transfer-hint').hidden, false)
+    assert.equal($('#table-context-menu').hidden, true)
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    assert.equal($('#table-transfer-hint').hidden, true)
+    assert.equal(cell('move-2').closest('.studio-page').dataset.pageIndex, '0')
+    row(2).dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    $('#table-transfer-rows').click()
+    const target = $('.studio-page[data-page-index="1"]')
+    target.getBoundingClientRect = () => ({ left: 0, top: 0, width: 794, height: 1123 })
+    target.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, clientX: 50, clientY: 50 }))
+    assert.equal($('#table-transfer-hint').hidden, true)
+    assert.equal(cell('move-2').closest('.studio-page').dataset.pageIndex, '1')
+    assert.equal(cell('move-8').style.top, '74px')
+    assert.equal(cell('move-2').style.top, '40px')
+    assert.equal(cell('move-6').style.top, '108px')
+    assert.equal(selectedIds().length, 6)
+    assert.equal(new Set([...dom.window.document.querySelectorAll('.table-structure-boundary')].map(node => node.dataset.tableId)).size, 1)
+    await new Promise(resolve => setTimeout(resolve, 800))
+    const moved = saved.objects.find(object => object.id === 'move-2')
+    assert.equal(moved.tableId, 'unified')
+    assert.equal(moved.pageIndex, 1)
+    assert.equal(moved.translation, 't2')
+    assert.equal(moved.translationUnits[0].id, scene.objects[2].translationUnits[0].id)
+    assert.equal(moved.knowledgeMatches[0].entryId, 'entry-2')
+    $('#undo-button').click()
+    assert.equal(cell('move-2').closest('.studio-page').dataset.pageIndex, '0')
+    assert.equal(cell('move-8').style.top, '176px')
+    $('#redo-button').click()
+    assert.equal(cell('move-2').closest('.studio-page').dataset.pageIndex, '1')
+    row(0).dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    $('#table-select-rows-below').click()
+    assert.deepEqual(selectedIds(), ['move-0', 'move-1', 'move-8', 'move-9'])
+    assert.deepEqual(errors, [])
+  } finally { dom.window.close() }
+})
+
+test('overflowing saved rows are repaired before cell clamping and compaction removes gaps in every continuation', async () => {
+  const id = '5'.repeat(32)
+  const scene = { title: 'Repair and compact', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4, sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, sourcePageIndex: 0, widthPx: 794, heightPx: 1123, imageUrl: '/page.png', contentBounds: { x: 40, y: 40, width: 204, height: 136 } }],
+    objects: Array.from({ length: 12 }, (_, i) => ({ id: `compact-${i}`, type: 'table_cell', tableId: 'single', pageIndex: 0,
+      rowIndex: Math.floor(i / 2), columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + i % 2 * 102, y: 40 + Math.floor(i / 2) * 51, width: 102, height: 34,
+      sourceText: `s${i}`, translation: `t${i}`, confidence: 1, excluded: false, manualPosition: true, manualWidth: true, manualHeight: true,
+      style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' }, sourceTextStyles: [], translationTextStyles: [] })) }
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}` })
+  try {
+    let saved
+    dom.window.CSS = { escape: String }; dom.window.Element.prototype.scrollIntoView = function () {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => {
+      if (options.method === 'PUT') { saved = JSON.parse(options.body); return { metadata: { id, revision: 2 } } }
+      return String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {}
+    } })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const $ = selector => dom.window.document.querySelector(selector)
+    assert.equal(dom.window.document.querySelectorAll('.studio-page').length, 2)
+    assert.equal($('.scene-object[data-id="compact-8"]').closest('.studio-page').dataset.pageIndex, '1')
+    assert.equal($('.scene-object[data-id="compact-8"]').style.top, '40px')
+    $('.scene-object[data-id="compact-0"]').dispatchEvent(new dom.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    $('#table-fit-grid').click()
+    await new Promise(resolve => setTimeout(resolve, 800))
+    assert.equal(saved.objects.filter(cell => cell.type === 'table_cell').length, 12)
+    assert.ok(saved.objects.every(cell => cell.tableId === 'single'))
+    assert.equal(saved.pages[1].sourcePageIndex, null)
+    for (const page of saved.pages) {
+      const cells = saved.objects.filter(cell => cell.pageIndex === page.index).sort((a, b) => a.rowIndex - b.rowIndex || a.columnIndex - b.columnIndex)
+      for (const cell of cells) assert.ok(cell.y + cell.height <= page.contentBounds.y + page.contentBounds.height)
+      const rows = cells.filter(cell => cell.columnIndex === 0)
+      for (let i = 1; i < rows.length; i++) assert.equal(rows[i].y, rows[i - 1].y + rows[i - 1].height)
+    }
+    $('#undo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 12)
+  } finally { dom.window.close() }
+})
+
+test('move handles retain an accessible name without a tooltip and stale tooltips close on interaction', async () => {
+  const dom = new JSDOM('<button class="icon-button" aria-label="Сохранить"></button><button id="move" class="icon-button" data-tooltip="off" title="Переместить"></button>', { runScripts: 'dangerously', pretendToBeVisual: true })
+  try {
+    dom.window.eval(tooltipClient)
+    const normal = dom.window.document.querySelector('button')
+    const move = dom.window.document.querySelector('#move')
+    const tooltip = dom.window.document.querySelector('#base-tooltip')
+    normal.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
+    assert.equal(tooltip.hidden, false)
+    move.dispatchEvent(new dom.window.FocusEvent('focusin', { bubbles: true }))
+    assert.equal(tooltip.hidden, true)
+    move.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
+    assert.equal(tooltip.hidden, true)
+    assert.equal(move.getAttribute('title'), null)
+    assert.equal(move.getAttribute('aria-label'), 'Переместить')
+    normal.dispatchEvent(new dom.window.FocusEvent('focusin', { bubbles: true }))
+    normal.dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true }))
+    assert.equal(tooltip.hidden, true)
+    normal.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }))
+    normal.remove()
+    await Promise.resolve()
+    assert.equal(tooltip.hidden, true)
+  } finally { dom.window.close() }
+})
+
+function placementScene(objects) {
+  return { title: 'Placement', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    sourceLanguage: 'en', targetLanguage: 'ru',
+    pages: [{ index: 0, widthPx: 794, heightPx: 1123, imageUrl: '', contentBounds: { x: 40, y: 40, width: 680, height: 1020 } }],
+    objects: objects.map((object, index) => ({ pageIndex: 0, readingOrder: index + 1, sourceText: 'A', translation: 'Б', excluded: false, confidence: 1,
+      manualPosition: true, manualWidth: true, manualHeight: true, rotation: 0,
+      style: { fontFamily: 'Arial', fontSizePx: 12, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#111827' },
+      sourceTextStyles: [], translationTextStyles: [], ...object })) }
+}
+
+async function placementDom(scene, refreshResponse) {
+  const id = '8'.repeat(32), errors = [], console = new VirtualConsole()
+  console.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole: console })
+  let savedScene = scene
+  dom.window.CSS = { escape: String }
+  dom.window.Element.prototype.scrollIntoView = () => {}
+  dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => {
+    if (String(url).endsWith(`/documents/${id}`)) return { metadata: { id, revision: 1 }, scene }
+    if (options.method === 'PUT') { savedScene = JSON.parse(options.body); return { metadata: { id, revision: 2 } } }
+    if (String(url).endsWith('/knowledge-matches/refresh')) return refreshResponse ? refreshResponse(savedScene) : { metadata: { id }, scene: savedScene }
+    return {}
+  } })
+  dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(layoutModelClient); dom.window.eval(client)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  dom.window.document.querySelector('#zoom-100').click()
+  const surface = () => {
+    for (const node of dom.window.document.querySelectorAll('.studio-page')) {
+      const index = Number(node.dataset.pageIndex)
+      node.getBoundingClientRect = () => ({ left: 0, top: index * 1200, right: 794, bottom: index * 1200 + 1123, width: 794, height: 1123 })
+    }
+  }
+  surface()
+  const pointer = (type, x, y) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })
+    Object.defineProperty(event, 'pointerId', { value: 41 })
+    return event
+  }
+  const drag = (objectId, x, y) => {
+    surface()
+    const object = scene.objects.find(object => object.id === objectId)
+    dom.window.document.querySelector(`[data-id="${objectId}"] .scene-object__handle`).dispatchEvent(pointer('pointerdown', object.x, object.y + object.pageIndex * 1200))
+    dom.window.dispatchEvent(pointer('pointermove', x, y))
+    dom.window.dispatchEvent(pointer('pointerup', x, y))
+  }
+  return { dom, errors, pointer, drag, getSaved: () => savedScene }
+}
+
+const placementOverlaps = (a, b) => a.pageIndex === b.pageIndex && a.x < b.x + b.width - 1e-6 && a.x + a.width > b.x + 1e-6 && a.y < b.y + b.height - 1e-6 && a.y + a.height > b.y + 1e-6
+
+test('dropping every segment type on an occupied cell relocates the dropped segment and preserves its dimensions', async () => {
+  const types = ['text', 'image', 'stamp', 'seal', 'signature', 'logo', 'unknown']
+  const scene = placementScene([{ id: 'fixed', type: 'text', x: 210, y: 108, width: 68, height: 34 },
+    ...types.map((type, i) => ({ id: type, type, x: 40 + i * 85, y: 244, width: 68, height: 34 }))])
+  const app = await placementDom(scene)
+  try {
+    for (const type of types) {
+      app.drag(type, 210, 108)
+      const object = scene.objects.find(object => object.id === type)
+      assert.equal(object.width, 68); assert.equal(object.height, 34)
+      for (const other of scene.objects) if (object !== other) assert.equal(placementOverlaps(object, other), false, `${type} overlaps ${other.id}`)
+      assert.notDeepEqual([object.x, object.y], [40 + types.indexOf(type) * 85, 244], 'the drop must commit on the first attempt')
+      const handle = app.dom.window.document.querySelector(`[data-id="${type}"] .scene-object__handle`)
+      assert.equal(handle.dataset.tooltip, 'off'); assert.equal(handle.getAttribute('title'), null)
+    }
+    assert.deepEqual([scene.objects[0].x, scene.objects[0].y], [210, 108])
+    assert.deepEqual(app.errors, [])
+  } finally { app.dom.window.close() }
+})
+
+test('a full work area creates a new page and a legacy fractional table becomes a shared grid before dragging', async () => {
+  const scene = placementScene([{ id: 'fixed', type: 'text', x: 40, y: 40, width: 680, height: 1020 },
+    { id: 'moving', type: 'image', x: 40, y: 40, width: 68, height: 34 }])
+  const app = await placementDom(scene)
+  try {
+    assert.equal(scene.pages.length, 2, 'the overflow segment must get a new work area')
+    assert.equal(scene.pages[1].sourcePageIndex, null)
+    app.drag('moving', 100, 100)
+    assert.equal(scene.objects[1].pageIndex, 1)
+    assert.equal(placementOverlaps(scene.objects[0], scene.objects[1]), false)
+    assert.ok(scene.objects[1].x > 40, 'an existing free work area remains available')
+    assert.deepEqual(app.errors, [])
+  } finally { app.dom.window.close() }
+  const table = placementScene([0, 1].map(i => ({ id: `cell-${i}`, type: 'table_cell', tableId: 'rigid', rowIndex: 0, columnIndex: i, rowSpan: 1, columnSpan: 1,
+    x: 40 + i * 51.5, y: 40, width: 51.5, height: 34 })))
+  const tableApp = await placementDom(table)
+  try {
+    tableApp.drag('cell-0', 147, 90)
+    assert.equal(table.objects[1].x - table.objects[0].x, 68)
+    assert.equal(table.objects[0].y, table.objects[1].y)
+    assert.equal(table.objects[0].width, 68)
+    assert.equal(placementOverlaps(...table.objects), false)
+    assert.deepEqual(tableApp.errors, [])
+  } finally { tableApp.dom.window.close() }
+})
+
+test('a delayed knowledge response cannot replace live drag geometry and undo restores the committed drop', async () => {
+  const scene = placementScene([{ id: 'moving', type: 'text', x: 40, y: 40, width: 102, height: 34 }])
+  let releaseRefresh
+  const app = await placementDom(scene, () => new Promise(resolve => { releaseRefresh = resolve }))
+  try {
+    const $ = selector => app.dom.window.document.querySelector(selector)
+    const editor = $('[data-id="moving"] .scene-object__content')
+    editor.focus(); editor.textContent = 'Edited'
+    editor.dispatchEvent(new app.dom.window.InputEvent('input', { bubbles: true }))
+    editor.blur()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(typeof releaseRefresh, 'function')
+    const staleScene = JSON.parse(JSON.stringify(app.getSaved()))
+    const node = $('[data-id="moving"]')
+    node.querySelector('.scene-object__handle').dispatchEvent(app.pointer('pointerdown', 40, 40))
+    app.dom.window.dispatchEvent(app.pointer('pointermove', 227, 210))
+    releaseRefresh({ metadata: { id: '8'.repeat(32), revision: 3 }, scene: staleScene })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(node.isConnected, true, 'the background response must not destroy pointer capture')
+    app.dom.window.dispatchEvent(app.pointer('pointerup', 227, 210))
+    assert.deepEqual([scene.objects[0].x, scene.objects[0].y], [227, 210])
+    $('#undo-button').click()
+    assert.equal(Number.parseFloat($('[data-id="moving"]').style.left), 40)
+    $('#redo-button').click()
+    assert.equal(Number.parseFloat($('[data-id="moving"]').style.left), 227)
+    await new Promise(resolve => setTimeout(resolve, 720))
+    assert.deepEqual([app.getSaved().objects[0].x, app.getSaved().objects[0].y], [227, 210])
+    assert.deepEqual(app.errors, [])
+  } finally { app.dom.window.close() }
+})
+
+test('all saved segment frames fill whole grid cells after load, typing, drag, resize, zoom and history', async () => {
+  const scene = placementScene([
+    { id: 'tiny', type: 'text', x: 98.3, y: 41.7, width: 3.2, height: 4.1, manualWidth: false, manualHeight: false,
+      style: { fontFamily: 'Arial', fontSizePx: 8, lineHeight: 1.2 } },
+    { id: 'obstacle', type: 'image', x: 131.2, y: 56.8, width: 23.1, height: 48.3 },
+    { id: 'table-left', type: 'table_cell', tableId: 'tracks', rowIndex: 0, columnIndex: 0, rowSpan: 1, columnSpan: 1, x: 40.2, y: 149.5, width: 51.5, height: 23.2 },
+    { id: 'table-right', type: 'table_cell', tableId: 'tracks', rowIndex: 0, columnIndex: 1, rowSpan: 1, columnSpan: 1, x: 91.7, y: 149.5, width: 51.5, height: 23.2 },
+  ])
+  const app = await placementDom(scene)
+  const $ = selector => app.dom.window.document.querySelector(selector)
+  const assertGrid = () => {
+    const objects = [...app.dom.window.document.querySelectorAll('.studio-page .scene-object')].map(node => ({ id: node.dataset.id,
+      pageIndex: Number(node.closest('.studio-page').dataset.pageIndex), x: parseFloat(node.style.left), y: parseFloat(node.style.top), width: parseFloat(node.style.width), height: parseFloat(node.style.height) }))
+    for (const object of objects) {
+      assert.ok(object.width >= 17 && object.height >= 17, `${object.id} must fill a cell`)
+      for (const value of [object.x - 40, object.y - 40, object.width, object.height]) assert.equal(value % 17, 0, `${object.id} is between grid lines`)
+      for (const other of objects) if (object.id !== other.id) assert.equal(placementOverlaps(object, other), false)
+    }
+  }
+  try {
+    assertGrid()
+    assert.equal($('[data-id="tiny"]').style.width, '17px')
+    assert.equal($('[data-id="tiny"]').style.height, '17px')
+    const editor = $('[data-id="tiny"] .scene-object__content')
+    editor.focus(); editor.textContent = 'Longer text that needs additional cells'
+    editor.dispatchEvent(new app.dom.window.InputEvent('input', { bubbles: true }))
+    await new Promise(resolve => app.dom.window.requestAnimationFrame(resolve))
+    assertGrid()
+    assert.equal(editor.isConnected, true, 'typing must preserve the focused editor')
+    editor.blur()
+    app.drag('tiny', 133, 62)
+    assertGrid()
+    const handle = $('[data-id="tiny"] .scene-object__resize')
+    handle.dispatchEvent(app.pointer('pointerdown', 200, 100))
+    app.dom.window.dispatchEvent(app.pointer('pointermove', 223, 111))
+    assert.equal(parseFloat($('[data-id="tiny"]').style.width) % 17, 0)
+    assert.equal(parseFloat($('[data-id="tiny"]').style.height) % 17, 0)
+    app.dom.window.dispatchEvent(app.pointer('pointerup', 223, 111))
+    assertGrid()
+    $('#zoom-in').click(); assertGrid()
+    $('#undo-button').click(); assertGrid()
+    $('#redo-button').click(); assertGrid()
+    await new Promise(resolve => setTimeout(resolve, 720))
+    for (const object of app.getSaved().objects) for (const value of [object.x - 40, object.y - 40, object.width, object.height]) assert.equal(value % 17, 0)
+    assert.match(userGuide, /Минимальная ширина и высота — одна малая клетка/)
+    assert.match(technicalSpecification, /Все текущие x\/y относительны началу contentBounds и кратны 17 px/)
+    assert.match(uiComponentsHtml, /SceneObject \/ ContentBoundary/)
+    assert.deepEqual(app.errors, [])
+  } finally { app.dom.window.close() }
 })

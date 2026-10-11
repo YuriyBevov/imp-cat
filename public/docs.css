@@ -48,7 +48,7 @@ a { color: var(--blue); }
 .docs-main { min-width: 0; }
 .docs-heading { margin-bottom: 22px; padding: 28px 32px; border: 1px solid var(--line); border-radius: 16px; background: linear-gradient(135deg, #fff 0, #f3f6ff 100%); box-shadow: 0 16px 45px rgba(40,58,92,.07); }
 .docs-eyebrow { margin: 0; color: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.docs-heading h1 { margin: 8px 0 10px; font-size: clamp(28px, 4vw, 42px); line-height: 1.1; }
+.docs-heading h1 { margin: 8px 0 10px; font-size: 42px; line-height: 1.1; }
 .docs-heading > p:not(.docs-eyebrow) { max-width: 700px; margin: 0; color: var(--muted); line-height: 1.55; }
 .docs-heading small { display: block; margin-top: 14px; color: #98a2b3; }
 
@@ -91,3 +91,5 @@ a { color: var(--blue); }
   .docs-back::after { content: "← Редактор"; font-size: 12px; }
   .docs-tabs a { white-space: nowrap; }
 }
+
+@media (max-width: 780px) { .docs-heading h1 { font-size: 28px; } }

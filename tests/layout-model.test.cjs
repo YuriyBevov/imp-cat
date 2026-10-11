@@ -6,6 +6,7 @@ const {
   clampGroupDelta,
   createSegmentMergePlan,
   findNearestFreeGridRect,
+  findNearestFreePlacement,
   findSegmentOverlaps,
   getFlowPageCount,
   getFlowPagePlacement,
@@ -346,4 +347,74 @@ test('rejects merging segments from different pages', () => {
     { id: 'two', pageIndex: 1, parked: false, x: 0, y: 0, width: 20, height: 20 },
   ])
   assert.deepEqual(plan, { valid: false, reason: 'different-surfaces', ordered: [] })
+})
+
+test('a dropped rectangle chooses the closest free grid position and ignores off-grid gaps', () => {
+  const area = { x: 0, y: 0, width: 100, height: 100 }
+  const object = { x: 40, y: 30, width: 10, height: 20 }
+  const obstacles = [{ x: 45, y: 20, width: 20, height: 50 }]
+  const result = findNearestFreePlacement([object], obstacles, area)
+  assert.deepEqual(result, { x: 34, y: 34, dx: -6, dy: 4 })
+  assert.deepEqual(object, { x: 40, y: 30, width: 10, height: 20 })
+  assert.equal(findNearestFreePlacement([object], [{ ...area }], area), null)
+  assert.deepEqual(findNearestFreePlacement([object], [], area), { x: 34, y: 34, dx: -6, dy: 4 })
+})
+
+test('collision placement keeps a table or multi-selection rigid and uses spaces between its objects', () => {
+  const cells = [{ x: 17, y: 17, width: 17, height: 17 }, { x: 51, y: 17, width: 17, height: 17 }]
+  const area = { x: 0, y: 0, width: 100, height: 100 }
+  assert.deepEqual(findNearestFreePlacement(cells, [{ x: 34, y: 17, width: 17, height: 17 }], area), { x: 17, y: 17, dx: 0, dy: 0 })
+  const obstacle = { x: 17, y: 17, width: 17, height: 17 }
+  const placement = findNearestFreePlacement(cells, [obstacle], area)
+  assert.ok(placement)
+  for (const cell of cells) assert.equal(rectanglesIntersect({ ...cell, x: cell.x + placement.dx, y: cell.y + placement.dy }, obstacle), false)
+  assert.equal(findNearestFreePlacement(cells, [], { x: 0, y: 0, width: 20, height: 100 }), null)
+})
+
+test('nearest placement accounts for rotated segment extents', () => {
+  const object = { x: 40, y: 40, width: 40, height: 10, rotation: 90 }
+  // Rotation around the center makes its visible box x=55, y=25, 10×40.
+  const placement = findNearestFreePlacement([object], [{ x: 55, y: 25, width: 10, height: 40 }], { x: 0, y: 0, width: 100, height: 100 })
+  assert.ok(placement)
+  assert.ok(Math.abs(placement.dx) >= 10 || Math.abs(placement.dy) >= 40)
+})
+
+test('nearest placement agrees with an exhaustive scan over dense integer layouts', () => {
+  let seed = 917
+  const random = maximum => { seed = (seed * 16807) % 2147483647; return seed % maximum }
+  const area = { x: 0, y: 0, width: 20, height: 20 }
+  for (let example = 0; example < 100; example += 1) {
+    const object = { x: random(17), y: random(17), width: 4, height: 4 }
+    const obstacles = Array.from({ length: 8 }, () => ({ x: random(17), y: random(17), width: 4, height: 4 }))
+    const actual = findNearestFreePlacement([object], obstacles, area, 1)
+    let expectedDistance = Infinity
+    for (let x = 0; x <= 16; x += 1) for (let y = 0; y <= 16; y += 1) {
+      if (obstacles.some(obstacle => rectanglesIntersect({ ...object, x, y }, obstacle))) continue
+      expectedDistance = Math.min(expectedDistance, (x - object.x) ** 2 + (y - object.y) ** 2)
+    }
+    assert.equal(actual ? actual.dx ** 2 + actual.dy ** 2 : Infinity, expectedDistance)
+    if (actual) assert.equal(obstacles.some(obstacle => rectanglesIntersect({ ...object, x: actual.x, y: actual.y }, obstacle)), false)
+  }
+})
+
+test('free placement stays on the document grid even when an obstacle leaves a closer off-grid gap', () => {
+  const area = { x: 40, y: 40, width: 68, height: 68 }
+  const object = { x: 57, y: 57, width: 17, height: 17 }
+  const obstacle = { x: 65, y: 40, width: 17, height: 51 }
+  const placement = findNearestFreePlacement([object], [obstacle], area, 17)
+  assert.deepEqual(placement, { x: 40, y: 57, dx: -17, dy: 0 })
+  assert.equal((placement.x - area.x) % 17, 0)
+  assert.equal((placement.y - area.y) % 17, 0)
+})
+
+test('source flow snaps vertical dependencies and obstacle avoidance before creating continuations', () => {
+  const area = { x: 40, y: 40, width: 136, height: 68 }
+  const box = (id, y) => ({ id, anchor: { x: 40, y, width: 68, height: 10 }, x: 40, width: 68, height: 34 })
+  const layout = layoutSourceFlow([box('first', 42.5), box('second', 64.3)], area, [], 17)
+  assert.deepEqual(layout.placements.get('first'), { x: 40, y: 57, width: 68, height: 34, pageOffset: 0 })
+  const second = layout.placements.get('second')
+  assert.equal(second.pageOffset, 1)
+  assert.equal(second.y, 40)
+  const blocked = layoutSourceFlow([box('blocked', 40)], area, [{ x: 40, y: 40, width: 17, height: 12 }], 17)
+  assert.equal(blocked.placements.get('blocked').y, 57)
 })
