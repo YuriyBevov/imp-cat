@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-import copy
 from statistics import median
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from reportlab.pdfgen.canvas import Canvas
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from export_docx import export_layout
 from export_flow import export_flow
+from export_pdf_layout import prepare_pdf_layout
 
 
 from export_fonts import font_name, glyph_font
@@ -172,10 +172,6 @@ def normalize_scene(scene: dict) -> dict:
         if any(width <= 0 for width in widths):
             raise ValueError(f"Таблица {table['id']}: нарушен порядок колонок. Исправьте адреса ячеек.")
         table["columnWidths"] = widths
-        for cell in table["cells"]:
-            start = cell["columnIndex"]
-            cell["x"] = boundaries[start]
-            cell["width"] = boundaries[start + cell["columnSpan"]] - boundaries[start]
     return {
         "title": str(scene.get("title") or "Translated document"),
         "gridSize": 1,
@@ -308,87 +304,8 @@ def measured_height(segment: dict, table_cell=False) -> float:
 
 
 def prepare_export(payload: dict) -> dict:
-    """Fit table rows, keep merged cells together, paginate identically for both formats.
-
-    Only the export copy changes. Existing page boundaries remain boundaries;
-    growth of a table moves the following content down by the same amount.
-    """
-    payload = copy.deepcopy(payload)
-    original_pages = payload["pages"]
-    result_pages, result_tables, result_segments = [], [], []
-    for source_page in original_pages:
-        page = copy.deepcopy(source_page)
-        page["index"] = len(result_pages)
-        result_pages.append(page)
-        area = page["contentBounds"]
-        bottom = min(page["heightPx"], area["y"] + area["height"])
-        blocks = [(table["y"], 0, table) for table in payload["tables"] if table["pageIndex"] == source_page["index"]]
-        blocks += [(item["y"], 1, item) for item in payload["segments"] if item["pageIndex"] == source_page["index"]]
-        displacement = 0
-        page_shift = 0
-
-        def place(y, height):
-            nonlocal page, page_shift
-            target = max(area["y"] if page_shift else 0, y - page_shift)
-            if height > bottom - area["y"] + .1:
-                raise ValueError("Строка таблицы или сегмент выше страницы. Уменьшите шрифт или разделите содержимое.")
-            if target + height > bottom + .1:
-                page = copy.deepcopy(source_page)
-                page["index"] = len(result_pages)
-                result_pages.append(page)
-                page_shift = y - area["y"]
-                target = area["y"]
-            return target
-
-        for original_y, kind, block in sorted(blocks, key=lambda entry: (entry[0], entry[1], entry[2]["x"])):
-            if kind:
-                block["height"] = max(block["height"], measured_height(block))
-                block["y"] = place(original_y + displacement, block["height"])
-                block["pageIndex"] = page["index"]
-                result_segments.append(block)
-                continue
-            table = block
-            heights = [0.0] * table["rowCount"]
-            for cell in table["cells"]:
-                start, span = cell["rowIndex"], cell["rowSpan"]
-                for row in range(start, start + span):
-                    heights[row] = max(heights[row], cell["height"] / span)
-            for cell in sorted(table["cells"], key=lambda cell: cell["rowSpan"]):
-                start, span = cell["rowIndex"], cell["rowSpan"]
-                missing = measured_height(cell, True) - sum(heights[start:start + span])
-                if missing > 0:
-                    heights[start + span - 1] += missing
-            # A page break cannot pass through a vertically merged cell.
-            groups = []
-            start = 0
-            while start < len(heights):
-                end = start + 1
-                while True:
-                    expanded = max([end] + [cell["rowIndex"] + cell["rowSpan"] for cell in table["cells"] if start <= cell["rowIndex"] < end])
-                    if expanded == end: break
-                    end = expanded
-                groups.append((start, end))
-                start = end
-            fragment = None
-            for start, end in groups:
-                height = sum(heights[start:end])
-                y = place(original_y + displacement + sum(heights[:start]), height)
-                if fragment is None or fragment["pageIndex"] != page["index"]:
-                    fragment = {**table, "pageIndex": page["index"], "y": y, "height": 0, "rowCount": 0,
-                                "sourceRowStart": table["sourceRowStart"] + start, "rowHeights": [], "cells": []}
-                    result_tables.append(fragment)
-                for cell in table["cells"]:
-                    if not start <= cell["rowIndex"] < end: continue
-                    row = cell["rowIndex"]
-                    fragment["cells"].append({**cell, "pageIndex": page["index"],
-                        "rowIndex": row - (fragment["sourceRowStart"] - table["sourceRowStart"]),
-                        "y": y + sum(heights[start:row]), "height": sum(heights[row:row + cell["rowSpan"]])})
-                fragment["height"] += height
-                fragment["rowCount"] += end - start
-                fragment["rowHeights"].extend(heights[start:end])
-            displacement += sum(heights) - table["height"]
-    payload.update(pages=result_pages, tables=result_tables, segments=result_segments)
-    return payload
+    """Fit the PDF copy while preserving free positions and gaps in the editor."""
+    return prepare_pdf_layout(payload, measured_height)
 
 
 def export_pdf(payload: dict, output_path: Path) -> None:

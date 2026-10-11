@@ -190,6 +190,81 @@ class StudioExporterTests(unittest.TestCase):
                 self.assertLessEqual(MODULE.measured_height(cell, True), cell["height"] + .01)
                 self.assertLessEqual(cell["y"] + cell["height"], 360.01)
 
+    def assert_no_overlaps(self, payload):
+        objects = payload['segments'] + [cell for table in payload['tables'] for cell in table['cells']]
+        for index, a in enumerate(objects):
+            for b in objects[index + 1:]:
+                if a['pageIndex'] != b['pageIndex']:
+                    continue
+                overlap = (min(a['x'] + a['width'], b['x'] + b['width']) > max(a['x'], b['x']) + .01
+                           and min(a['y'] + a['height'], b['y'] + b['height']) > max(a['y'], b['y']) + .01)
+                self.assertFalse(overlap, f"{a['id']} overlaps {b['id']}")
+
+    def test_pdf_keeps_row_gaps_and_stamp_placed_between_rows(self):
+        scene = self.table_scene()
+        for cell in scene['objects'][2:]:
+            cell['y'] = 340
+        stamp = {**self.scene()['objects'][1], 'id': 'stamp-in-gap', 'type': 'seal',
+                 'pageIndex': 0, 'x': 160, 'y': 280, 'width': 100, 'height': 40}
+        scene['objects'].append(stamp)
+        payload = MODULE.prepare_export(MODULE.normalize_scene(scene))
+        actual = {item['id']: item for item in payload['segments'] + payload['tables'][0]['cells']}
+        for item in scene['objects']:
+            for key in ('pageIndex', 'x', 'y', 'width', 'height'):
+                self.assertEqual(actual[item['id']][key], item[key], (item['id'], key))
+        self.assert_no_overlaps(payload)
+
+    def test_table_pagination_does_not_stack_independent_stamps_on_last_page(self):
+        scene = self.table_scene()
+        scene['pages'] = [{'widthPx': 794, 'heightPx': 400}]
+        for cell in scene['objects']:
+            cell['translation'] = 'Очень длинный текст ' * 18 if cell['columnIndex'] else 'Итог'
+        for index, y in enumerate((230, 280, 320)):
+            scene['objects'].append({**self.scene()['objects'][1], 'id': f'stamp-{index}',
+                                     'pageIndex': 0, 'x': 500, 'y': y})
+        payload = MODULE.prepare_export(MODULE.normalize_scene(scene))
+        self.assertGreater(len(payload['pages']), 1)
+        self.assertEqual([(item['pageIndex'], item['y']) for item in payload['segments']],
+                         [(0, 230), (0, 280), (0, 320)])
+        self.assert_no_overlaps(payload)
+
+    def test_growing_stamp_pushes_only_content_in_its_column(self):
+        scene = self.scene()
+        first = scene['objects'][0]
+        first.update(type='seal', x=60, y=80, width=170, height=17,
+                     translation='Печать организации ' * 10, translationTextStyles=[])
+        second = scene['objects'][1]
+        second.update(pageIndex=0, x=60, y=110, width=170, height=34)
+        scene['objects'].append({**second, 'id': 'independent', 'x': 500})
+        payload = MODULE.prepare_export(MODULE.normalize_scene(scene))
+        by_id = {item['id']: item for item in payload['segments']}
+        self.assertGreater(by_id[second['id']]['y'], second['y'])
+        self.assertEqual(by_id['independent']['y'], 110)
+        self.assert_no_overlaps(payload)
+
+    def test_pdf_preserves_manually_shifted_row_column_positions(self):
+        scene = self.table_scene()
+        for cell in scene['objects'][2:]:
+            cell['x'] += 34
+        payload = MODULE.prepare_export(MODULE.normalize_scene(scene))
+        actual = {cell['id']: cell for table in payload['tables'] for cell in table['cells']}
+        for cell in scene['objects']:
+            self.assertEqual(actual[cell['id']]['x'], cell['x'])
+            self.assertEqual(actual[cell['id']]['width'], cell['width'])
+        self.assert_no_overlaps(payload)
+
+    def test_vertical_merge_moves_as_one_group_and_keeps_following_stamp_after_it(self):
+        scene = self.table_scene()
+        scene['pages'] = [{'widthPx': 794, 'heightPx': 400}]
+        scene['objects'][0].update(rowSpan=2, height=80, translation='Печать ' * 10)
+        scene['objects'] = [cell for cell in scene['objects'] if cell['id'] != 'cell-1-0']
+        scene['objects'].append({**self.scene()['objects'][1], 'pageIndex': 0, 'x': 60,
+                                 'y': 315, 'height': 28})
+        payload = MODULE.prepare_export(MODULE.normalize_scene(scene))
+        self.assertEqual(sum(len(table['cells']) for table in payload['tables']), 3)
+        self.assertEqual(len({cell['pageIndex'] for table in payload['tables'] for cell in table['cells']}), 1)
+        self.assert_no_overlaps(payload)
+
 
 if __name__ == "__main__":
     unittest.main()
