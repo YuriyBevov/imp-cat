@@ -229,6 +229,7 @@ test('normalizeScene constrains data and restores server-owned image URLs', () =
   assert.equal(normalized.pages[0].imageUrl, `/api/studio/documents/${'d'.repeat(32)}/pages/0/image`)
   assert.equal(normalized.objects[0].style.color, '#000000')
   assert.equal(normalized.objects[0].style.fontFamily, 'Times New Roman')
+  assert.equal(Object.hasOwn(normalized.objects[0], 'isTableHeader'), false)
   assert.equal(normalized.gridSize, 8)
   assert.equal(normalized.gridDensity, 'xs')
   assert.deepEqual(normalized.pages[0].contentBounds, pageContentBounds(normalized.pages[0].widthPx, normalized.pages[0].heightPx))
