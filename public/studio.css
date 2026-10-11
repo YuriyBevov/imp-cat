@@ -813,3 +813,6 @@ body.has-document-tabs .document-review-preview { height: calc(100vh - 140px); }
 .workflow-stagebar__step { border-color: transparent; background: transparent; }
 .workflow-stagebar__step.is-current { border-color: transparent; background: #eef4ff; }
 .document-heading strong { font-weight: 500; }
+
+.table-border-controls { display: grid; gap: 10px; }
+.table-cell-print-borders { position: absolute; inset: 0; pointer-events: none; border: 0 solid #172033; z-index: 1; }

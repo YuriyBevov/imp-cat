@@ -417,3 +417,44 @@ test('legacy table frames normalize shared tracks to whole cells and keep merged
   const tiny = model.snapToGrid([{ ...cells[0], rowIndex: 0, columnIndex: 0, width: 2, height: 3 }], area)[0]
   assert.equal(tiny.width, 17); assert.equal(tiny.height, 17)
 })
+
+test('row border toggles update shared edges and preserve other parts and content', () => {
+  const cells = fixture().map(cell => ({ ...cell, borders: { top: true, right: true, bottom: true, left: true } }))
+  const original = JSON.stringify(cells)
+  const hidden = model.setBorders(cells, ['c2', 'c3'], false)
+  assert.equal(model.borderState(hidden.slice(2)), 'hidden')
+  assert.equal(hidden[0].borders.bottom, false)
+  assert.equal(hidden[0].borders.left, true)
+  assert.equal(model.borderState(hidden), 'mixed')
+  assert.equal(model.borderState(model.setBorders(hidden, hidden.map(cell => cell.id), true)), 'shown')
+  assert.equal(JSON.stringify(cells), original)
+  assert.deepEqual(hidden.map(cell => cell.translation), cells.map(cell => cell.translation))
+})
+
+function linkedScene() {
+  return { pages: [0, 1, 2].map(index => ({ index, widthPx: 794, heightPx: 1123, contentBounds: { x: 40, y: 40, width: 680, height: 1020 } })),
+    objects: [0, 1, 2].flatMap(pageIndex => fixture().map((cell, index) => ({ ...cell, id: `p${pageIndex}-${index}`,
+      pageIndex, rowIndex: cell.rowIndex + pageIndex * 2, x: 40 + index % 2 * 102, y: 40 + Math.floor(index / 2) * 34, width: 102 }))) }
+}
+
+test('linked column widths affect three page fragments atomically and preserve row IDs', () => {
+  const scene = linkedScene(), before = JSON.stringify(scene)
+  const next = model.setLinkedColumnWidths(scene, 't', [136, 85])
+  for (const page of [0, 1, 2]) assert.deepEqual(model.geometry(next.objects.filter(cell => cell.pageIndex === page)).widths, [136, 85])
+  assert.deepEqual(next.objects.map(cell => cell.id).sort(), scene.objects.map(cell => cell.id).sort())
+  assert.equal(JSON.stringify(scene), before)
+  scene.pages[2].contentBounds.width = 204
+  assert.throws(() => model.setLinkedColumnWidths(scene, 't', [136, 85]), /продолжения/)
+})
+
+test('column insertion updates every continuation with the same widths', () => {
+  const scene = linkedScene(), before = JSON.stringify(scene)
+  const next = model.insertLinkedColumn(scene, 'p1-0', 'after', id)
+  assert.equal(next.objects.length, 18)
+  const grids = [0, 1, 2].map(page => model.geometry(next.objects.filter(cell => cell.pageIndex === page)))
+  assert.ok(grids.every(grid => grid.columns === 3))
+  assert.deepEqual(grids[0].widths, grids[1].widths)
+  assert.deepEqual(grids[1].widths, grids[2].widths)
+  assert.equal(new Set(next.objects.map(cell => cell.id)).size, 18)
+  assert.equal(JSON.stringify(scene), before)
+})

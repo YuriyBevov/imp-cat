@@ -253,6 +253,16 @@ class StudioExporterTests(unittest.TestCase):
             self.assertEqual(actual[cell['id']]['width'], cell['width'])
         self.assert_no_overlaps(payload)
 
+    def test_table_font_restores_recognition_size_but_preserves_manual_typography(self):
+        scene = self.table_scene()
+        scene['objects'][0].update(agentRequestedFontSizePx=14, manualTypography=False)
+        scene['objects'][0]['style']['fontSizePx'] = 6
+        scene['objects'][1].update(agentRequestedFontSizePx=14, manualTypography=True)
+        scene['objects'][1]['style']['fontSizePx'] = 8
+        cells = MODULE.normalize_scene(scene)['tables'][0]['cells']
+        self.assertEqual(cells[0]['fontSizePx'], 14)
+        self.assertEqual(cells[1]['fontSizePx'], 8)
+
     def test_vertical_merge_moves_as_one_group_and_keeps_following_stamp_after_it(self):
         scene = self.table_scene()
         scene['pages'] = [{'widthPx': 794, 'heightPx': 400}]

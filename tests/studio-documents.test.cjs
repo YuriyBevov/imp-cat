@@ -1070,3 +1070,25 @@ test('mass AI chat shows one assistant response when the document uses several b
   assert.equal(result.scene.batchRevisionChat.at(-1).text, 'Круги перед текстом удалены.')
   assert.doesNotMatch(result.scene.batchRevisionChat.at(-1).text, /убраны/)
 })
+
+test('concurrent scene saves use unique files and monotonic document revisions', async t => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'icat-save-race-'))
+  t.after(() => fs.promises.rm(dataDir, { recursive: true, force: true }))
+  const id = 'd'.repeat(32), directory = path.join(dataDir, id)
+  await fs.promises.mkdir(directory)
+  await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({ id, title: 'Save race', revision: 1 }))
+  const app = express(); app.use(express.json())
+  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess: async () => ({ code: 0 }) }))
+  app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
+  const base = await listen(app, t)
+  const responses = await Promise.all(Array.from({ length: 12 }, (_, i) => fetch(`${base}/documents/${id}/scene`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pages: [{ widthPx: 794, heightPx: 1123 }], objects: [{ id: 'cell', type: 'text', pageIndex: 0, sourceText: String(i), x: 40, y: 40, width: 200, height: 34, style: {} }] }),
+  }).then(async response => { const body = await response.json(); assert.equal(response.status, 200, JSON.stringify(body)); return body })))
+  assert.deepEqual(responses.map(result => result.metadata.revision).sort((a, b) => a - b), Array.from({ length: 12 }, (_, i) => i + 2))
+  const metadata = JSON.parse(await fs.promises.readFile(path.join(directory, 'metadata.json')))
+  const scene = JSON.parse(await fs.promises.readFile(path.join(directory, 'scene.json')))
+  assert.equal(metadata.revision, 13)
+  assert.equal(scene.objects[0].sourceText, responses.find(result => result.metadata.revision === 13).scene.objects[0].sourceText)
+  assert.equal((await fs.promises.readdir(directory)).some(name => name.endsWith('.writing')), false)
+})

@@ -1,4 +1,5 @@
 (() => {
+  for (const checkbox of document.querySelectorAll('[data-mixed-checkbox]')) checkbox.indeterminate = true
   for (const button of document.querySelectorAll('[data-row-select-demo]')) {
     button.addEventListener('click', () => button.setAttribute('aria-pressed', String(button.getAttribute('aria-pressed') !== 'true')))
   }

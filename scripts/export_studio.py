@@ -96,7 +96,7 @@ def normalize_scene(scene: dict) -> dict:
             "rotation": float(item.get("rotation", 0)),
             "zIndex": index + 1,
             "fontFamily": str(style.get("fontFamily") or "Arial"),
-            "fontSizePx": float(style.get("fontSizePx", 14)),
+            "fontSizePx": float(max(style.get("fontSizePx", 14), item.get("agentRequestedFontSizePx", style.get("fontSizePx", 14))) if item.get("type") == "table_cell" and not item.get("manualTypography") else style.get("fontSizePx", 14)),
             "requestedFontSizePx": float(style.get("fontSizePx", 14) if item.get("manualTypography") else item.get("agentRequestedFontSizePx", style.get("fontSizePx", 14))),
             "fontWeight": float(style.get("fontWeight", 400)),
             "fontStyle": "italic" if style.get("fontStyle") == "italic" else "normal",

@@ -3743,7 +3743,7 @@ test('table row menu cascades onto occupied pages, saves new pages, and supports
     assert.equal(pageIndex('footer-0'), 1)
     assert.equal(cell('flow-6').style.top, '74px')
     assert.equal(pageIndex('footer-1'), 2)
-    assert.deepEqual([...dom.window.document.querySelectorAll('.table-structure-label')].map(node => node.textContent), ['Таблица 4×2', 'Таблица 3×2'])
+    assert.deepEqual([...dom.window.document.querySelectorAll('.table-structure-label')].map(node => node.textContent), ['Таблица 1 · часть 1/2 · 4×2', 'Таблица 1 · часть 2/2 · 3×2'])
     await new Promise(resolve => setTimeout(resolve, 800))
     assert.equal(saved.pages.length, 3)
     assert.equal(saved.pages[2].sourcePageIndex, null)
@@ -4138,5 +4138,62 @@ test('row selectors fit a 17px grid row without inheriting large button padding'
     assert.equal(computed.minHeight, '17px')
     assert.equal(computed.paddingTop, '0px')
     assert.equal(computed.paddingBottom, '0px')
+  } finally { dom.window.close() }
+})
+
+test('logical table selection, borders, column resize and insert apply across all continuations', async () => {
+  const id = 'c'.repeat(32), borders = { top: true, right: true, bottom: true, left: true }
+  const scene = { title: 'Linked table', workflowVersion: 2, workflowStage: 3, layoutInitializationVersion: 4,
+    pages: [0, 1, 2].map(index => ({ index, sourcePageIndex: index, widthPx: 794, heightPx: 1123, contentBounds: { x: 40, y: 40, width: 680, height: 1020 } })),
+    objects: Array.from({ length: 12 }, (_, i) => ({ id: `linked-${i}`, type: 'table_cell', tableId: 'shared', pageIndex: Math.floor(i / 4),
+      rowIndex: Math.floor(i / 2), columnIndex: i % 2, rowSpan: 1, columnSpan: 1, readingOrder: i + 1,
+      x: 40 + i % 2 * 102, y: 40 + Math.floor(i % 4 / 2) * 34, width: 102, height: 34,
+      sourceText: 'Text', translation: 'Text', excluded: false, confidence: 1,
+      manualPosition: true, manualWidth: true, manualHeight: true, borders: { ...borders },
+      style: { fontFamily: 'Arial', fontSizePx: 12, fontWeight: 400, lineHeight: 1.2, color: '#111827' } })) }
+  const errors = [], virtualConsole = new VirtualConsole()
+  virtualConsole.on('jsdomError', error => errors.push(error.message))
+  const dom = new JSDOM(html, { runScripts: 'outside-only', pretendToBeVisual: true, url: `http://localhost/?document=${id}`, virtualConsole })
+  try {
+    dom.window.CSS = { escape: String }; dom.window.Element.prototype.scrollIntoView = () => {}
+    dom.window.fetch = async (url, options = {}) => ({ ok: true, json: async () => options.method === 'PUT' ? { metadata: { id, revision: 2 } }
+      : String(url).endsWith(`/documents/${id}`) ? { metadata: { id, revision: 1 }, scene } : {} })
+    dom.window.eval(translationUnits); dom.window.eval(tableModelClient); dom.window.eval(client)
+    await new Promise(resolve => setTimeout(resolve, 40))
+    const $ = selector => dom.window.document.querySelector(selector)
+    const cell = index => $(`.scene-object[data-id="linked-${index}"]`)
+    const select = index => cell(index).dispatchEvent(new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    const edge = (index, side) => cell(index).querySelector('.table-cell-print-borders').style[`border${side}Width`]
+    assert.equal($('#table-picker').options.length, 2, 'one logical table in the picker')
+    dom.window.document.querySelectorAll('.table-structure-label')[1].click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 12)
+    assert.equal($('#format-all-segments').checked, true)
+    $('#toolbar-font-size-increase').click()
+    for (let i = 0; i < 12; i++) assert.equal(cell(i).style.fontSize, '13px')
+    $('#undo-button').click()
+    assert.equal($('#table-copy-row').disabled, true, 'never copy only one part of a whole-table selection silently')
+    $('#table-borders-toggle').click()
+    for (let i = 0; i < 12; i++) assert.equal(edge(i, 'Left'), '0px')
+    $('#undo-button').click()
+    for (let i = 0; i < 12; i++) assert.equal(edge(i, 'Left'), '1px')
+    select(4); $('#table-row-borders-toggle').click()
+    assert.equal(edge(4, 'Left'), '0px'); assert.equal(edge(5, 'Right'), '0px')
+    assert.equal(edge(6, 'Top'), '0px', 'the shared neighbouring edge also disappears')
+    assert.equal(edge(0, 'Left'), '1px'); assert.equal(edge(8, 'Left'), '1px')
+    assert.equal($('#table-borders-toggle').indeterminate, true)
+    $('#undo-button').click()
+    select(4)
+    cell(4).querySelector('.table-cell-resize--column').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    for (const index of [0, 4, 8]) assert.equal(cell(index).style.width, '119px')
+    $('#undo-button').click()
+    for (const index of [0, 4, 8]) assert.equal(cell(index).style.width, '102px')
+    select(4); $('#table-insert-column').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 18)
+    $('#undo-button').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object[data-type="table_cell"]').length, 12)
+    select(4); $('#table-select-row').click()
+    assert.equal(dom.window.document.querySelectorAll('.scene-object.is-selected').length, 2)
+    assert.equal($('#table-transfer-rows').disabled, false)
+    assert.deepEqual(errors, [])
   } finally { dom.window.close() }
 })

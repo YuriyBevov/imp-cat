@@ -73,6 +73,65 @@
       sourceLineIds: [], sourceRegions: [], sourceRevisionChat: [], revisionChat: [], originalBounds: null,
       translatedSourceText: '', translatedSourceType: 'table_cell', isTableHeader: false, status: 'manual', excluded: false }
   }
+  const borderSides = ['top', 'right', 'bottom', 'left']
+  function borderState(cells) {
+    const values = cells.flatMap(cell => borderSides.map(side => cell.borders?.[side]))
+    return values.length && values.every(value => value === true) ? 'shown'
+      : values.length && values.every(value => value === false) ? 'hidden' : 'mixed'
+  }
+  function setBorders(cells, ids, visible) {
+    const selected = new Set(ids), result = clone(cells)
+    for (const cell of result) if (selected.has(cell.id)) cell.borders = Object.fromEntries(borderSides.map(side => [side, Boolean(visible)]))
+    // A shared horizontal edge belongs to both rows; hiding one side alone
+    // would leave the adjacent row drawing the exact same line in the export.
+    for (const cell of result.filter(item => !selected.has(item.id))) {
+      for (const target of result.filter(item => selected.has(item.id))) {
+        if (cell.tableId !== target.tableId || cell.pageIndex !== target.pageIndex
+          || Math.min(endColumn(cell), endColumn(target)) <= Math.max(cell.columnIndex, target.columnIndex)) continue
+        if (endRow(cell) === target.rowIndex) cell.borders = { ...cell.borders, bottom: Boolean(visible) }
+        if (cell.rowIndex === endRow(target)) cell.borders = { ...cell.borders, top: Boolean(visible) }
+      }
+    }
+    return result
+  }
+  function setLinkedColumnWidths(scene, tableId, widths, fit = cells => cells) {
+    let result = clone(scene)
+    const groups = new Map()
+    for (const cell of result.objects) if (!cell.excluded && cell.type === 'table_cell' && cell.tableId === tableId) {
+      if (!groups.has(cell.pageIndex)) groups.set(cell.pageIndex, [])
+      groups.get(cell.pageIndex).push(cell.id)
+    }
+    for (const [, ids] of [...groups].sort((a, b) => b[0] - a[0])) {
+      const wanted = new Set(ids), cells = result.objects.filter(cell => wanted.has(cell.id))
+      const grid = geometry(cells), area = result.pages[cells[0].pageIndex].contentBounds
+      if (grid.columns !== widths.length) throw new Error('В продолжениях таблицы различается число колонок.')
+      if (grid.x + widths.reduce((sum, width) => sum + width, 0) > area.x + area.width + .01) throw new Error('Ширина таблицы ограничена рабочей областью её продолжения.')
+      const next = fit(arrange(cells, { ...grid, widths: [...widths] }), cells)
+      result = reflowRows(result, cells, next, { at: grid.firstRow })
+    }
+    return result
+  }
+  function insertLinkedColumn(scene, anchorId, position, idFactory, fit = cells => cells) {
+    let result = clone(scene)
+    const anchor = result.objects.find(cell => cell.id === anchorId)
+    if (!anchor) throw new Error('Выберите ячейку таблицы.')
+    const at = anchor.columnIndex + (position === 'before' ? 0 : anchor.columnSpan || 1)
+    const fragments = [...new Set(result.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === anchor.tableId).map(cell => cell.pageIndex))]
+      .map(page => result.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === anchor.tableId && cell.pageIndex === page))
+    const available = Math.min(...fragments.map(cells => {
+      const area = result.pages[cells[0].pageIndex].contentBounds
+      return area.x + area.width - geometry(cells).x
+    }))
+    const reference = fragments.find(cells => cells.some(cell => cell.id === anchorId))
+    const widths = geometry(insert(reference, anchorId, 'column', idFactory, { position, at, maxWidth: available })).widths
+    for (const original of fragments.sort((a, b) => b[0].pageIndex - a[0].pageIndex)) {
+      const ids = new Set(original.map(cell => cell.id)), cells = result.objects.filter(cell => ids.has(cell.id))
+      const inserted = insert(cells, cells[0].id, 'column', idFactory, { position, at, maxWidth: available })
+      const next = fit(arrange(inserted, { ...geometry(inserted), widths: [...widths] }), cells)
+      result = reflowRows(result, cells, next, { at: geometry(cells).firstRow })
+    }
+    return result
+  }
   function resize(cells, axis, index, size, options = {}) {
     const grid = geometry(cells)
     const values = axis === 'column' ? grid.widths : axis === 'row' ? grid.heights : null
@@ -130,7 +189,7 @@
     const grid = geometry(cells), anchor = cells.find(cell => cell.id === anchorId)
     if (!anchor) throw new Error('Выберите ячейку таблицы.')
     const rowAxis = axis === 'row', field = rowAxis ? 'rowIndex' : 'columnIndex', span = rowAxis ? 'rowSpan' : 'columnSpan'
-    const at = anchor[field] + (position === 'before' ? 0 : anchor[span] || 1)
+    const at = !rowAxis && Number.isInteger(options.at) ? options.at : anchor[field] + (position === 'before' ? 0 : anchor[span] || 1)
     const preferredColumn = position === 'before' ? anchor.columnIndex : Math.max(0, at - 1)
     for (const cell of cells) {
       if (cell[field] >= at) cell[field]++
@@ -459,5 +518,5 @@
     target.rowSpan = 1; target.columnSpan = 1
     return arrange(cells, grid)
   }
-  return { validate, geometry, arrange, snapToGrid, blank, resize, insert, copyRow, pasteRow, deleteRow, fitWidth, selectedRows, extractRows, insertRows, transferRows, createContinuationPage, reflowRows, merge, split }
+  return { borderState, setBorders, setLinkedColumnWidths, insertLinkedColumn, validate, geometry, arrange, snapToGrid, blank, resize, insert, copyRow, pasteRow, deleteRow, fitWidth, selectedRows, extractRows, insertRows, transferRows, createContinuationPage, reflowRows, merge, split }
 })

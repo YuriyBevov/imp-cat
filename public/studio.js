@@ -1639,6 +1639,14 @@
       || state.tableRowTransfer.ids.some(id => !state.scene.objects.some(object => object.id === id && !object.excluded)))) cancelTableRowTransfer()
     closeKnowledgeSuggestion()
     const segmentsView = workflowUsesSegments()
+    let tableTypographyChanged = false
+    if (!segmentsView) for (const cell of state.scene.objects) {
+      if (cell.type === 'table_cell' && !cell.manualTypography && Number.isFinite(cell.agentRequestedFontSizePx)
+        && cell.agentRequestedFontSizePx > cell.style.fontSizePx + .01) {
+        cell.style.fontSizePx = cell.agentRequestedFontSizePx
+        tableTypographyChanged = true
+      }
+    }
     const gridBoundsChanged = segmentsView ? false : normalizeSceneGridBounds()
     const gridGeometryBeforeTables = segmentsView ? false : snapObjectsToGridCells(state.scene.objects)
     const repairedTables = segmentsView ? false : repairTableLayouts()
@@ -1775,7 +1783,9 @@
           const label = document.createElement('button')
           label.type = 'button'
           label.className = 'button table-structure-label'
-          label.textContent = `Таблица ${table.rowCount}×${table.columnCount}`
+          const groups = logicalTableGroups(), number = groups.findIndex(group => group[0].id === table.id) + 1
+          const parts = groups[number - 1], part = parts.indexOf(table) + 1
+          label.textContent = `Таблица ${number}${parts.length > 1 ? ` · часть ${part}/${parts.length}` : ''} · ${table.rowCount}×${table.columnCount}`
           label.setAttribute('aria-label', `Выбрать таблицу ${table.rowCount} × ${table.columnCount} на странице ${page.index + 1}`)
           label.addEventListener('pointerdown', event => event.stopPropagation())
           label.addEventListener('click', () => selectTable(table))
@@ -1804,7 +1814,7 @@
       elements.canvasScroll.scrollLeft = menuScroll.left
       elements.canvasScroll.scrollTop = menuScroll.top
     }
-    if (gridBoundsChanged || gridGeometryChanged || repairedTables || collisionsChanged) scheduleSave()
+    if (tableTypographyChanged || gridBoundsChanged || gridGeometryChanged || repairedTables || collisionsChanged) scheduleSave()
   }
 
   function refreshTranslationStaleMarkers() {
@@ -3586,6 +3596,13 @@
       node.setAttribute('aria-controls', 'table-context-menu')
     }
     positionObjectNode(node, object)
+    if (object.type === 'table_cell' && state.workflowStage === 3) {
+      const borders = document.createElement('span')
+      borders.className = 'table-cell-print-borders'
+      borders.setAttribute('aria-hidden', 'true')
+      for (const side of ['top', 'right', 'bottom', 'left']) borders.style[`border${side[0].toUpperCase() + side.slice(1)}Width`] = object.borders?.[side] === true ? '1px' : '0px'
+      node.append(borders)
+    }
     node.style.fontFamily = object.style.fontFamily
     node.style.fontSize = `${object.style.fontSizePx}px`
     node.style.fontWeight = object.style.fontWeight
@@ -3618,7 +3635,7 @@
     handle.className = 'icon-button icon-button--tiny icon-button--filled scene-object__handle'
     handle.type = 'button'
     handle.innerHTML = iconMarkup('grip-vertical')
-    handle.setAttribute('aria-label', object.type === 'table_cell' ? 'Переместить таблицу' : 'Переместить')
+    handle.setAttribute('aria-label', object.type === 'table_cell' ? 'Переместить часть таблицы' : 'Переместить')
     handle.dataset.tooltip = 'off'
     if (state.workflowStage === 3) handle.addEventListener('pointerdown', event => beginDrag(event, object.id))
     const content = document.createElement('div')
@@ -5161,6 +5178,11 @@
     event.preventDefault()
     event.stopPropagation()
     state.lastTextSelection = null
+    if (state.selected.has(id) && primarySelectedObject()?.type === 'table_cell'
+      && new Set(selectedObjects().map(object => object.pageIndex)).size > 1) {
+      showToast('Для переноса части таблицы выберите строки по номерам слева и команду «Перенести выбранные строки».')
+      return
+    }
     if (!state.selected.has(id)) state.selected = new Set([id])
     else {
       state.selected.delete(id)
@@ -6778,6 +6800,41 @@
     }
   }
 
+  function logicalTableCells() {
+    const anchor = primarySelectedObject()
+    return anchor?.type === 'table_cell' ? state.scene.objects.filter(object => !object.excluded && object.type === 'table_cell' && object.tableId === anchor.tableId) : []
+  }
+
+  function logicalTableGroups() {
+    const groups = new Map()
+    for (const table of state.scene?.tables || []) {
+      if (!groups.has(table.id)) groups.set(table.id, [])
+      groups.get(table.id).push(table)
+    }
+    return [...groups.values()].map(parts => parts.sort((a, b) => a.pageIndex - b.pageIndex)).sort((a, b) => a[0].pageIndex - b[0].pageIndex || a[0].y - b[0].y)
+  }
+
+  function selectedLogicalRows() {
+    const cells = logicalTableCells(), result = []
+    for (const page of new Set(cells.filter(cell => state.selected.has(cell.id)).map(cell => cell.pageIndex))) {
+      result.push(...window.IcatTableModel.selectedRows(cells.filter(cell => cell.pageIndex === page), [...state.selected]).cells)
+    }
+    return result
+  }
+
+  function setSelectedTableBorders(scope, visible) {
+    const cells = logicalTableCells()
+    if (!cells.length) return
+    const targets = scope === 'table' ? cells : selectedLogicalRows()
+    const next = window.IcatTableModel.setBorders(cells, targets.map(cell => cell.id), visible)
+    checkpoint()
+    const changes = new Map(next.map(cell => [cell.id, cell.borders]))
+    for (const object of state.scene.objects) if (changes.has(object.id)) object.borders = changes.get(object.id)
+    state.sceneEditRevision += 1
+    renderDocument()
+    scheduleSave()
+  }
+
   function selectedTableCells() {
     const anchor = primarySelectedObject()
     return anchor?.type === 'table_cell' ? state.scene.objects.filter(object => !object.excluded && object.type === 'table_cell' && object.tableId === anchor.tableId && object.pageIndex === anchor.pageIndex) : []
@@ -6849,9 +6906,12 @@
           if (preserveExtent) minimums ||= tableTrackMinimums(cells, axis, measure)
           const resized = model.resize(cells, axis, index, value, { preserveExtent, minimumSizes: minimums })
           const next = fitTableCellsToText(resized, false, cells, measure)
-          validateTableGeometry(cells, next)
           const nextGrid = model.geometry(next)
-          return { cells: next, size: (axis === 'column' ? nextGrid.widths : nextGrid.heights)[offset], redistributed: preserveExtent }
+          const linked = new Set(state.scene.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === cells[0].tableId).map(cell => cell.pageIndex)).size > 1
+          const scene = axis === 'column' && linked ? model.setLinkedColumnWidths(state.scene, cells[0].tableId, nextGrid.widths,
+            (fragment, previous) => fitTableCellsToText(fragment, false, previous, measure)) : null
+          if (!scene) validateTableGeometry(cells, next)
+          return { cells: next, scene, size: (axis === 'column' ? nextGrid.widths : nextGrid.heights)[offset], redistributed: preserveExtent }
         } catch { /* Try using the existing table space before limiting the gesture. */ }
       }
       return null
@@ -6880,6 +6940,11 @@
   }
 
   function applyTableResizePlan(cells, plan) {
+    if (plan.scene) {
+      commitTableScene(plan.scene, [...state.selected])
+      showTableSizeFeedback(plan.notice)
+      return
+    }
     const changed = plan.cells.some((cell, index) => ['x', 'y', 'width', 'height'].some(key => Math.abs(cell[key] - cells[index][key]) > .01))
     if (changed) commitTableCells(cells, plan.cells)
     else refreshTableTools()
@@ -6959,11 +7024,14 @@
 
   function selectTable(table) {
     cancelTablePlacement()
-    const ids = table.cells.map(cell => cell.objectId)
-    state.selected = new Set([...ids.slice(1), ids[0]])
+    const anchorId = table.cells[0].objectId
+    const ids = state.scene.objects.filter(cell => !cell.excluded && cell.type === 'table_cell' && cell.tableId === table.id).map(cell => cell.id)
+    state.selected = new Set([...ids.filter(id => id !== anchorId), anchorId])
     state.activePage = table.pageIndex
+    elements.formatAllSegments.checked = true
+    state.lastTextSelection = null
     refreshSelection()
-    focusPage(table.pageIndex, ids[0])
+    focusPage(table.pageIndex, anchorId)
   }
 
   function cancelTablePlacement() {
@@ -7055,10 +7123,23 @@
     const cells = selectedTableCells(), anchor = primarySelectedObject()
     const picker = $('#table-picker')
     picker.replaceChildren(new Option(state.scene?.tables?.length ? 'Выберите таблицу' : 'Структурных таблиц пока нет', ''))
-    for (const [index, table] of (state.scene?.tables || []).entries()) {
-      const option = new Option(`Таблица ${index + 1} · стр. ${table.pageIndex + 1} · ${table.rowCount} × ${table.columnCount}`, table.cells[0].objectId)
-      option.selected = table.id === anchor?.tableId && table.pageIndex === anchor?.pageIndex
+    for (const [index, parts] of logicalTableGroups().entries()) {
+      const table = parts[0], pages = parts.map(part => part.pageIndex + 1).join(', ')
+      const rows = new Set(parts.flatMap(part => part.cells.flatMap(cell => Array.from({ length: cell.rowSpan }, (_, offset) => cell.rowIndex + offset))))
+      const option = new Option(`Таблица ${index + 1} · стр. ${pages} · ${rows.size} × ${table.columnCount}`, table.cells[0].objectId)
+      option.selected = table.id === anchor?.tableId
       picker.append(option)
+    }
+    $('#table-border-controls').hidden = !cells.length
+    if (cells.length) {
+      const rowCells = selectedLogicalRows()
+      for (const [id, targets] of [['table-borders-toggle', logicalTableCells()], ['table-row-borders-toggle', rowCells]]) {
+        const status = window.IcatTableModel.borderState(targets), input = $(`#${id}`)
+        input.checked = status === 'shown'
+        input.indeterminate = status === 'mixed'
+      }
+      const count = new Set(rowCells.map(cell => `${cell.pageIndex}:${cell.rowIndex}`)).size
+      $('#table-row-borders-label').textContent = count > 1 ? `Рамки выбранных строк (${count})` : 'Рамки выбранной строки'
     }
     picker.disabled = !state.scene?.tables?.length
     for (const button of document.querySelectorAll('[data-table-insert-axis]')) button.disabled = !cells.length
@@ -7068,11 +7149,17 @@
     for (const [id, verb] of [['table-copy-row', 'Копировать'], ['table-cut-row', 'Вырезать'], ['table-delete-row', 'Удалить']]) {
       $(`#${id}`).textContent = selectedRowCount > 1 ? `${verb} строки (${selectedRowCount})` : `${verb} строку`
     }
+    const multiplePartsSelected = new Set(logicalTableCells().filter(cell => state.selected.has(cell.id)).map(cell => cell.pageIndex)).size > 1
+    for (const id of ['table-transfer-rows', 'table-copy-row', 'table-cut-row', 'table-delete-row']) {
+      $(`#${id}`).disabled ||= multiplePartsSelected
+      $(`#${id}`).title = multiplePartsSelected ? 'Для работы с частью таблицы выберите её строки по номерам слева.' : ''
+    }
     const clipboardRows = state.tableRowClipboard?.rows || 1
     for (const [id, side] of [['table-paste-row-before', 'выше'], ['table-paste-row-after', 'ниже']]) {
       $(`#${id}`).textContent = clipboardRows > 1 ? `Вставить строки (${clipboardRows}) ${side}` : `Вставить строку ${side}`
     }
-    $('#table-selection-address').textContent = cells.length && selectedRowCount > 1
+    $('#table-selection-address').textContent = multiplePartsSelected
+      ? `Выбрана таблица на ${new Set(logicalTableCells().map(cell => cell.pageIndex)).size} страницах. Рамки, типографика и колонки общие. Для переноса части выберите строки по номерам слева.` : cells.length && selectedRowCount > 1
       ? `Страница ${anchor.pageIndex + 1} · выбрано строк: ${selectedRowCount}; активная ячейка: строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1}. Копирование, вырезание, удаление и перенос применяются ко всем выбранным строкам.` : cells.length ? `Страница ${anchor.pageIndex + 1} · строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1} · ${anchor.rowSpan || 1} × ${anchor.columnSpan || 1}. Команды строки и колонки применяются к этой ячейке.` : anchor?.type === 'table' ? 'Таблица распознана одним текстовым блоком. Структурные команды доступны только для отдельных ячеек.' : 'Для изменения таблицы выберите её из списка или щёлкните ячейку в макете.'
     try {
       const grid = cells.length ? window.IcatTableModel.geometry(cells) : null
@@ -7086,7 +7173,7 @@
         }
       }
     } catch { /* Invalid table geometry is reported by structural commands and QA. */ }
-    $('#table-merge').disabled = !cells.length || selectedObjects().length < 2
+    $('#table-merge').disabled = !cells.length || multiplePartsSelected || selectedObjects().length < 2
     $('#table-split').disabled = !cells.length || (anchor.rowSpan || 1) * (anchor.columnSpan || 1) === 1
     for (const button of document.querySelectorAll('[data-table-paste-position]')) {
       button.disabled = !cells.length || !state.tableRowClipboard || state.tableRowClipboard.columns !== Math.max(...cells.map(cell => cell.columnIndex + (cell.columnSpan || 1)))
@@ -7264,6 +7351,8 @@
       if (!cells.length) return
       selectTableRows(cells, cells.filter(cell => cell.rowIndex >= anchor.rowIndex).map(cell => cell.id), anchor.id)
     }))
+    $('#table-borders-toggle').addEventListener('change', event => setSelectedTableBorders('table', event.target.checked))
+    $('#table-row-borders-toggle').addEventListener('change', event => setSelectedTableBorders('rows', event.target.checked))
     $('#table-create').addEventListener('click', beginTablePlacement)
     $('#table-placement-cancel').addEventListener('click', cancelTablePlacement)
     for (const id of ['new-table-rows', 'new-table-columns']) $(`#${id}`).addEventListener('input', () => { if (state.tablePlacement) { cancelTablePlacement(); beginTablePlacement() } })
@@ -7273,8 +7362,10 @@
     })
     $('#table-select').addEventListener('click', () => {
       const anchor = primarySelectedObject()
-      const ids = selectedTableCells().map(cell => cell.id)
+      const ids = logicalTableCells().map(cell => cell.id)
       state.selected = new Set([...ids.filter(id => id !== anchor?.id), ...(anchor ? [anchor.id] : [])])
+      elements.formatAllSegments.checked = true
+      state.lastTextSelection = null
       refreshSelection()
     })
     for (const axis of ['row', 'column']) $(`#table-select-${axis}`).addEventListener('click', () => {
@@ -7282,7 +7373,7 @@
       if (!anchor) return
       const index = axis === 'row' ? anchor.rowIndex : anchor.columnIndex
       const field = axis === 'row' ? 'rowIndex' : 'columnIndex', span = axis === 'row' ? 'rowSpan' : 'columnSpan'
-      const ids = selectedTableCells().filter(cell => cell[field] <= index && index < cell[field] + (cell[span] || 1)).map(cell => cell.id)
+      const ids = (axis === 'column' ? logicalTableCells() : selectedTableCells()).filter(cell => cell[field] <= index && index < cell[field] + (cell[span] || 1)).map(cell => cell.id)
       state.selected = new Set([...ids.filter(id => id !== anchor.id), anchor.id])
       refreshSelection()
     })
@@ -7324,7 +7415,7 @@
       commitTableRowChange(cells, fitTableCellsToText(next, false, cells), at, [...addedIds.slice(1), addedIds[0]])
     }))
     $('#table-exclude').addEventListener('click', () => {
-      state.selected = new Set(selectedTableCells().map(cell => cell.id))
+      state.selected = new Set(logicalTableCells().map(cell => cell.id))
       excludeSelected()
     })
     for (const button of document.querySelectorAll('[data-table-insert-axis]')) button.addEventListener('click', safely(() => {
@@ -7333,6 +7424,12 @@
       const area = state.scene.pages[cells[0].pageIndex].contentBounds
       const grid = window.IcatTableModel.geometry(cells)
       const anchor = primarySelectedObject()
+      if (button.dataset.tableInsertAxis === 'column') {
+        const planned = window.IcatTableModel.insertLinkedColumn(state.scene, anchor.id, button.dataset.tableInsertPosition, tableObjectId,
+          (fragment, previous) => fitTableCellsToText(fragment, false, previous))
+        commitTableScene(planned, [...state.selected])
+        return
+      }
       const next = window.IcatTableModel.insert(cells, anchor?.id, button.dataset.tableInsertAxis, tableObjectId,
         { maxWidth: area.x + area.width - grid.x, position: button.dataset.tableInsertPosition })
       if (button.dataset.tableInsertAxis === 'row') {

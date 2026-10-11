@@ -239,6 +239,11 @@
             <label>Таблицы документа<select id="table-picker" aria-label="Таблицы документа"><option value="">Выберите таблицу</option></select></label>
             <details class="table-help"><summary>Как работать с таблицей</summary><p class="note note--info note--compact">Правый щелчок по ячейке открывает действия с таблицей. Текст редактируется прямо в ячейке; ширина колонки и высота строки меняются маркерами на макете. Номера строк слева выделяют строки: Shift — диапазон, Ctrl / Cmd — отдельные строки. Для выбора нескольких ячеек удерживайте Ctrl / Cmd.</p></details>
             <p id="table-selection-address" class="note note--compact">Ячейка не выбрана</p>
+            <div id="table-border-controls" class="table-border-controls" hidden>
+              <label class="base-checkbox"><input id="table-borders-toggle" class="base-checkbox__input" type="checkbox" /><span class="base-checkbox__control" aria-hidden="true"></span><span class="base-checkbox__label">Рамки всей таблицы</span></label>
+              <label class="base-checkbox"><input id="table-row-borders-toggle" class="base-checkbox__input" type="checkbox" /><span class="base-checkbox__control" aria-hidden="true"></span><span id="table-row-borders-label" class="base-checkbox__label">Рамки выбранной строки</span></label>
+              <p class="note note--compact">Рамки всей таблицы и ширина колонок общие для всех продолжений. Минус означает смешанное оформление.</p>
+            </div>
             <p id="table-transfer-hint" class="note note--info note--compact" role="status" hidden></p>
             <button id="table-transfer-cancel" class="button" type="button" hidden>Отменить перенос строк</button>
             <p id="table-size-feedback" class="note note--info note--compact" role="status" hidden></p>
