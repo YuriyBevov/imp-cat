@@ -475,6 +475,10 @@
           <div class="component-section__body">
             <div class="component-meta">
               <p>Единый локальный SVG-спрайт. Все кнопки только с иконкой используют `.icon-button`; размеры, цвет, заливка и рамка меняются абстрактными модификаторами `.icon-button--*`. Контекстные классы не дублируют оформление компонента.</p>
+              <div class="icon-catalog">
+                <div class="icon-sample"><button class="icon-button icon-button--compact icon-button--toggle" aria-expanded="true" type="button" aria-label="Открыть меню"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-menu"></use></svg></button><code>compact + toggle</code></div>
+                <div class="icon-sample"><button class="icon-button icon-button--inverse" type="button" aria-label="Закрыть просмотр"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button><code>inverse</code></div>
+              </div>
             </div>
             <div class="icon-catalog">
               <div class="icon-sample"><button class="icon-button" type="button" aria-label="Меню"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-menu"></use></svg></button><code>menu</code></div>
@@ -520,6 +524,7 @@
           </div>
         </details>
       </div>
-    </main>
+    <section class="component-section"><h2>Контекстные инструменты таблицы</h2><p>Создание и справка раскрываются по запросу. Свойства текста видны при выборе элемента.</p><details class="table-create-disclosure"><summary>Новая таблица</summary><div class="table-tools__grid"><label>Строк<input type="number" min="1" value="3" /></label><label>Колонок<input type="number" min="1" value="3" /></label></div><button class="button" type="button">Указать место на странице</button></details><details class="table-help"><summary>Как работать с таблицей</summary><p class="note note--info note--compact">Правый щелчок открывает команды строк и колонок. Shift выделяет диапазон строк.</p></details></section>
+</main>
   </body>
 </html>

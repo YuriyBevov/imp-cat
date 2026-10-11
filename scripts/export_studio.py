@@ -16,6 +16,7 @@ from reportlab.pdfgen.canvas import Canvas
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from export_docx import export_layout
+from export_flow import export_flow
 
 
 from export_fonts import font_name, glyph_font
@@ -96,12 +97,15 @@ def normalize_scene(scene: dict) -> dict:
             "zIndex": index + 1,
             "fontFamily": str(style.get("fontFamily") or "Arial"),
             "fontSizePx": float(style.get("fontSizePx", 14)),
+            "requestedFontSizePx": float(style.get("fontSizePx", 14) if item.get("manualTypography") else item.get("agentRequestedFontSizePx", style.get("fontSizePx", 14))),
             "fontWeight": float(style.get("fontWeight", 400)),
             "fontStyle": "italic" if style.get("fontStyle") == "italic" else "normal",
             "lineHeight": float(style.get("lineHeight", 1.2)),
             "color": str(style.get("color") or "#111827"),
             "alignment": str(style.get("textAlign") or "left"),
             "runs": text_runs(item, text),
+            "borders": item.get("borders"),
+            "isTableHeader": item.get("isTableHeader") is True,
         }
 
     table_groups: dict[tuple[int, str], list[tuple[int, dict]]] = {}
@@ -416,9 +420,14 @@ def export_pdf(payload: dict, output_path: Path) -> None:
             origin_x = segment["x"] * 0.75
             y = page_height - segment["y"] * 0.75
             if segment.get("_tableCell"):
-                canvas.setStrokeColorRGB(0.5, 0.5, 0.5)
+                canvas.setStrokeColorRGB(0, 0, 0)
                 canvas.setLineWidth(0.5)
-                canvas.rect(origin_x, y - segment["height"] * 0.75, segment["width"] * 0.75, segment["height"] * 0.75, stroke=1, fill=0)
+                right, bottom = origin_x + segment["width"] * .75, y - segment["height"] * .75
+                edges = {"top": (origin_x, y, right, y), "bottom": (origin_x, bottom, right, bottom),
+                         "left": (origin_x, y, origin_x, bottom), "right": (right, y, right, bottom)}
+                for side, coordinates in edges.items():
+                    if (segment.get("borders") or {}).get(side) is True:
+                        canvas.line(*coordinates)
             origin_x += padding_x
             if segment.get("_tableCell"): y -= 1.5
             for line in lines:
@@ -455,11 +464,13 @@ def main() -> None:
     output_path = Path(sys.argv[2])
     requested_format = sys.argv[3].lower()
     scene = json.loads(input_path.read_text(encoding="utf-8"))
-    payload = prepare_export(normalize_scene(scene))
+    payload = normalize_scene(scene)
+    if requested_format != 'docx':
+        payload = prepare_export(payload)
     if not payload["pages"]:
         raise ValueError("Scene has no pages")
     if requested_format == "docx":
-        export_layout(payload, output_path)
+        export_flow(payload, output_path)
     elif requested_format == "pdf":
         export_pdf(payload, output_path)
     else:

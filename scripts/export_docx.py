@@ -320,11 +320,11 @@ def create_word_table(table: dict) -> etree._Element:
     word_attr(width, "w", table_width)
     word_attr(width, "type", "dxa")
     properties.append(width)
-    properties.append(element("w", "tblLayout", {qn("w:type"): "fixed"}))
+    properties.append(element("w", "tblLayout", {qn("w:type"): "autofit" if table.get("flow") else "fixed"}))
     borders = element("w", "tblBorders")
     for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
         border = element("w", side)
-        word_attr(border, "val", "single")
+        word_attr(border, "val", "nil")
         word_attr(border, "sz", 4)
         word_attr(border, "space", 0)
         word_attr(border, "color", "808080")
@@ -338,6 +338,7 @@ def create_word_table(table: dict) -> etree._Element:
         grid.append(column)
     table_node.append(grid)
 
+    header_continues = True
     for row_index in range(row_count):
         row = element("w", "tr")
         row_cells = [cell for cell in table.get("cells", []) if int(cell["rowIndex"]) == row_index]
@@ -345,6 +346,9 @@ def create_word_table(table: dict) -> etree._Element:
         if table.get("rowHeights"):
             row_height_px = table["rowHeights"][row_index]
         row_properties = element("w", "trPr")
+        header_continues = header_continues and bool(row_cells) and all(cell.get("isTableHeader") for cell in row_cells)
+        if header_continues:
+            row_properties.append(element("w", "tblHeader"))
         height = element("w", "trHeight")
         word_attr(height, "val", px_to_twips(row_height_px))
         word_attr(height, "hRule", "exact" if table.get("rowHeights") else "atLeast")
@@ -382,6 +386,15 @@ def create_word_table(table: dict) -> etree._Element:
                 word_attr(margin, "type", "dxa")
                 margins.append(margin)
             cell_properties.append(margins)
+            cell_borders = element("w", "tcBorders")
+            source_borders = (active or {}).get("borders") or {}
+            for side in ("top", "left", "bottom", "right"):
+                border = element("w", side)
+                word_attr(border, "val", "single" if source_borders.get(side) is True else "nil")
+                word_attr(border, "sz", 4)
+                word_attr(border, "color", "000000")
+                cell_borders.append(border)
+            cell_properties.append(cell_borders)
             cell_node.append(cell_properties)
             if cell is not None:
                 cell_node.append(create_text_box_paragraph(cell))

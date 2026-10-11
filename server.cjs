@@ -239,7 +239,7 @@ app.post('/api/export', async (request, response, next) => {
   }
 })
 
-app.use('/api/studio', createStudioRouter({ rootDir, pythonBin, runProcess }))
+app.use('/api/studio', createStudioRouter({ rootDir, pythonBin, runProcess, ...(process.env.STUDIO_DATA_DIR ? { dataDir: path.resolve(process.env.STUDIO_DATA_DIR) } : {}) }))
 
 app.use((error, request, response, next) => {
   if (response.headersSent) return next(error)

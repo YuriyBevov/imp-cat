@@ -71,7 +71,7 @@
     return { ...clone(template), id, rowIndex: row, columnIndex: column, rowSpan: 1, columnSpan: 1,
       sourceText: '', translation: '', sourceTextStyles: [], translationTextStyles: [], translationUnits: [],
       sourceLineIds: [], sourceRegions: [], sourceRevisionChat: [], revisionChat: [], originalBounds: null,
-      translatedSourceText: '', translatedSourceType: 'table_cell', status: 'manual', excluded: false }
+      translatedSourceText: '', translatedSourceType: 'table_cell', isTableHeader: false, status: 'manual', excluded: false }
   }
   function resize(cells, axis, index, size, options = {}) {
     const grid = geometry(cells)
@@ -178,6 +178,7 @@
     const copied = cells.filter(cell => cell.rowIndex <= row && row < endRow(cell))
       .sort((a, b) => a.columnIndex - b.columnIndex).map(cell => ({
         columnIndex: cell.columnIndex, columnSpan: cell.columnSpan || 1,
+        borders: clone(cell.borders || null), isTableHeader: cell.isTableHeader === true,
         sourceText: cell.sourceText || '', translation: cell.translation || '',
         style: clone(cell.style || {}), sourceTextStyles: clone(cell.sourceTextStyles || []),
         translationTextStyles: clone(cell.translationTextStyles || []), rotation: cell.rotation || 0,

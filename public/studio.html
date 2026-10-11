@@ -19,7 +19,7 @@
           <span id="document-status">Загрузите PDF или изображение</span>
         </div>
         <div id="appbar-menu" class="appbar-menu">
-          <button id="appbar-menu-button" class="icon-button icon-button--toggle" type="button" aria-label="Открыть меню действий" aria-controls="appbar-actions-menu" aria-expanded="false">
+          <button id="appbar-menu-button" class="icon-button icon-button--compact icon-button--toggle" type="button" aria-label="Открыть меню действий" aria-controls="appbar-actions-menu" aria-expanded="false">
             <svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-menu"></use></svg>
           </button>
           <div id="appbar-actions-menu" class="appbar__actions" role="menu" hidden>
@@ -127,7 +127,7 @@
       <section class="workbench">
         <div class="workbench-toolbar">
           <div class="workbench-toolbar__source-toggle">
-            <button id="source-panel-toggle" class="icon-button icon-button--compact" type="button" title="Показать оригинал" aria-label="Показать оригинал" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
+            <button id="source-panel-toggle" class="icon-button icon-button--compact icon-button--toggle" type="button" title="Показать оригинал" aria-label="Показать оригинал" aria-expanded="false"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-layout"></use></svg></button>
           </div>
           <div class="app-container workbench-toolbar__inner">
             <nav id="workflow-stagebar" class="workflow-stagebar" aria-label="Этапы работы с документом">
@@ -142,12 +142,12 @@
               </div>
             </nav>
             <div class="toolbar-group workbench-toolbar__layout-controls" aria-label="Масштаб документа">
-              <button id="zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+              <button id="zoom-out" class="icon-button icon-button--compact" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
               <output id="zoom-output">100%</output>
-              <button id="zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
-              <button id="zoom-fit" class="icon-button" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
+              <button id="zoom-in" class="icon-button icon-button--compact" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+              <button id="zoom-fit" class="icon-button icon-button--compact" type="button" title="Вписать документ по ширине" aria-label="Вписать документ по ширине"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-fit-width"></use></svg></button>
               <button id="zoom-100" class="compact-button" type="button" title="Масштаб документа 100%">100%</button>
-              <button id="segment-type-labels-toggle" class="icon-button" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false" hidden><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye"></use></svg></button>
+              <button id="segment-type-labels-toggle" class="icon-button icon-button--compact" type="button" aria-label="Скрыть типы сегментов" aria-pressed="false" hidden><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-eye"></use></svg></button>
             </div>
           </div>
         </div>
@@ -205,9 +205,9 @@
         </div>
 
         <div id="final-testing-tools" class="final-testing-tools">
-          <p class="note note--info note--compact">При выгрузке строки таблиц расширяются по тексту и при необходимости переносятся на новые страницы. Проверьте итоговый PDF.</p>
+          <p class="note note--info note--compact">DOCX содержит обычный текст и редактируемые таблицы. Word автоматически переносит строки; PDF сохраняет макет редактора.</p>
           <button id="preview-pdf-button" class="button" type="button">Предпросмотр PDF</button>
-          <details class="final-testing-actions"><summary>Повторное распознавание</summary>
+          <details class="final-testing-actions"><summary>Дополнительные действия</summary>
             <button id="qa-button" class="button" type="button">Проверить макет</button>
             <button id="reanalyze-button" class="button button--danger button--danger-filled reanalyze-button" type="button">Пересегментация макета</button>
           </details>
@@ -237,12 +237,12 @@
           <details id="table-tools" class="layout-card table-tools" open>
             <summary>Таблица</summary>
             <label>Таблицы документа<select id="table-picker" aria-label="Таблицы документа"><option value="">Выберите таблицу</option></select></label>
-            <p class="note note--info note--compact">Правый щелчок по ячейке открывает действия с таблицей. Текст редактируется прямо в ячейке; ширина колонки и высота строки меняются маркерами на макете. Номера строк слева выделяют строки: Shift — диапазон, Ctrl / Cmd — отдельные строки. Для выбора нескольких ячеек удерживайте Ctrl / Cmd.</p>
+            <details class="table-help"><summary>Как работать с таблицей</summary><p class="note note--info note--compact">Правый щелчок по ячейке открывает действия с таблицей. Текст редактируется прямо в ячейке; ширина колонки и высота строки меняются маркерами на макете. Номера строк слева выделяют строки: Shift — диапазон, Ctrl / Cmd — отдельные строки. Для выбора нескольких ячеек удерживайте Ctrl / Cmd.</p></details>
             <p id="table-selection-address" class="note note--compact">Ячейка не выбрана</p>
             <p id="table-transfer-hint" class="note note--info note--compact" role="status" hidden></p>
             <button id="table-transfer-cancel" class="button" type="button" hidden>Отменить перенос строк</button>
             <p id="table-size-feedback" class="note note--info note--compact" role="status" hidden></p>
-            <strong>Новая таблица</strong>
+            <details class="table-create-disclosure"><summary>Новая таблица</summary>
             <div class="table-tools__grid">
               <label>Строк<input id="new-table-rows" type="number" min="1" max="50" value="3" /></label>
               <label>Колонок<input id="new-table-columns" type="number" min="1" max="20" value="3" /></label>
@@ -250,6 +250,7 @@
             <button id="table-create" class="button" type="button" aria-pressed="false">Указать место на странице</button>
             <p id="table-placement-hint" class="note note--info note--compact" role="status">Задайте размер, нажмите «Указать место на странице» и щёлкните свободное место в макете.</p>
             <button id="table-placement-cancel" class="button" type="button" hidden>Отменить размещение</button>
+            </details>
           </details>
           <div class="typography-selection-toolbar inspector-scope--layout">
             <button id="typography-select-all" class="button" type="button" aria-pressed="false">Выбрать все сегменты</button>
@@ -285,13 +286,13 @@
                 </span>
               </div>
               <div class="typography-card__setting">
-                <span id="line-height-control-label" class="layout-card__label">Высота строки</span>
+                <span id="line-height-control-label" class="layout-card__label">Межстрочный интервал</span>
                 <span class="number-stepper" role="group" aria-labelledby="line-height-control-label">
-                  <button id="line-height-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить высоту строки на 0,05" aria-label="Уменьшить высоту строки на 0,05"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+                  <button id="line-height-decrease" class="icon-button icon-button--compact" type="button" title="Уменьшить межстрочный интервал на 0,05" aria-label="Уменьшить межстрочный интервал на 0,05"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
                   <span class="number-stepper__field number-stepper__field--wide">
-                    <input id="line-height" class="number-stepper__value" type="number" min="0.8" max="3" step="0.05" placeholder="≠" aria-label="Высота строки" />
+                    <input id="line-height" class="number-stepper__value" type="number" min="0.8" max="3" step="0.05" placeholder="≠" aria-label="Межстрочный интервал" />
                   </span>
-                  <button id="line-height-increase" class="icon-button icon-button--compact" type="button" title="Увеличить высоту строки на 0,05" aria-label="Увеличить высоту строки на 0,05"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+                  <button id="line-height-increase" class="icon-button icon-button--compact" type="button" title="Увеличить межстрочный интервал на 0,05" aria-label="Увеличить межстрочный интервал на 0,05"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
                 </span>
               </div>
             </div>
@@ -446,19 +447,19 @@
     <div id="source-preview-lightbox" class="source-preview-lightbox" role="dialog" aria-modal="true" aria-labelledby="source-preview-lightbox-title" hidden>
       <header class="source-preview-lightbox__header">
         <strong id="source-preview-lightbox-title">Оригинал документа</strong>
-        <button id="source-preview-lightbox-close" class="icon-button icon-button--ghost" type="button" title="Закрыть полноэкранный просмотр" aria-label="Закрыть полноэкранный просмотр"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
+        <button id="source-preview-lightbox-close" class="icon-button icon-button--inverse" type="button" title="Закрыть полноэкранный просмотр" aria-label="Закрыть полноэкранный просмотр"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button>
       </header>
       <div id="source-preview-lightbox-viewport" class="source-preview-lightbox__viewport">
         <div id="source-preview-lightbox-canvas" class="source-preview-lightbox__canvas"></div>
       </div>
       <div class="source-preview-lightbox__controls" aria-label="Управление полноэкранным просмотром">
-        <button id="source-preview-lightbox-previous" class="icon-button" type="button" title="Предыдущая страница" aria-label="Предыдущая страница"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
-        <button id="source-preview-lightbox-zoom-out" class="icon-button" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
+        <button id="source-preview-lightbox-previous" class="icon-button icon-button--inverse" type="button" title="Предыдущая страница" aria-label="Предыдущая страница"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg></button>
+        <button id="source-preview-lightbox-zoom-out" class="icon-button icon-button--inverse" type="button" title="Уменьшить" aria-label="Уменьшить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-minus"></use></svg></button>
         <output id="source-preview-lightbox-zoom-output" aria-live="polite">100%</output>
-        <button id="source-preview-lightbox-zoom-in" class="icon-button" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
+        <button id="source-preview-lightbox-zoom-in" class="icon-button icon-button--inverse" type="button" title="Увеличить" aria-label="Увеличить"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-plus"></use></svg></button>
         <button id="source-preview-lightbox-zoom-100" class="compact-button" type="button" title="Масштаб 100%">100%</button>
-        <button id="source-preview-lightbox-fit" class="icon-button" type="button" title="Вписать страницу" aria-label="Вписать страницу"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button>
-        <button id="source-preview-lightbox-next" class="icon-button" type="button" title="Следующая страница" aria-label="Следующая страница"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
+        <button id="source-preview-lightbox-fit" class="icon-button icon-button--inverse" type="button" title="Вписать страницу" aria-label="Вписать страницу"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-maximize"></use></svg></button>
+        <button id="source-preview-lightbox-next" class="icon-button icon-button--inverse" type="button" title="Следующая страница" aria-label="Следующая страница"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg></button>
       </div>
     </div>
     <aside id="knowledge-suggestion-popover" class="knowledge-suggestion-popover" hidden aria-label="Подсказки Базы знаний">

@@ -146,7 +146,7 @@ class StudioExporterTests(unittest.TestCase):
                 self.assertEqual(len(root.findall(".//w:tr", ns)), 2)
                 self.assertEqual([node.get("{" + ns["w"] + "}w") for node in root.findall(".//w:gridCol", ns)], ["1500", "4500"])
             with pymupdf.open(pdf) as doc:
-                self.assertEqual(len(doc[0].get_drawings()), 4)
+                self.assertEqual(len(doc[0].get_drawings()), 0)  # Unknown borders are not fabricated.
                 self.assertIn("Ђорђе", doc[0].get_text())
 
     def test_cyrillic_embedded_for_every_family_and_style(self):

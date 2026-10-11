@@ -36,7 +36,7 @@ test('buildScene preserves page ratio, groups body lines, and classifies service
   assert.equal(scene.gridSize, 8)
   assert.equal(scene.gridDensity, 'xs')
   assert.equal(scene.snapToGrid, true)
-  assert.equal(scene.showSegmentTypeLabels, true)
+  assert.equal(scene.showSegmentTypeLabels, false)
   assert.equal(scene.workflowVersion, 2)
   assert.equal(scene.workflowStage, 1)
   assert.equal(scene.layoutInitializationVersion, 0)
@@ -210,7 +210,7 @@ test('QA keeps empty structural table cells without reporting missing content or
     style: { fontSizePx: 12, lineHeight: 1.2 },
   }
   const report = validateScene({ pages: [page], objects: [emptyCell] })
-  assert.equal(report.warnings.some(item => item.objectIds.includes('empty-cell')), false)
+  assert.equal(report.warnings.some(item => item.objectIds.includes('empty-cell') && ['empty-object', 'missing-translation'].includes(item.code)), false)
 })
 
 test('normalizeScene constrains data and restores server-owned image URLs', () => {
@@ -462,4 +462,18 @@ test('QA identifies conflicting table addresses before export', () => {
   scene.objects.push({ ...first, id: 'duplicate' })
   const report = validateScene(scene)
   assert.ok(report.warnings.some(warning => warning.code === 'table-structure' && warning.objectIds.includes('duplicate')))
+})
+
+test('unknown table borders produce one review warning per fragment instead of one per cell', () => {
+  const scene = { pages: [{ index: 0, widthPx: 800, heightPx: 1100 }], objects: [0,1].map(column => ({
+    id: `edge-${column}`, type: 'table_cell', tableId: 'edges', pageIndex: 0, rowIndex: 0, columnIndex: column,
+    rowSpan: 1, columnSpan: 1, x: 40 + column * 100, y: 40, width: 100, height: 34,
+    sourceText: '', translation: '', confidence: 1, style: { fontSizePx: 14 }, borders: null,
+  })) }
+  const report = validateScene(scene)
+  const warnings = report.warnings.filter(item => item.code === 'table-recognition')
+  assert.equal(warnings.length, 1)
+  assert.deepEqual(warnings[0].objectIds, ['edge-0','edge-1'])
+  for (const cell of scene.objects) cell.borders = { top: false, right: false, bottom: false, left: false }
+  assert.equal(validateScene(scene).warnings.filter(item => item.code === 'table-recognition').length, 0)
 })

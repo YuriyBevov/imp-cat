@@ -113,3 +113,28 @@ test('large reconstructed tables respect the scene object limit before allocatio
   const input = { pages: [{ index: 0, segments: [segment('rows', 'a | b | c\n'.repeat(3400).trim(), { x: .1, y: .1, width: .8, height: .8 })] }] }
   assert.throws(() => recoverDelimitedTableSegments(input), /10000 сегментов/u)
 })
+
+test('mixed physical header, empty container and delimited body become one table without dropping cells', () => {
+  const input = statementAnalysis()
+  const header = input.pages[2].segments.map(cell => ({ ...cell, flowGroup: 'mixed', tableId: 'mixed-table' }))
+  input.pages = [{ index: 0, width: 1600, height: 1131, segments: [
+    segment('container', '', { x: .09, y: .19, width: .82, height: .31 }, { flowGroup: 'mixed' }),
+    ...header,
+    segment('row1', '1 | first | ', { x: .1, y: .25, width: .8, height: .1 }, { flowGroup: 'mixed' }),
+    segment('row2', '2 | second | 123', { x: .1, y: .35, width: .8, height: .1 }, { flowGroup: 'mixed' }),
+  ] }]
+  const original = structuredClone(input)
+  const output = recoverDelimitedTableSegments(input)
+  assert.deepEqual(input, original)
+  const cells = output.pages[0].segments
+  assert.equal(cells.length, 9)
+  assert.ok(cells.every(cell => cell.type === 'table_cell' && cell.tableId === 'mixed-table'))
+  assert.deepEqual(cells.slice(0, 3), header)
+  assert.deepEqual(cells.slice(3).map(cell => [cell.rowIndex, cell.columnIndex, cell.sourceText]), [[1, 0, '1'], [1, 1, 'first'], [1, 2, ''], [2, 0, '2'], [2, 1, 'second'], [2, 2, '123']])
+  assert.deepEqual(recoverDelimitedTableSegments(output), output)
+  // Existing body cells make recovery ambiguous: preserve every original block.
+  input.pages[0].segments.push({ ...header[0], segmentId: 'body-cell', rowIndex: 1 })
+  const ambiguous = recoverDelimitedTableSegments(input)
+  assert.equal(ambiguous.pages[0].segments.length, input.pages[0].segments.length)
+  assert.ok(ambiguous.pages[0].segments.filter(cell => cell.type === 'table').every(cell => cell.needsReview))
+})

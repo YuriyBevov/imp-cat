@@ -85,3 +85,15 @@ test('rejects an incomplete merged document', () => {
     /собрал 2 стр\. вместо 3/,
   )
 })
+
+test('identical table IDs from independent model requests never join unrelated tables', () => {
+  const source = manifest(3)
+  const batches = planDocumentBatches(source, { pageLimit: 1 })
+  const entries = batches.map(batch => {
+    const analysis = batchAnalysis(batch)
+    analysis.pages[0].segments[0].tableId = 'table-1'
+    return { batch, analysis }
+  })
+  const merged = mergeBatchAnalyses(entries, source)
+  assert.equal(new Set(merged.pages.map(page => page.segments[0].tableId)).size, 3)
+})

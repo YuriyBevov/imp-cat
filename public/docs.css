@@ -63,7 +63,7 @@ a { color: var(--blue); }
 .docs-content ul, .docs-content ol { margin: 0 0 18px; padding-left: 26px; }
 .docs-content li { margin: 5px 0; }
 .docs-content blockquote { margin: 18px 0; padding: 10px 16px; border-left: 4px solid var(--teal); background: #f0fdfa; color: #344054; }
-.docs-content code { padding: 2px 5px; border-radius: 5px; background: #f2f4f7; color: #344054; font: .88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.docs-content code { padding: 2px 5px; border-radius: 5px; background: #f2f4f7; color: #344054; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .docs-content pre { margin: 18px 0; padding: 16px 18px; overflow: auto; border-radius: 10px; background: #101828; color: #e4e7ec; line-height: 1.5; }
 .docs-content pre code { padding: 0; background: transparent; color: inherit; }
 .docs-table-wrap { margin: 18px 0 24px; overflow-x: auto; border: 1px solid #d0d5dd; border-radius: 10px; }

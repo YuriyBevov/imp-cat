@@ -249,7 +249,7 @@
 
   function refreshInspectorSelectionState(hasSelection) {
     for (const content of elements.inspectorPanel.querySelectorAll('[data-layout-selection-content]')) {
-      content.hidden = false
+      content.hidden = !hasSelection
       content.classList.toggle('is-disabled', !hasSelection)
       content.setAttribute('aria-disabled', String(!hasSelection))
       if (hasSelection) {
@@ -340,7 +340,7 @@
   }
 
   function segmentTypeLabelsVisible() {
-    return state.scene?.showSegmentTypeLabels !== false
+    return state.scene?.showSegmentTypeLabels === true
   }
 
   function refreshSegmentTypeLabelsState() {
@@ -512,8 +512,11 @@
     exportActions.append(elements.exportDocx, elements.exportPdf)
     finalTestingTools.prepend(exportActions)
     const tableTools = $('#table-tools')
-    tableTools.append(elements.exclude)
-    const currentNodes = [...elements.objectInspector.children].filter(node => node !== tableTools)
+    const exclusionTools = document.createElement('div')
+    exclusionTools.dataset.layoutSelectionContent = 'true'
+    exclusionTools.append(elements.exclude)
+    tableTools.after(exclusionTools)
+    const currentNodes = [...elements.objectInspector.children].filter(node => node !== tableTools && node !== exclusionTools)
     const typographySelectionToolbar = elements.objectInspector.querySelector('.typography-selection-toolbar')
     const typography = elements.objectInspector.querySelector('.typography-card')
     const segmentActions = elements.objectInspector.querySelector('.segment-actions-card')
@@ -554,7 +557,7 @@
     )
     const objectPanels = [
       createInspectorPanel('inspector-translation-panel', 'translation', 'Сегменты', [batchRevisionCard, memoryCard]),
-      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [typographySelectionToolbar, tableTools, layoutSelectionTools, layoutQaActions]),
+      createInspectorPanel('inspector-layout-panel', 'layout', 'Типографика и расстановка', [tableTools, typographySelectionToolbar, layoutSelectionTools, exclusionTools, layoutQaActions]),
     ]
     elements.objectInspector.replaceChildren(...objectPanels, legacySegmentTools)
     inspectorBody.insertBefore(globalTranslationPanel, elements.objectInspector)
@@ -6392,7 +6395,7 @@
     elements.lineHeight.disabled = !hasLineHeights
     elements.lineHeightDecrease.disabled = !hasLineHeights || lineHeights.every(value => value <= .8)
     elements.lineHeightIncrease.disabled = !hasLineHeights || lineHeights.every(value => value >= 3)
-    updateNumberStepperState(elements.lineHeight, hasMixedLineHeights, 'Высота строки', 'У выбранных сегментов разная высота строки')
+    updateNumberStepperState(elements.lineHeight, hasMixedLineHeights, 'Межстрочный интервал', 'У выбранных сегментов разный межстрочный интервал')
   }
 
   function setFormattingFontFamily(fontFamily) {
@@ -7040,6 +7043,12 @@
     } catch (error) { showToast(error.message, true) }
   }
 
+  function selectedTableRowCount(cells) {
+    if (!cells.length) return 0
+    try { return window.IcatTableModel.selectedRows(cells, [...state.selected]).rows.length }
+    catch { return new Set(cells.filter(cell => state.selected.has(cell.id)).map(cell => cell.rowIndex)).size }
+  }
+
   function refreshTableTools() {
     showTableSizeFeedback()
     elements.exclude.disabled = !selectedObjects().length
@@ -7055,7 +7064,16 @@
     for (const button of document.querySelectorAll('[data-table-insert-axis]')) button.disabled = !cells.length
     if (cells.length) $('#table-tools').open = true
     for (const id of ['table-transfer-rows', 'table-select-rows-below', 'table-select', 'table-select-row', 'table-select-column', 'table-copy-row', 'table-cut-row', 'table-delete-row', 'table-exclude', 'table-fit-grid']) $(`#${id}`).disabled = !cells.length
-    $('#table-selection-address').textContent = cells.length ? `Страница ${anchor.pageIndex + 1} · строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1} · ${anchor.rowSpan || 1} × ${anchor.columnSpan || 1}. Команды строки и колонки применяются к этой ячейке.` : anchor?.type === 'table' ? 'Таблица распознана одним текстовым блоком. Структурные команды доступны только для отдельных ячеек.' : 'Для изменения таблицы выберите её из списка или щёлкните ячейку в макете.'
+    const selectedRowCount = selectedTableRowCount(cells)
+    for (const [id, verb] of [['table-copy-row', 'Копировать'], ['table-cut-row', 'Вырезать'], ['table-delete-row', 'Удалить']]) {
+      $(`#${id}`).textContent = selectedRowCount > 1 ? `${verb} строки (${selectedRowCount})` : `${verb} строку`
+    }
+    const clipboardRows = state.tableRowClipboard?.rows || 1
+    for (const [id, side] of [['table-paste-row-before', 'выше'], ['table-paste-row-after', 'ниже']]) {
+      $(`#${id}`).textContent = clipboardRows > 1 ? `Вставить строки (${clipboardRows}) ${side}` : `Вставить строку ${side}`
+    }
+    $('#table-selection-address').textContent = cells.length && selectedRowCount > 1
+      ? `Страница ${anchor.pageIndex + 1} · выбрано строк: ${selectedRowCount}; активная ячейка: строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1}. Копирование, вырезание, удаление и перенос применяются ко всем выбранным строкам.` : cells.length ? `Страница ${anchor.pageIndex + 1} · строка ${anchor.rowIndex + 1}, колонка ${anchor.columnIndex + 1} · ${anchor.rowSpan || 1} × ${anchor.columnSpan || 1}. Команды строки и колонки применяются к этой ячейке.` : anchor?.type === 'table' ? 'Таблица распознана одним текстовым блоком. Структурные команды доступны только для отдельных ячеек.' : 'Для изменения таблицы выберите её из списка или щёлкните ячейку в макете.'
     try {
       const grid = cells.length ? window.IcatTableModel.geometry(cells) : null
       if (grid) for (const cell of cells) {
@@ -7142,7 +7160,7 @@
     const existing = state.scene.objects.filter(object => !object.excluded && object.pageIndex === page.index && !previous.includes(object))
     const x = placement?.x ?? area.x
     const y = placement?.y ?? Math.max(area.y, ...existing.map(cell => cell.y + cell.height + 17))
-    const template = { pageIndex: page.index, type: 'table_cell', tableId, readingOrder: state.scene.objects.length + 1, confidence: 1, rotation: 0, x: area.x, y, width, height: 34,
+    const template = { borders: { top: true, right: true, bottom: true, left: true }, pageIndex: page.index, type: 'table_cell', tableId, readingOrder: state.scene.objects.length + 1, confidence: 1, rotation: 0, x: area.x, y, width, height: 34,
       style: { fontFamily: 'Arial', fontSizePx: 14, fontWeight: 400, fontStyle: 'normal', textAlign: 'left', lineHeight: 1.2, color: '#000000' } }
     const cells = Array.from({ length: rows * columns }, (_, index) => ({ ...model.blank(template, Math.floor(index / columns), index % columns, tableObjectId()),
       type: 'table_cell', tableId, rowIndex: Math.floor(index / columns), columnIndex: index % columns, rowSpan: 1, columnSpan: 1 }))
@@ -7177,7 +7195,8 @@
     state.tableMenuAnchorId = object.id
     state.tableMenuScroll = { left: elements.canvasScroll.scrollLeft, top: elements.canvasScroll.scrollTop }
     const menu = $('#table-context-menu')
-    $('#table-context-title').textContent = `Строка ${object.rowIndex + 1} · колонка ${gridColumnLabel(object.columnIndex)}`
+    const rowCount = selectedTableRowCount(cells)
+    $('#table-context-title').textContent = rowCount > 1 ? `Выбрано строк: ${rowCount}` : `Строка ${object.rowIndex + 1} · колонка ${gridColumnLabel(object.columnIndex)}`
     menu.hidden = false
     const cellRect = elements.canvas.querySelector(`.scene-object[data-id="${CSS.escape(object.id)}"]`)?.getBoundingClientRect()
     const rect = menu.getBoundingClientRect()
@@ -7268,27 +7287,37 @@
       refreshSelection()
     })
     $('#table-copy-row').addEventListener('click', safely(() => {
-      state.tableRowClipboard = window.IcatTableModel.copyRow(selectedTableCells(), primarySelectedObject()?.id)
-      showToast('Строка скопирована. Откройте меню нужной ячейки и выберите вставку выше или ниже.')
+      const model = window.IcatTableModel, cells = selectedTableCells()
+      const extracted = model.extractRows(cells, [...state.selected])
+      state.tableRowClipboard = { columns: model.geometry(cells).columns, rows: extracted.rows.length, cells: extracted.moved }
+      showToast(`Скопировано строк: ${extracted.rows.length}. Откройте меню нужной ячейки и выберите вставку выше или ниже.`)
       refreshTableTools()
     }))
     for (const [id, cut] of [['table-delete-row', false], ['table-cut-row', true]]) $(`#${id}`).addEventListener('click', safely(() => {
       const cells = selectedTableCells(), anchor = primarySelectedObject()
       if (!cells.length) return
-      const snapshot = cut ? window.IcatTableModel.copyRow(cells, anchor.id) : null
-      const next = window.IcatTableModel.deleteRow(cells, anchor.id)
-      commitTableRowChange(cells, next, anchor.rowIndex)
+      const model = window.IcatTableModel, extracted = model.extractRows(cells, [...state.selected])
+      const snapshot = cut ? { columns: model.geometry(cells).columns, rows: extracted.rows.length, cells: extracted.moved } : null
+      commitTableRowChange(cells, extracted.remaining, extracted.rows[0])
       if (cut) {
         state.tableRowClipboard = snapshot
         refreshTableTools()
-        showToast('Строка вырезана. Откройте меню нужной ячейки и вставьте её выше или ниже.')
+        showToast(`Вырезано строк: ${snapshot.rows}. Откройте меню нужной ячейки и вставьте их выше или ниже.`)
       }
     }))
     for (const button of document.querySelectorAll('[data-table-paste-position]')) button.addEventListener('click', safely(() => {
       const cells = selectedTableCells(), anchor = primarySelectedObject()
       if (!cells.length) return
-      const next = window.IcatTableModel.pasteRow(cells, anchor.id, state.tableRowClipboard, tableObjectId,
-        { position: button.dataset.tablePastePosition })
+      if (!state.tableRowClipboard?.cells?.length) return
+      const model = window.IcatTableModel
+      const incoming = state.tableRowClipboard.cells.map(content => ({
+        ...model.blank(content, content.rowIndex, content.columnIndex, tableObjectId()),
+        rowSpan: content.rowSpan, columnSpan: content.columnSpan, isTableHeader: content.isTableHeader === true,
+        sourceText: content.sourceText, translation: content.translation,
+        sourceTextStyles: JSON.parse(JSON.stringify(content.sourceTextStyles || [])), translationTextStyles: JSON.parse(JSON.stringify(content.translationTextStyles || [])),
+        translatedSourceText: content.translation ? content.sourceText : '', knowledgeMatches: [],
+      }))
+      const next = model.insertRows(cells, anchor.id, incoming, { position: button.dataset.tablePastePosition }).cells
       const originalIds = new Set(cells.map(cell => cell.id))
       const addedIds = next.filter(cell => !originalIds.has(cell.id)).map(cell => cell.id)
       const at = anchor.rowIndex + (button.dataset.tablePastePosition === 'before' ? 0 : (anchor.rowSpan || 1))

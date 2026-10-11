@@ -78,7 +78,7 @@
 .icon-button[aria-pressed="true"] { color: #315ee7; border-color: #315ee7; background: #eef2ff; }
 .icon-button .ui-icon { width: 17px; height: 17px; }
 
-.icon-button--compact { width: 28px; height: 28px; border-radius: 6px; }
+.icon-button--compact { width: 28px; min-width: 28px; height: 28px; border-radius: 6px; }
 .icon-button--compact .ui-icon { width: 15px; height: 15px; }
 .icon-button--large { width: 44px; height: 44px; }
 .icon-button--large .ui-icon { width: 20px; height: 20px; }
@@ -97,7 +97,7 @@
 .icon-button--filled { color: #fff; border-color: var(--blue, var(--segment, #315ee7)); background: var(--blue, var(--segment, #315ee7)); }
 .icon-button--filled:hover { color: #fff; border-color: var(--blue-dark, #2449b8); background: var(--blue-dark, #2449b8); }
 .icon-button--shadow { box-shadow: 0 2px 7px rgba(15,23,42,.12); }
-.icon-button--toggle[aria-expanded="true"] { color: #315ee7; border-color: #aebcf5; background: #eef2ff; }
+.icon-button--toggle.is-active, .icon-button--toggle[aria-expanded="true"] { color: #315ee7; border-color: #aebcf5; background: #eef2ff; }
 .icon-button--inverse { color: #fff; border-color: rgba(255,255,255,.24); background: rgba(255,255,255,.08); }
 .icon-button--inverse:hover { color: #fff; border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.16); }
 .icon-button--inverse.icon-button--danger { color: #fecaca; }
@@ -285,5 +285,5 @@
 .context-menu__separator { height: 1px; margin: 4px 2px; background: #e2e8f0; }
 .context-menu--example { position: relative; z-index: auto; }
 
-.table-row-selector { width: 26px; min-height: 17px; padding: 0; border-radius: 4px; font-size: 10px; color: #6941c6; background: #f4f3ff; border-color: #c4b5fd; }
-.table-row-selector[aria-pressed="true"] { color: #fff; background: #6941c6; border-color: #6941c6; }
+.button.table-row-selector { width: 26px; min-height: 17px; padding: 0; border-radius: 4px; font-size: 10px; color: #6941c6; background: #f4f3ff; border-color: #c4b5fd; }
+.button.table-row-selector[aria-pressed="true"] { color: #fff; background: #6941c6; border-color: #6941c6; }

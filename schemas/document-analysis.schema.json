@@ -4,7 +4,11 @@
   "title": "ICAT document analysis",
   "type": "object",
   "additionalProperties": false,
-  "required": ["documentTitle", "languages", "pages"],
+  "required": [
+    "documentTitle",
+    "languages",
+    "pages"
+  ],
   "properties": {
     "documentTitle": {
       "type": "string",
@@ -25,7 +29,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["pageIndex", "languages", "segments"],
+        "required": [
+          "pageIndex",
+          "languages",
+          "segments",
+          "tables"
+        ],
         "properties": {
           "pageIndex": {
             "type": "integer",
@@ -61,7 +70,8 @@
                 "style",
                 "confidence",
                 "needsReview",
-                "notes"
+                "notes",
+                "borders"
               ],
               "properties": {
                 "segmentId": {
@@ -98,26 +108,41 @@
                   "maxLength": 120
                 },
                 "tableId": {
-                  "type": ["string", "null"],
+                  "type": [
+                    "string",
+                    "null"
+                  ],
                   "maxLength": 120
                 },
                 "rowIndex": {
-                  "type": ["integer", "null"],
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
                   "minimum": 0,
                   "maximum": 999
                 },
                 "columnIndex": {
-                  "type": ["integer", "null"],
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
                   "minimum": 0,
                   "maximum": 999
                 },
                 "rowSpan": {
-                  "type": ["integer", "null"],
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
                   "minimum": 1,
                   "maximum": 100
                 },
                 "columnSpan": {
-                  "type": ["integer", "null"],
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
                   "minimum": 1,
                   "maximum": 100
                 },
@@ -128,12 +153,33 @@
                   "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["x", "y", "width", "height"],
+                    "required": [
+                      "x",
+                      "y",
+                      "width",
+                      "height"
+                    ],
                     "properties": {
-                      "x": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "y": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
-                      "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+                      "x": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "y": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "width": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1
+                      },
+                      "height": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1
+                      }
                     }
                   }
                 },
@@ -150,13 +196,57 @@
                     "color"
                   ],
                   "properties": {
-                    "fontFamily": { "type": "string", "enum": ["Arial", "Aptos", "Calibri", "Cambria", "Times New Roman", "Georgia", "Verdana", "Tahoma", "Courier New"] },
-                    "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 3 },
-                    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-                    "fontSizePt": { "type": "number", "minimum": 4, "maximum": 96 },
-                    "fontWeight": { "type": "integer", "enum": [400, 700] },
-                    "fontStyle": { "type": "string", "enum": ["normal", "italic"] },
-                    "textAlign": { "type": "string", "enum": ["left", "center", "right", "justify"] }
+                    "fontFamily": {
+                      "type": "string",
+                      "enum": [
+                        "Arial",
+                        "Aptos",
+                        "Calibri",
+                        "Cambria",
+                        "Times New Roman",
+                        "Georgia",
+                        "Verdana",
+                        "Tahoma",
+                        "Courier New"
+                      ]
+                    },
+                    "lineHeight": {
+                      "type": "number",
+                      "minimum": 0.8,
+                      "maximum": 3
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "fontSizePt": {
+                      "type": "number",
+                      "minimum": 4,
+                      "maximum": 96
+                    },
+                    "fontWeight": {
+                      "type": "integer",
+                      "enum": [
+                        400,
+                        700
+                      ]
+                    },
+                    "fontStyle": {
+                      "type": "string",
+                      "enum": [
+                        "normal",
+                        "italic"
+                      ]
+                    },
+                    "textAlign": {
+                      "type": "string",
+                      "enum": [
+                        "left",
+                        "center",
+                        "right",
+                        "justify"
+                      ]
+                    }
                   }
                 },
                 "confidence": {
@@ -170,6 +260,301 @@
                 "notes": {
                   "type": "string",
                   "maxLength": 1000
+                },
+                "borders": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                    "top",
+                    "right",
+                    "bottom",
+                    "left"
+                  ],
+                  "properties": {
+                    "top": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "right": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "bottom": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "left": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "tables": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "tableId",
+                "readingOrder",
+                "columnEdges",
+                "rowEdges",
+                "cells",
+                "style",
+                "borders",
+                "confidence",
+                "needsReview",
+                "notes",
+                "headerRowCount"
+              ],
+              "properties": {
+                "tableId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "readingOrder": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 12000
+                },
+                "columnEdges": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 101,
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "rowEdges": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 1001,
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "cells": {
+                  "type": "array",
+                  "maxItems": 10000,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "row",
+                      "column",
+                      "rowSpan",
+                      "columnSpan",
+                      "text",
+                      "borders"
+                    ],
+                    "properties": {
+                      "row": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 999
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 99
+                      },
+                      "rowSpan": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "columnSpan": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 100000
+                      },
+                      "borders": {
+                        "type": [
+                          "object",
+                          "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                          "top",
+                          "right",
+                          "bottom",
+                          "left"
+                        ],
+                        "properties": {
+                          "top": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "right": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "bottom": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "left": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "style": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "fontSizePt",
+                    "fontWeight",
+                    "fontStyle",
+                    "textAlign",
+                    "fontFamily",
+                    "lineHeight",
+                    "color"
+                  ],
+                  "properties": {
+                    "fontFamily": {
+                      "type": "string",
+                      "enum": [
+                        "Arial",
+                        "Aptos",
+                        "Calibri",
+                        "Cambria",
+                        "Times New Roman",
+                        "Georgia",
+                        "Verdana",
+                        "Tahoma",
+                        "Courier New"
+                      ]
+                    },
+                    "lineHeight": {
+                      "type": "number",
+                      "minimum": 0.8,
+                      "maximum": 3
+                    },
+                    "color": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "fontSizePt": {
+                      "type": "number",
+                      "minimum": 4,
+                      "maximum": 96
+                    },
+                    "fontWeight": {
+                      "type": "integer",
+                      "enum": [
+                        400,
+                        700
+                      ]
+                    },
+                    "fontStyle": {
+                      "type": "string",
+                      "enum": [
+                        "normal",
+                        "italic"
+                      ]
+                    },
+                    "textAlign": {
+                      "type": "string",
+                      "enum": [
+                        "left",
+                        "center",
+                        "right",
+                        "justify"
+                      ]
+                    }
+                  }
+                },
+                "borders": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": false,
+                  "required": [
+                    "top",
+                    "right",
+                    "bottom",
+                    "left"
+                  ],
+                  "properties": {
+                    "top": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "right": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "bottom": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "left": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    }
+                  }
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "needsReview": {
+                  "type": "boolean"
+                },
+                "notes": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "headerRowCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Number of leading column-heading rows on this page; 0 when absent. Never count a data row as a heading."
                 }
               }
             }
