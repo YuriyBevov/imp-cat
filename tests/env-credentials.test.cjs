@@ -14,6 +14,7 @@ test('environment credential writer preserves unrelated settings and restricts f
   await fs.promises.writeFile(envPath, '# existing\nPORT=3100\nTRANSLATION_API_KEY="old"\n', { mode: 0o644 })
   await updateEnvCredentials(envPath, {
     AI_PROVIDER: 'aitunnel',
+    AI_DNS_SERVERS: '1.1.1.1,1.0.0.1',
     TRANSLATION_API_KEY: 'test-secret-without-real-access',
     TRANSLATION_MODEL: 'vision-model',
   })
@@ -21,6 +22,7 @@ test('environment credential writer preserves unrelated settings and restricts f
   const mode = (await fs.promises.stat(envPath)).mode & 0o777
   assert.match(content, /^# existing\nPORT=3100/m)
   assert.match(content, /AI_PROVIDER="aitunnel"/)
+  assert.match(content, /AI_DNS_SERVERS="1.1.1.1,1.0.0.1"/)
   assert.match(content, /TRANSLATION_MODEL="vision-model"/)
   assert.equal((content.match(/TRANSLATION_API_KEY=/g) || []).length, 1)
   assert.equal(mode, 0o600)
