@@ -87,6 +87,14 @@
     ))) scene.translationSettingsSnapshot = currentTranslationSettings(scene)
   }
   const elements = {
+    privacyView: $('#privacy-view'), privacyPages: $('#privacy-pages'), privacyEntities: $('#privacy-entities'), privacySummary: $('#privacy-summary'),
+    privacyLanguageControl: $('#privacy-language-control'), privacyLanguage: $('#privacy-language'), privacyKnownValues: $('#privacy-known-values'), privacyAllowValues: $('#privacy-allow-values'),
+    privacyDrawMode: $('#privacy-draw-mode'), privacyManualRegions: $('#privacy-manual-regions'), privacyRefresh: $('#privacy-refresh'), privacyBack: $('#privacy-back'),
+    privacyPagesReviewed: $('#privacy-pages-reviewed'), privacyApprove: $('#privacy-approve'), documentPrivacy: $('#document-privacy-button'),
+    privacyOutboundModal: $('#privacy-outbound-modal'), privacyOutboundPreview: $('#privacy-outbound-preview'), privacyOutboundValues: $('#privacy-outbound-values'),
+    privacyOutboundReviewed: $('#privacy-outbound-reviewed'), privacyOutboundMask: $('#privacy-outbound-mask'), privacyOutboundApprove: $('#privacy-outbound-approve'),
+    privacyOutboundClose: $('#privacy-outbound-close'), privacyOutboundCancel: $('#privacy-outbound-cancel'),
+    exportPrivateControl: $('#export-private-data-control'), exportRestorePrivate: $('#export-restore-private-data'),
     uploadView: $('#upload-view'), uploadZone: $('#upload-zone'), fileInput: $('#file-input'), analysisServiceNote: $('#analysis-service-note'),
     loadingView: $('#loading-view'), loadingTitle: $('#loading-title'), loadingMessage: $('#loading-message'), loadingProgress: $('#loading-progress'), loadingProgressLabel: $('#loading-progress-label'), loadingProgressDetails: $('#loading-progress-details'), loadingHint: $('#loading-hint'), retryJob: $('#retry-job-button'), cancelJob: $('#cancel-job-button'),
     orientationView: $('#orientation-view'), orientationPages: $('#orientation-pages'), orientationSubmit: $('#orientation-submit'),
@@ -613,14 +621,84 @@
     element.classList.add(`note--${variant}`)
   }
 
-  async function api(url, options = {}) {
+  let privacyReviewQueue = Promise.resolve()
+  const privacyEnabled = () => state.serviceStatus?.documentPrivacyRequired !== false
+  const privateLines = element => element.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean)
+
+  async function api(url, options = {}, privacyAttempt = 0) {
     const response = await fetch(url, options)
     if (!response.ok) {
       let message = `HTTP ${response.status}`
-      try { message = (await response.json()).error || message } catch {}
+      let errorData
+      try { errorData = await response.json(); message = errorData.error || message } catch {}
+      if (errorData?.privacyReviewRequired && privacyAttempt < 2) {
+        const operation = privacyReviewQueue.catch(() => {}).then(() => reviewPrivateOutbound(errorData.documentId, errorData.privacyReview))
+        privacyReviewQueue = operation
+        const token = await operation
+        return api(url, { ...options, headers: { ...options.headers, 'X-Privacy-Approval': token } }, privacyAttempt + 1)
+      }
+      if (errorData?.privacyPreparationRequired) message += ' Откройте «Защита данных» в меню документа.'
       throw new Error(message)
     }
     return response
+  }
+
+  async function reviewPrivateOutbound(documentId, initialReview) {
+    return new Promise((resolve, reject) => {
+      let review = initialReview
+      const previousFocus = document.activeElement
+      const modal = elements.privacyOutboundModal
+      const close = result => {
+        modal.hidden = true
+        elements.privacyOutboundApprove.onclick = null
+        elements.privacyOutboundMask.onclick = null
+        elements.privacyOutboundClose.onclick = null
+        elements.privacyOutboundCancel.onclick = null
+        modal.removeEventListener('keydown', keydown)
+        previousFocus?.focus?.()
+        if (result) resolve(result)
+        else reject(new Error('Отправка в ИИ отменена. Документ сохранён локально.'))
+      }
+      const keydown = event => { if (event.key === 'Escape') { event.preventDefault(); close(null) } }
+      const render = () => {
+        elements.privacyOutboundPreview.value = (review.texts || []).join('\n\n────────\n\n')
+        elements.privacyOutboundValues.value = ''
+        elements.privacyOutboundReviewed.checked = false
+        elements.privacyOutboundApprove.disabled = true
+      }
+      render()
+      modal.hidden = false
+      modal.addEventListener('keydown', keydown)
+      elements.privacyOutboundClose.onclick = () => close(null)
+      elements.privacyOutboundCancel.onclick = () => close(null)
+      elements.privacyOutboundReviewed.onchange = () => { elements.privacyOutboundApprove.disabled = !elements.privacyOutboundReviewed.checked }
+      elements.privacyOutboundMask.onclick = async () => {
+        const values = privateLines(elements.privacyOutboundValues)
+        if (!values.length) return
+        elements.privacyOutboundMask.disabled = true
+        try {
+          const response = await api(`/api/studio/documents/${documentId}/privacy/outbound/${review.token}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ knownValues: values }),
+          })
+          review = await response.json()
+          render()
+        } catch (error) { showToast(error.message, true) }
+        finally { elements.privacyOutboundMask.disabled = false }
+      }
+      elements.privacyOutboundApprove.onclick = async () => {
+        if (!elements.privacyOutboundReviewed.checked) return
+        elements.privacyOutboundApprove.disabled = true
+        try {
+          const response = await api(`/api/studio/documents/${documentId}/privacy/outbound/${review.token}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewed: true, digest: review.digest }),
+          })
+          const approved = await response.json()
+          if (!approved.approved) throw new Error('Сначала просмотрите обновлённые маски.')
+          close(approved.token)
+        } catch (error) { showToast(error.message, true); elements.privacyOutboundApprove.disabled = false }
+      }
+      elements.privacyOutboundPreview.focus()
+    })
   }
 
   function pemToArrayBuffer(pem) {
@@ -647,6 +725,9 @@
   function renderProviderSettings(settings) {
     state.providerSettings = settings
     elements.aiProviderSelect.value = settings.activeProvider || 'aitunnel'
+    const codexOption = elements.aiProviderSelect.querySelector('option[value="codex"]')
+    if (codexOption) codexOption.disabled = settings.documentPrivacyRequired === true
+    if (settings.documentPrivacyRequired && settings.activeProvider === 'codex') elements.aiProviderSelect.value = 'aitunnel'
     if (settings.model && ![...elements.aitunnelModel.options].some(option => option.value === settings.model)) {
       elements.aitunnelModel.append(new Option(settings.model, settings.model))
     }
@@ -657,7 +738,9 @@
     if (settings.keyPersisted || !settings.keyConfigured) elements.aitunnelPersistKey.checked = true
     const activeReady = settings.activeProvider === 'codex' ? settings.codexConfigured : settings.aitunnelConfigured
     setNoteVariant(elements.aiProviderStatus, activeReady ? 'success' : 'danger')
-    elements.aiProviderStatus.textContent = settings.activeProvider === 'codex'
+    elements.aiProviderStatus.textContent = settings.documentPrivacyRequired && settings.activeProvider === 'codex'
+      ? 'Защита данных включена. Выберите AITunnel и сохраните настройки; файловые инструменты Codex заблокированы.'
+      : settings.activeProvider === 'codex'
       ? settings.codexConfigured
         ? 'Codex готов: распознавание, проверка и перевод идут через текущий вход ChatGPT.'
         : 'Codex недоступен: проверьте установку CLI и выполните codex login.'
@@ -952,6 +1035,14 @@
       tab.preparation = await response.json()
       tab.pageRotations = [...tab.preparation.rotations]
     }
+    elements.privacyLanguageControl.hidden = !privacyEnabled()
+    elements.orientationSubmit.textContent = privacyEnabled() ? 'Подготовить обезличенную копию' : 'Начать распознавание'
+    if (privacyEnabled() && !tab.showOriginalOrientation) {
+      const response = await api(`/api/studio/documents/${tab.documentId}/privacy`)
+      const review = await response.json()
+      if (['review', 'approved'].includes(review.phase)) return showPrivacyReview(tab, review)
+    }
+    tab.showOriginalOrientation = false
     state.metadata = null
     state.scene = null
     elements.documentTitle.textContent = tab.preparation.title || tab.title
@@ -973,6 +1064,11 @@
   async function startPreparedAnalysis() {
     const tab = state.tabs.get(state.activeTabKey)
     if (!tab?.preparation) return
+    if (privacyEnabled()) return preparePrivateDocument(tab)
+    return startActualPreparedAnalysis(tab)
+  }
+
+  async function startActualPreparedAnalysis(tab) {
     elements.orientationSubmit.disabled = true
     try {
       const response = await api(`/api/studio/documents/${tab.documentId}/analysis-jobs`, {
@@ -988,17 +1084,152 @@
       setView('loading')
       history.replaceState(null, '', `/?job=${job.id}`)
       scheduleJobsPoll(100)
+      return true
     } catch (error) {
       showToast(error.message, true)
+      return false
     } finally {
       elements.orientationSubmit.disabled = false
     }
+  }
+
+  function privacyDirty(tab) {
+    tab.privacyDirty = true
+    elements.privacyPagesReviewed.checked = false
+    elements.privacyApprove.disabled = true
+  }
+
+  function renderPrivacyPages(tab) {
+    elements.privacyPages.replaceChildren()
+    for (const page of tab.privacyReview?.pages || []) {
+      window.IcatPrivacyView.renderPage(elements.privacyPages, page, tab.privacySettings?.regions || [], {
+        drawMode: () => elements.privacyDrawMode.checked,
+        onAdd: region => {
+          tab.privacySettings.regions.push(region)
+          privacyDirty(tab)
+          renderPrivacyPages(tab)
+        },
+      })
+    }
+    elements.privacyManualRegions.replaceChildren()
+    for (const [index, region] of (tab.privacySettings?.regions || []).entries()) {
+      const row = document.createElement('div')
+      const label = document.createElement('span')
+      label.textContent = `Ручная маска · стр. ${region.page + 1}`
+      const remove = document.createElement('button')
+      remove.className = 'button compact-button'
+      remove.type = 'button'
+      remove.textContent = 'Удалить'
+      remove.addEventListener('click', () => {
+        tab.privacySettings.regions.splice(index, 1)
+        privacyDirty(tab)
+        renderPrivacyPages(tab)
+      })
+      row.append(label, remove)
+      elements.privacyManualRegions.append(row)
+    }
+  }
+
+  async function showPrivacyReview(tab, review = null) {
+    if (!review) review = await (await api(`/api/studio/documents/${tab.documentId}/privacy`)).json()
+    if (!['review', 'approved'].includes(review.phase)) throw new Error('Очищенная копия ещё не готова. Повторите локальную подготовку.')
+    tab.privacyReview = review
+    tab.status = 'awaiting-privacy'
+    tab.privacyDirty = false
+    tab.privacySettings ||= review.settings || { language: review.language, knownValues: [], allowValues: [], regions: [] }
+    tab.privacySettings.language = review.language
+    elements.privacyKnownValues.value = tab.privacySettings.knownValues.join('\n')
+    elements.privacyAllowValues.value = tab.privacySettings.allowValues.join('\n')
+    elements.privacyPagesReviewed.checked = false
+    elements.privacyApprove.disabled = true
+    elements.privacyApprove.textContent = review.hasDocument ? 'Подтвердить защиту и вернуться к документу' : 'Подтвердить и начать распознавание'
+    elements.privacySummary.textContent = `Найдено значений: ${review.entities?.length || 0}`
+    elements.privacyEntities.replaceChildren()
+    for (const entity of review.entities || []) {
+      const item = document.createElement('label')
+      item.className = 'privacy-entity'
+      const token = document.createElement('code')
+      token.textContent = entity.token
+      const original = document.createElement('span')
+      original.textContent = entity.original
+      const caption = document.createElement('small')
+      caption.textContent = 'Восстановить локально при выгрузке — исправьте OCR или задайте утверждённое написание'
+      const input = document.createElement('input')
+      input.value = entity.replacement
+      input.dataset.privacyToken = entity.token
+      input.setAttribute('aria-label', `Значение для восстановления ${entity.token}`)
+      input.addEventListener('input', () => { elements.privacyPagesReviewed.checked = false; elements.privacyApprove.disabled = true })
+      item.append(token, original, caption, input)
+      elements.privacyEntities.append(item)
+    }
+    renderPrivacyPages(tab)
+    elements.documentTitle.textContent = tab.title || 'Документ'
+    elements.documentStatus.textContent = 'Локальная проверка защиты данных'
+    state.metadata = null
+    state.scene = null
+    setView('privacy')
+    renderDocumentTabs()
+    history.replaceState(null, '', `/?prepare=${tab.documentId}`)
+  }
+
+  async function preparePrivateDocument(tab, fromReview = false) {
+    tab.privacySettings ||= { language: elements.privacyLanguage.value, knownValues: [], allowValues: [], regions: [] }
+    if (fromReview) {
+      tab.privacySettings.knownValues = privateLines(elements.privacyKnownValues)
+      tab.privacySettings.allowValues = privateLines(elements.privacyAllowValues)
+    } else tab.privacySettings.language = elements.privacyLanguage.value
+    elements.orientationSubmit.disabled = true
+    elements.privacyRefresh.disabled = true
+    try {
+      const response = await api(`/api/studio/documents/${tab.documentId}/privacy/prepare`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...tab.privacySettings, rotations: tab.pageRotations || tab.preparation?.rotations }),
+      })
+      const { job } = await response.json()
+      const key = tab.key
+      Object.assign(tab, job, { key, jobId: job.id, title: tab.title, error: null })
+      setView('loading')
+      updateLoadingFromTab(tab)
+      renderDocumentTabs()
+      history.replaceState(null, '', `/?job=${job.id}`)
+      scheduleJobsPoll(100)
+    } catch (error) { showToast(error.message, true) }
+    finally { elements.orientationSubmit.disabled = false; elements.privacyRefresh.disabled = false }
+  }
+
+  async function approvePrivateDocument() {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (!tab?.privacyReview || tab.privacyDirty || !elements.privacyPagesReviewed.checked) return
+    elements.privacyApprove.disabled = true
+    try {
+      {
+        const replacements = Object.fromEntries([...elements.privacyEntities.querySelectorAll('[data-privacy-token]')].map(input => [input.dataset.privacyToken, input.value]))
+        await api(`/api/studio/documents/${tab.documentId}/privacy/approve`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ generation: tab.privacyReview.generation, reviewed: true, replacements }),
+        })
+        tab.privacyReview.phase = 'approved'
+      }
+      if (tab.privacyReview.hasDocument) {
+        tab.status = 'completed'
+        tab.kind = 'document-analysis'
+        await activateTab(tab.key, true)
+      } else if (!await startActualPreparedAnalysis(tab)) elements.privacyApprove.disabled = false
+    } catch (error) { showToast(error.message, true); elements.privacyApprove.disabled = false }
+  }
+
+  async function openDocumentPrivacy() {
+    const tab = state.tabs.get(state.activeTabKey)
+    if (!tab?.documentId) return showToast('Сначала загрузите или откройте документ', true)
+    if (state.metadata) { await saveScene(true); rememberCurrentDocument() }
+    tab.status = 'awaiting-orientation'
+    await showUploadOrientation(tab, true)
   }
 
   function setView(name) {
     elements.uploadView.hidden = name !== 'upload'
     elements.loadingView.hidden = name !== 'loading'
     elements.orientationView.hidden = name !== 'orientation'
+    elements.privacyView.hidden = name !== 'privacy'
     elements.studioView.hidden = name !== 'studio'
   }
 
@@ -1146,6 +1377,10 @@
       }
       return
     }
+    if (tab.status === 'awaiting-privacy' || (tab.status === 'completed' && tab.kind === 'document-privacy')) {
+      try { await showPrivacyReview(tab) } catch (error) { showToast(error.message, true) }
+      return
+    }
     if (tab.status !== 'completed') {
       setView('loading')
       updateLoadingFromTab(tab)
@@ -1282,7 +1517,10 @@
         if (tab.key === state.activeTabKey) {
           if (tab.status === 'completed') {
             tab.documentId = job.documentId
-            if (job.kind === 'document-preparation') {
+            if (job.kind === 'document-privacy') {
+              await showPrivacyReview(tab)
+              showToast('Очищенная копия готова к проверке')
+            } else if (job.kind === 'document-preparation') {
               tab.status = 'awaiting-orientation'
               await showUploadOrientation(tab, true)
               showToast('Страницы подготовлены. Проверьте их ориентацию')
@@ -1340,7 +1578,7 @@
       for (const job of Array.isArray(jobs) ? jobs : []) {
         if (!['queued', 'running'].includes(job?.status) || !/^[a-f0-9]{32}$/.test(job?.id || '')) continue
         if (job.kind === 'layout-review') continue
-        if (!['document-preparation', 'document-analysis'].includes(job.kind)) continue
+        if (!['document-preparation', 'document-analysis', 'document-privacy'].includes(job.kind)) continue
         state.tabs.set(job.id, { key: job.id, jobId: job.id, title: job.title || 'Документ', ...job })
       }
     } catch {}
@@ -1487,6 +1725,7 @@
   }
 
   function openDocument(documentData) {
+    elements.exportPrivateControl.hidden = !privacyEnabled()
     const activeTab = state.tabs.get(state.activeTabKey)
     const workspaceState = activeTab?.workspaceState
     state.metadata = documentData.metadata
@@ -6592,7 +6831,7 @@
       await saveScene(true)
       showToast(`Собираем ${format.toUpperCase()}…`)
       const response = await api(`/api/studio/documents/${documentId}/export`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format, restorePrivateData: elements.exportRestorePrivate.checked }),
       })
       const blob = await response.blob()
       const disposition = response.headers.get('Content-Disposition') || ''
@@ -7539,6 +7778,36 @@
     elements.orientationAllReset.addEventListener('click', () => rotateUploadPages(null))
     elements.orientationAllRight.addEventListener('click', () => rotateUploadPages(90))
     elements.orientationSubmit.addEventListener('click', startPreparedAnalysis)
+    elements.documentPrivacy.addEventListener('click', () => openDocumentPrivacy().catch(error => showToast(error.message, true)))
+    elements.privacyRefresh.addEventListener('click', () => {
+      const tab = state.tabs.get(state.activeTabKey)
+      if (tab) preparePrivateDocument(tab, true)
+    })
+    elements.privacyApprove.addEventListener('click', approvePrivateDocument)
+    elements.privacyPagesReviewed.addEventListener('change', () => {
+      const tab = state.tabs.get(state.activeTabKey)
+      elements.privacyApprove.disabled = !elements.privacyPagesReviewed.checked || Boolean(tab?.privacyDirty)
+    })
+    for (const element of [elements.privacyKnownValues, elements.privacyAllowValues]) element.addEventListener('input', () => {
+      const tab = state.tabs.get(state.activeTabKey)
+      if (tab) privacyDirty(tab)
+    })
+    elements.privacyBack.addEventListener('click', () => {
+      const tab = state.tabs.get(state.activeTabKey)
+      if (tab) { tab.showOriginalOrientation = true; showUploadOrientation(tab, true).catch(error => showToast(error.message, true)) }
+    })
+    elements.privacyRegionAdd = $('#privacy-region-add')
+    elements.privacyRegionAdd.addEventListener('click', () => {
+      const tab = state.tabs.get(state.activeTabKey)
+      const page = tab?.privacyReview?.pages[Number($('#privacy-region-page').value) - 1]
+      if (!page) return showToast('Укажите существующую страницу', true)
+      const x = Number($('#privacy-region-x').value), y = Number($('#privacy-region-y').value)
+      const width = Number($('#privacy-region-width').value), height = Number($('#privacy-region-height').value)
+      if (![x, y, width, height].every(Number.isFinite) || width < 4 || height < 4 || x < 0 || y < 0 || x + width > page.width || y + height > page.height) return showToast('Маска должна находиться внутри страницы', true)
+      tab.privacySettings.regions.push({ page: page.index, box: [x, y, x + width, y + height] })
+      privacyDirty(tab)
+      renderPrivacyPages(tab)
+    })
     elements.newDocument.addEventListener('click', async () => {
       if (state.saveTimer) await saveScene()
       elements.fileInput.click()
@@ -7909,6 +8178,11 @@
     try {
       const response = await api('/api/studio/status')
       state.serviceStatus = await response.json()
+      if (state.serviceStatus.documentPrivacyRequired) {
+        elements.analysisServiceNote.textContent = 'Защита данных включена. Сначала локальная подготовка и проверка масок; в AITunnel отправляется только подтверждённая очищенная копия.'
+        elements.fileInput.disabled = !state.serviceStatus.localAnalyzerAvailable
+        return
+      }
       if (state.serviceStatus.documentAnalysisMode === 'codex') {
         const ready = state.serviceStatus.codexAvailable && state.serviceStatus.codexAuthenticated
         elements.analysisServiceNote.textContent = ready

@@ -41,7 +41,7 @@ test('documents can be archived, restored and permanently deleted with confirmat
 
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false,
     rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
     runProcess: async () => ({ code: 0, stdout: '', stderr: '' }),
   }))
@@ -156,7 +156,7 @@ test('upload pauses for page orientation and analysis rerenders with confirmed r
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -236,7 +236,7 @@ test('failed reanalysis restores the previous page images and orientation state'
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -253,7 +253,7 @@ test('provider key can be persisted server-side without exposing it through the 
   t.after(() => fs.promises.rm(rootDir, { recursive: true, force: true }))
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false,
     rootDir, dataDir: path.join(rootDir, 'data'), pythonBin: 'python',
     runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
   }))
@@ -302,7 +302,7 @@ test('administration persists the editable chat-agent prompt and restores its de
   const createApp = () => {
     const app = express()
     app.use(express.json())
-    app.use('/api/studio', createStudioRouter({
+    app.use('/api/studio', createStudioRouter({ privacyRequired: false,
       rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
       runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
     }))
@@ -345,7 +345,7 @@ test('ready AI instructions support persistent CRUD without automatic duplicates
   const createApp = () => {
     const app = express()
     app.use(express.json())
-    app.use('/api/studio', createStudioRouter({
+    app.use('/api/studio', createStudioRouter({ privacyRequired: false,
       rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
       runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
     }))
@@ -416,7 +416,7 @@ test('equal source and target languages copy the recognized text without an AI r
   let aiRequests = 0
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false,
     rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
     runProcess: async (command, args) => {
       if (args?.[0] === 'exec') aiRequests += 1
@@ -460,7 +460,7 @@ test('translation route proposes exact knowledge-base matches without silently a
   }))
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false,
     rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
     runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
   }))
@@ -513,7 +513,7 @@ test('document loading discovers a newly added Turkish match without overwriting
   }))
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false,
     rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
     runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
   }))
@@ -618,7 +618,7 @@ test('priority knowledge-base mode preserves the independent AI variant and revi
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
   let response = await fetch(`${base}/knowledge-base/entries`, {
@@ -690,7 +690,7 @@ test('document loading removes orphaned knowledge-base highlights left by an ear
   }))
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false,
     rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python',
     runProcess: async () => ({ code: 1, stdout: '', stderr: 'not configured' }),
   }))
@@ -760,7 +760,7 @@ test('multiple selected segments are translated, persisted, and leave unselected
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -859,7 +859,7 @@ test('stamps, seals and signatures use the required translated service labels', 
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -923,7 +923,7 @@ test('AI selects applicable translated segments, preserves omitted ones, and can
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -989,7 +989,7 @@ test('segment AI chat persists both sides and does not change translation before
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -1055,7 +1055,7 @@ test('mass AI chat shows one assistant response when the document uses several b
   }
   const app = express()
   app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
 
@@ -1078,7 +1078,7 @@ test('concurrent scene saves use unique files and monotonic document revisions',
   await fs.promises.mkdir(directory)
   await fs.promises.writeFile(path.join(directory, 'metadata.json'), JSON.stringify({ id, title: 'Save race', revision: 1 }))
   const app = express(); app.use(express.json())
-  app.use('/api/studio', createStudioRouter({ rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess: async () => ({ code: 0 }) }))
+  app.use('/api/studio', createStudioRouter({ privacyRequired: false, rootDir: path.resolve(__dirname, '..'), dataDir, pythonBin: 'python', runProcess: async () => ({ code: 0 }) }))
   app.use((error, request, response, next) => response.status(error.status || 500).json({ error: error.message }))
   const base = await listen(app, t)
   const responses = await Promise.all(Array.from({ length: 12 }, (_, i) => fetch(`${base}/documents/${id}/scene`, {

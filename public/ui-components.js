@@ -1,4 +1,11 @@
 (() => {
+  const privacyDemo = document.querySelector('#component-privacy-page')
+  if (privacyDemo && window.IcatPrivacyView) {
+    const drawing = text => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200"><rect width="600" height="200" fill="white"/><text x="32" y="55" font-family="Arial" font-size="20">Пример проверки документа</text><text x="32" y="110" font-family="Arial" font-size="16">${text}</text></svg>`)
+    window.IcatPrivacyView.renderPage(privacyDemo, { index: 0, width: 600, height: 200,
+      imageUrl: drawing('Name: ICATPII_1234ABCD_PERSON_0001'), originalImageUrl: drawing('Name: Alice Example'),
+      masks: [{ labelRendered: true }], lowConfidenceWords: 0 })
+  }
   for (const checkbox of document.querySelectorAll('[data-mixed-checkbox]')) checkbox.indeterminate = true
   for (const button of document.querySelectorAll('[data-row-select-demo]')) {
     button.addEventListener('click', () => button.setAttribute('aria-pressed', String(button.getAttribute('aria-pressed') !== 'true')))

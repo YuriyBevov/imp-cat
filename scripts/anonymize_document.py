@@ -31,7 +31,7 @@ def json_input(path, fallback):
         raise PrivacyError("Cannot read local JSON settings.") from None
 
 
-def prepare(source, output, key, language="en", known_values=None, regions=None, detector=None):
+def prepare(source, output, key, language="en", known_values=None, regions=None, detector=None, rotations=None, registry=None, allow_unreadable=False):
     source, output = Path(source).resolve(), Path(output).resolve()
     if output.exists():
         raise PrivacyError("Use a new output directory; previous approvals must not be reused.")
@@ -41,18 +41,20 @@ def prepare(source, output, key, language="en", known_values=None, regions=None,
         raise PrivacyError("Manual regions must be an array.")
     output.mkdir(parents=True, mode=0o700)
     os.chmod(output, 0o700)
-    registry = Registry()
-    pages, private_pages = [], []
+    registry = registry or Registry()
+    pages, private_pages, unreadable_pages = [], [], []
     try:
         with tempfile.TemporaryDirectory(prefix="icat-private-") as temporary:
-            rendered = render_document(source, Path(temporary))
+            rendered = render_document(source, Path(temporary), rotations)
             if len(rendered["pages"]) > 500:
                 raise PrivacyError("Document exceeds the local privacy page limit.")
             for index, page in enumerate(rendered["pages"]):
                 path = Path(temporary) / page["image"]
                 text, words = local_ocr(path, language)
-                if not words:
+                if not words and not allow_unreadable:
                     raise PrivacyError("A page could not be read locally; prepare it manually instead of sending the original.")
+                if not words:
+                    unreadable_pages.append(index)
                 findings = detector.find(text)
                 manual = []
                 for region in regions:
@@ -92,7 +94,7 @@ def prepare(source, output, key, language="en", known_values=None, regions=None,
                               "lowConfidenceWords": low_confidence})
                 private_pages.append({"index": index, "text": text, "words": words})
         review = {"version": 1, "status": "needs-review", "language": language,
-                  "entityCount": len(registry.entries), "pages": pages,
+                  "entityCount": len(registry.entries), "pages": pages, "unreadablePages": unreadable_pages,
                   "warning": "Review all pages, names, handwriting, photographs, seals and QR codes before approval."}
         private_write(output / "review.json", json.dumps(review, ensure_ascii=False, indent=2).encode())
         gallery = "".join(f'<section><h2>Page {p["index"] + 1}</h2>'
@@ -135,6 +137,11 @@ def approve(output, key, reviewed=False):
         raise PrivacyError("Explicit --reviewed confirmation is required after inspecting every page.")
     output = Path(output)
     vault = verified_vault(output, key)
+    for index in vault["review"].get("unreadablePages", []):
+        page = vault["review"]["pages"][index]
+        if not any(mask["box"][0] <= 0 and mask["box"][1] <= 0 and mask["box"][2] >= page["width"]
+                   and mask["box"][3] >= page["height"] for mask in page["masks"]):
+            raise PrivacyError("An unreadable page must be covered by a full-page manual mask before approval.")
     if any(not mask.get("labelRendered") for page in vault["review"]["pages"] for mask in page["masks"]):
         raise PrivacyError("A mask is too small for its placeholder. Add a wider manual region and prepare again.")
     destination = output / "approved.pdf"

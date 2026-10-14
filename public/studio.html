@@ -31,6 +31,7 @@
             <button id="instruction-library-button" class="button" type="button" role="menuitem">AI-инструкции</button>
             <button id="ai-settings-button" class="button" type="button" role="menuitem">AI-провайдер</button>
             <button id="administration-button" class="button" type="button" role="menuitem">Администрирование</button>
+            <button id="document-privacy-button" class="button" type="button" role="menuitem">Защита данных</button>
             <button id="undo-button" class="button button--with-icon" type="button" title="Отменить (Cmd/Ctrl+Z)" role="menuitem" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-undo"></use></svg><span>Отменить</span></button>
             <button id="redo-button" class="button button--with-icon" type="button" title="Повторить" role="menuitem" disabled><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-redo"></use></svg><span>Повторить</span></button>
             <button id="new-document-button" class="button" type="button" role="menuitem" hidden>Другой документ</button>
@@ -94,11 +95,46 @@
           </div>
         </header>
         <div id="orientation-pages" class="orientation-pages"></div>
+        <label id="privacy-language-control" class="privacy-language-control" hidden>Язык исходника для локального поиска данных
+          <select id="privacy-language"><option value="en">Английский</option><option value="de">Немецкий</option><option value="fr">Французский</option><option value="es">Испанский</option><option value="it">Итальянский</option><option value="pt">Португальский</option></select>
+        </label>
         <footer class="orientation-panel__footer">
           <p class="note note--info note--compact">После запуска изменение ориентации потребует повторного распознавания документа.</p>
           <button id="orientation-submit" class="button button--primary" type="button">Начать распознавание</button>
         </footer>
       </section>
+    </main>
+
+    <main id="privacy-view" class="privacy-screen app-container" hidden>
+      <header class="privacy-screen__header">
+        <div><p class="eyebrow">Локальная защита данных</p><h1>Проверьте обезличивание</h1>
+          <p>Сравните каждую страницу с оригиналом. Скройте пропущенные имена, реквизиты, подписи, фотографии и QR-коды. До подтверждения страницы не отправляются в ИИ.</p></div>
+        <button id="privacy-back" class="button" type="button">Назад к страницам</button>
+      </header>
+      <div class="privacy-screen__body">
+        <div id="privacy-pages" class="privacy-pages"></div>
+        <aside class="privacy-settings">
+          <strong id="privacy-summary">Найденные значения</strong>
+          <div id="privacy-entities" class="privacy-entities"></div>
+          <label>Дополнительно скрыть — по одному значению в строке<textarea id="privacy-known-values" rows="3" placeholder="Имя, адрес или номер"></textarea></label>
+          <label>Публичные значения, которые можно оставить<textarea id="privacy-allow-values" rows="2" placeholder="Только проверенные публичные сведения"></textarea></label>
+          <label class="base-checkbox"><input id="privacy-draw-mode" class="base-checkbox__input" type="checkbox" /><span class="base-checkbox__control" aria-hidden="true"></span><span class="base-checkbox__label">Рисовать дополнительные маски на страницах</span></label>
+          <p class="note note--compact">Рамки показывают новые маски. Чтобы удалить пиксели из копии, нажмите «Обновить очищенную копию».</p>
+          <details class="privacy-coordinate-form"><summary>Добавить маску по координатам</summary>
+            <div class="privacy-coordinate-form__fields">
+              <label>Страница<input id="privacy-region-page" type="number" min="1" value="1" /></label>
+              <label>X<input id="privacy-region-x" type="number" min="0" value="0" /></label>
+              <label>Y<input id="privacy-region-y" type="number" min="0" value="0" /></label>
+              <label>Ширина<input id="privacy-region-width" type="number" min="4" value="250" /></label>
+              <label>Высота<input id="privacy-region-height" type="number" min="4" value="100" /></label>
+            </div><button id="privacy-region-add" class="button" type="button">Добавить маску</button>
+          </details>
+          <div id="privacy-manual-regions" class="privacy-manual-regions"></div>
+          <button id="privacy-refresh" class="button" type="button">Обновить очищенную копию</button>
+          <label class="base-checkbox"><input id="privacy-pages-reviewed" class="base-checkbox__input" type="checkbox" /><span class="base-checkbox__control" aria-hidden="true"></span><span class="base-checkbox__label">Я проверил все страницы и значения для восстановления</span></label>
+          <button id="privacy-approve" class="button button--primary" type="button" disabled>Подтвердить и начать распознавание</button>
+        </aside>
+      </div>
     </main>
 
     <main id="studio-view" class="studio is-source-collapsed" hidden>
@@ -205,6 +241,7 @@
         </div>
 
         <div id="final-testing-tools" class="final-testing-tools">
+          <label id="export-private-data-control" class="base-checkbox" hidden><input id="export-restore-private-data" class="base-checkbox__input" type="checkbox" checked /><span class="base-checkbox__control" aria-hidden="true"></span><span class="base-checkbox__label">Восстановить скрытые данные в выгрузке локально</span></label>
           <p class="note note--info note--compact">DOCX содержит обычный текст и редактируемые таблицы. Word автоматически переносит строки; PDF сохраняет макет редактора.</p>
           <button id="preview-pdf-button" class="button" type="button">Предпросмотр PDF</button>
           <details class="final-testing-actions"><summary>Дополнительные действия</summary>
@@ -681,6 +718,19 @@
       <button id="table-delete-row" class="context-menu__item context-menu__item--danger" type="button" role="menuitem">Удалить строку</button>
       <button id="table-exclude" class="context-menu__item context-menu__item--danger" type="button" role="menuitem">Исключить таблицу из сборки</button>
     </div>
+    <div id="privacy-outbound-modal" class="modal-backdrop" hidden>
+      <section class="settings-dialog privacy-outbound-dialog" role="dialog" aria-modal="true" aria-labelledby="privacy-outbound-title">
+        <div class="settings-dialog__header"><h2 id="privacy-outbound-title">Проверьте новые данные для ИИ</h2>
+          <button id="privacy-outbound-close" class="icon-button icon-button--compact" type="button" aria-label="Отменить отправку"><svg class="ui-icon" aria-hidden="true"><use href="/icons.svg#icon-close"></use></svg></button></div>
+        <p class="settings-dialog__intro">Эти тексты добавлены или изменены после предыдущей проверки. Скройте оставшиеся личные данные. До подтверждения запрос не отправляется.</p>
+        <textarea id="privacy-outbound-preview" readonly aria-label="Новые тексты после локального скрытия данных"></textarea>
+        <label>Дополнительно скрыть — по одному значению в строке<textarea id="privacy-outbound-values" rows="2"></textarea></label>
+        <button id="privacy-outbound-mask" class="button" type="button">Применить дополнительные маски</button>
+        <label class="base-checkbox"><input id="privacy-outbound-reviewed" class="base-checkbox__input" type="checkbox" /><span class="base-checkbox__control" aria-hidden="true"></span><span class="base-checkbox__label">Проверил тексты: личные данные скрыты</span></label>
+        <div class="settings-dialog__actions"><button id="privacy-outbound-cancel" class="button" type="button">Отмена</button><button id="privacy-outbound-approve" class="button button--primary" type="button" disabled>Подтвердить и выполнить</button></div>
+      </section>
+    </div>
+    <script src="/privacy-view.js"></script>
     <script src="/translation-units.js"></script>
     <script src="/layout-model.js"></script>
     <script src="/custom-select.js"></script>

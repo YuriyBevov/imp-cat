@@ -57,11 +57,12 @@ def resolve_findings(findings: list[Finding]) -> list[Finding]:
 
 class Detector:
     """Rules plus an installed local NER model; no model download at runtime."""
-    def __init__(self, language="en", known_values=None, nlp=None):
+    def __init__(self, language="en", known_values=None, nlp=None, allow_values=None):
         if language not in LANGUAGE_MODELS:
             raise PrivacyError("Language is not supported for privacy detection.")
         self.language = language
         self.known_values = known_values or []
+        self.allow_values = allow_values or []
         if nlp is None:
             try:
                 import spacy
@@ -81,6 +82,9 @@ class Detector:
             ("BANK", r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b"),
             # Deliberately broad numeric sequences: over-redaction is reviewable.
             ("IDENTIFIER", r"(?<!\w)\d(?:[ -]?\d){7,18}(?!\w)"),
+            ("IDENTIFIER", r"(?<!\w)[A-Z]{1,4}[ -]?\d{5,12}(?!\w)"),
+            ("IDENTIFIER", r"\b[A-Z0-9<]{20,}\b"),
+            ("DATE", r"(?<!\w)\d{1,2}[./-]\d{1,2}[./-]\d{2,4}(?!\w)"),
         ]
         for kind, pattern in patterns:
             for match in re.finditer(pattern, visible, re.IGNORECASE):
@@ -93,6 +97,12 @@ class Detector:
                 end -= 1
             if end > start:
                 findings.append(Finding(start, end, "FIELD", "field"))
+        # Forms often put values on the next line or omit punctuation entirely.
+        unpunctuated = re.compile(r"(?m)^\s*(?P<label>" + labels + r")(?:[ \t]+|\s*\n\s*)(?P<value>[^\n;]+)", re.IGNORECASE)
+        for match in unpunctuated.finditer(visible):
+            start, end = match.span('value')
+            if visible[start:end].strip() and not visible[start:end].lstrip().startswith((':', '=')):
+                findings.append(Finding(start, end, 'FIELD', 'field'))
         for value in self.known_values:
             if not isinstance(value, str) or not value.strip():
                 raise PrivacyError("Known values must be nonempty strings.")
@@ -103,13 +113,16 @@ class Detector:
             offset = 0
             for line in visible.splitlines(keepends=True):
                 for entity in self.nlp(line).ents:
-                    if entity.label_ in {"PERSON", "PER", "ORG", "GPE", "LOC", "FAC"}:
-                        kind = "PERSON" if entity.label_ in {"PERSON", "PER"} else "LOCATION" if entity.label_ in {"GPE", "LOC", "FAC"} else "ORG"
+                    if entity.label_ in {"PERSON", "PER", "ORG", "GPE", "LOC", "FAC", "DATE"}:
+                        kind = "PERSON" if entity.label_ in {"PERSON", "PER"} else "LOCATION" if entity.label_ in {"GPE", "LOC", "FAC"} else entity.label_
                         findings.append(Finding(offset + entity.start_char, offset + entity.end_char, kind, "ner"))
                 offset += len(line)
         except Exception:
             raise PrivacyError("Local entity detection failed; no export is permitted.") from None
-        return resolve_findings(findings)
+        allowed = [(m.start(), m.end()) for value in self.allow_values if isinstance(value, str) and value
+                   for m in re.finditer(re.escape(value), visible, re.IGNORECASE)]
+        return resolve_findings([finding for finding in findings if finding.method == 'known-value' or not any(
+            start <= finding.start and end >= finding.end for start, end in allowed)])
 
 
 class Registry:
