@@ -8,3 +8,5 @@ __pycache__/
 data/onlyoffice/
 .build/
 data/studio/
+data/privacy/
+data/privacy-keys/
